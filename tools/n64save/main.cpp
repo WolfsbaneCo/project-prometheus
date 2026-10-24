@@ -112,6 +112,10 @@ int cmd_convert(const std::vector<std::string>& args) {
       std::cerr << p.string() << ": not a " << format_id(*from) << " save file name\n";
       return 2;
     }
+    if (files.count(*role)) {
+      std::cerr << p.string() << ": more than one input is a '" << *role << "' file\n";
+      return 2;
+    }
     files[*role] = read_file(p);
   }
   auto decoded = decode(*from, files);

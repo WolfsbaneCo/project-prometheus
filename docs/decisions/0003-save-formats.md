@@ -48,9 +48,9 @@ Evidence (*verified* at the commits in 0001):
 ## Safety rules as implemented
 
 - **Round-trip tests** cover every ordered pair of the four formats on seven synthetic saves, plus short Project64 files (4096, 4093, 1 and 32765 bytes). Each test runs A → B → A and requires byte-identical output. Golden vectors pin the exact byte order and offsets. CI runs them on Windows and Linux (`.github/workflows/ci.yml`).
-- **The importer only reads its source**, refuses a library folder inside the source (or the reverse), and writes every new entry to a `.partial` folder that is renamed into place only once complete. Every written file is read back and compared.
+- **The importer only reads its source**, refuses a library folder anywhere inside the emulator folder it was pointed at (or the reverse), and writes every new entry to a `.partial` folder that is renamed into place only once complete. Every written file is read back and compared.
 - **The history is never overwritten.** Each import is stored as `history/<UTC time>__<content id>/`. Re-importing the same save does nothing. Only the oldest entries beyond the limit (default 10) are removed.
-- **No silent overwrite of `current/`.** If `current/` is an earlier untouched import, a newer Project64 save replaces it; the earlier one is already in history. If `current/` came from anywhere else, the import stops with a conflict. With `--replace-current`, the existing copy is backed up into history before it is replaced.
+- **No silent overwrite of `current/`.** If `current/` is an earlier untouched import, a newer Project64 save replaces it; the earlier one is already in history. `current/` never moves back to an older save, for example when the newer file has disappeared from the Project64 folder. If `current/` came from anywhere else, the import stops with a conflict. With `--replace-current`, the existing copy is backed up into history before it is replaced.
 - **Converting never overwrites** an existing file unless `--overwrite` is given, and even then the old file is backed up first.
 
 ## Known gaps

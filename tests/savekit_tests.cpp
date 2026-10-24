@@ -208,13 +208,16 @@ TEST_CASE("a library save from elsewhere is never silently replaced") {
 
   // Simulate the new app having saved a different current copy since the import.
   const fs::path current = o.library / "TESTGAME" / "current";
-  fs::remove(current / "id.txt");
-  std::ofstream(current / "id.txt") << "playedinapp1\n";
+  // Binary mode: a text-mode stream would write "\r\n" on Windows.
+  put(current / "id.txt", Bytes{'p', 'l', 'a', 'y', 'e', 'd', 'i', 'n', 'a', 'p', 'p', '1', '\n'},
+      fs::file_time_type::clock::now());
+  const Bytes app_save = read_file(current / "canonical" / "sram.bin");
   put(pj.root / "Save" / "TESTGAME.sra", pj64_sram("SYNTHETIC SAVE NEWEST", 4096), pj.t0 + 48h);
 
   auto report = import_project64(o);
   CHECK(report.conflicts.size() == 1);
   CHECK(text_of(current / "id.txt") == "playedinapp1\n");
+  CHECK(read_file(current / "canonical" / "sram.bin") == app_save);
 
   o.replace_current = true;
   report = import_project64(o);
@@ -224,7 +227,7 @@ TEST_CASE("a library save from elsewhere is never silently replaced") {
     if (e.path().filename().string().ends_with("__playedinapp1__replaced")) backed_up = true;
   }
   CHECK(backed_up);
-  CHECK(text_of(current / "id.txt") != "playedinapp1\n");
+  CHECK(std::memcmp(read_file(current / "canonical" / "sram.bin").data(), "SYNTHETIC SAVE NEWEST", 21) == 0);
 }
 
 TEST_CASE("history keeps only the newest N versions") {
@@ -241,6 +244,31 @@ TEST_CASE("history keeps only the newest N versions") {
   for (const auto& e : fs::directory_iterator(history)) {
     CHECK(text_of(e.path() / "entry.json").find("\"label\": \"Older\"") == std::string::npos);
   }
+}
+
+TEST_CASE("library anywhere inside the Project64 folder is refused") {
+  FakeProject64 pj;
+  ImportOptions o;
+  o.source = pj.root;
+  o.library = pj.root / "N64 Saves";  // Next to Save/, not inside it.
+  CHECK_THROWS(import_project64(o));
+  CHECK(!fs::exists(o.library));
+}
+
+TEST_CASE("current never moves back to an older save") {
+  FakeProject64 pj;
+  TempDir lib("backwards");
+  ImportOptions o;
+  o.source = pj.root;
+  o.library = lib.path / "N64 Saves";
+  import_project64(o);
+
+  // The newer save disappears from Project64; only the older "Spring 15" copy is left.
+  fs::remove(pj.root / "Save" / "TESTGAME.sra");
+  auto report = import_project64(o);
+  CHECK(report.conflicts.empty());
+  CHECK(std::memcmp(read_file(o.library / "TESTGAME" / "current" / "canonical" / "sram.bin").data(),
+                    "SYNTHETIC SAVE NEWER", 20) == 0);
 }
 
 TEST_CASE("library inside the source folder is refused") {

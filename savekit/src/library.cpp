@@ -173,12 +173,13 @@ bool history_has(const fs::path& history, const std::string& id) {
   return false;
 }
 
-// True when history holds an import (not a backup) with this id.
-bool imported_earlier(const fs::path& history, const std::string& id) {
+// The timestamp of the import (not a backup) in history with this id, if there is one.
+std::optional<std::string> imported_stamp(const fs::path& history, const std::string& id) {
   for (const auto& p : history_entries(history)) {
-    if (p.filename().string().ends_with("__" + id)) return true;
+    const std::string name = p.filename().string();
+    if (name.ends_with("__" + id)) return name.substr(0, name.size() - id.size() - 2);
   }
-  return false;
+  return std::nullopt;
 }
 
 std::string read_id(const fs::path& dir) {
@@ -305,7 +306,10 @@ void write_info(const fs::path& game_dir, const std::string& base, const Snapsho
 ImportReport import_project64(const ImportOptions& o) {
   if (!fs::exists(o.source)) throw std::runtime_error("source not found: " + o.source.string());
   const fs::path root = fs::is_directory(o.source) && fs::is_directory(o.source / "Save") ? o.source / "Save" : o.source;
-  if (is_within(o.library, root) || is_within(root, o.library)) {
+  // Compare against the folder the user named, not just its Save/ subfolder: the library must
+  // never be created anywhere inside the emulator's own folder.
+  const fs::path source_dir = fs::is_directory(o.source) ? o.source : o.source.parent_path();
+  if (is_within(o.library, source_dir) || is_within(source_dir, o.library)) {
     throw std::runtime_error("the library folder and the source folder must not contain each other");
   }
 
@@ -365,7 +369,13 @@ ImportReport import_project64(const ImportOptions& o) {
       current_updated = true;
     } else if (const std::string existing = read_id(current); existing == newest.id) {
       lines.push_back("  current save already matches the newest import");
-    } else if (imported_earlier(history, existing)) {
+    } else if (const auto existing_stamp = imported_stamp(history, existing);
+               existing_stamp && stamp(newest.modified) <= *existing_stamp) {
+      // The newest save in Project64 is older than current (for example the newer file was
+      // deleted or moved there). Never move current backwards.
+      lines.push_back("  current save is newer than anything in Project64 (saved " + *existing_stamp +
+                      "); left as is");
+    } else if (existing_stamp) {
       // current/ is an untouched earlier import and that save is already kept in history, so
       // only the Project64 side has changed since: moving current forward loses nothing.
       lines.push_back("  " + dry + "current save: " + newest.label + " (replaces an earlier import, kept in history)");
