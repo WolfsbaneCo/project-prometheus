@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Brief 8.4: round-trip tests for every converter run in CI before any converter touches real saves.
+  save-converters:
+    name: Save converters (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Round-trip and golden tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  # Brief 8.4 and 12: game files, saves and save states must never be committed.
+  no-game-or-save-files:
+    name: No game or save files committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tracked files
+        shell: bash
+        run: |
+          bad=$(git ls-files | grep -iE '\.(z64|n64|v64|ndd|d64|sra|srm|eep|fla|mpk|pj[0-9]?|st[0-9]|state[0-9]*)(\.zip)?$' || true)
+          if [ -n "$bad" ]; then
+            echo "These files must not be committed:"
+            echo "$bad"
+            exit 1
+          fi
