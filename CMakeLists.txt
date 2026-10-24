@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(evercart64 LANGUAGES CXX)
+project(prometheus64 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

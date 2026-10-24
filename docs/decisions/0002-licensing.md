@@ -19,9 +19,9 @@
 
 ## What that means for us
 
-1. **Personal use, nothing distributed:** the GPL places no obligations on running or modifying software privately. A private repository with builds for the owner's own devices is fine as planned.
+1. **Before the first build is shared:** the GPL places obligations on distribution, not on development. Building and running the app on our own machines needs nothing extra.
 2. **Keep the core separate.** The app loads the core as a separate DLL through the libretro API. We do not compile core code into our binaries, and we do not modify the core. This keeps a clean boundary and makes core updates a file swap.
-3. **If the app is ever given to anyone else** (even friends, for netplay), that is distribution:
+3. **Once a build is given to anyone else** (including netplay guests), that is distribution:
    - Ship the core's exact source, or a written offer for it, alongside the core DLL.
    - Whether a host that only works with a GPL core counts as a derivative work is disputed. The safe course is to license the host itself under GPL-3.0-or-later before distributing. Apache-2.0 code can be combined into a GPLv3 work. It cannot be combined with GPLv2-only code, so check the "or later" status of every bundled component first (*VERIFY*).
    - Qt under LGPLv3: link dynamically and let users replace the Qt libraries.
@@ -30,4 +30,4 @@
 
 ## Decision
 
-Keep Apache-2.0 for this repository while it is private and personal. Load the GPL core as an unmodified separate DLL. Before any distribution, revisit this note and expect to relicense the host as GPL-3.0-or-later.
+Load the GPL core as an unmodified separate DLL. The repository stays Apache-2.0 for now. **Open decision for the project owner:** before the first build is distributed, relicense the host as GPL-3.0-or-later (the safe course above), or get legal advice that Apache-2.0 is acceptable. Changing `LICENSE` is deliberately not done here.

@@ -4,7 +4,7 @@ Every **VERIFY** item from the brief, plus the ones the decision notes added. Br
 
 ## From the brief
 
-- [ ] **Licensing of cores and plugins (4.1).** Partly done in [0002](decisions/0002-licensing.md): licences recorded and personal-use handling decided. Still open: "or later" status of GLideN64, which ParaLLEl-RSP licence applies, and Qt module licences.
+- [ ] **Licensing of cores and plugins (4.1).** Partly done in [0002](decisions/0002-licensing.md): licences recorded and handling until the first distribution decided. Still open: "or later" status of GLideN64, which ParaLLEl-RSP licence applies, and Qt module licences.
 - [x] **Exact VI options of the chosen renderer (5.1).** ParaLLEl-RDP in Mupen64Plus-Next exposes dither filter, divot filter, gamma dither, VI anti-aliasing, VI bilinear, overscan, native texture LOD, native texrects, super-sampled read-back, deinterlace method, downscaling and synchronous mode. Internal resolution is 1x, 2x, 4x or 8x only. See [0001](decisions/0001-core-and-stack.md).
 - [x] **Current save formats of each target (8.3).** Project64, standalone mupen64plus and RetroArch with Mupen64Plus-Next checked against source. See [0003](decisions/0003-save-formats.md).
 - [ ] **Is the `drive.file` OAuth scope enough? (9.4)** Check before Phase 3. It must cover "Restore from Drive" on a new install, which needs to find a folder the app created from a different install.

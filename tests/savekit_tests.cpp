@@ -24,7 +24,7 @@ namespace {
 struct TempDir {
   fs::path path;
   explicit TempDir(const std::string& name) {
-    path = fs::temp_directory_path() / ("evercart64-test-" + name + "-" +
+    path = fs::temp_directory_path() / ("prometheus64-test-" + name + "-" +
                                         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     fs::create_directories(path);
   }
