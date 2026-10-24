@@ -1,0 +1,44 @@
+# Build output
+/build*/
+/out/
+CMakeUserPresets.json
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Never commit game files (ROMs) -- brief sections 8.4, 12
+*.z64
+*.n64
+*.v64
+*.rom
+*.ndd
+*.d64
+
+# Never commit in-game saves or save states -- brief section 8.4
+*.sra
+*.srm
+*.eep
+*.fla
+*.mpk
+*.pj
+*.pj[0-9]
+*.pj.zip
+*.pj[0-9].zip
+*.st[0-9]
+*.state
+*.state[0-9]*
+/N64 Saves/
+
+# Owner data that may be dropped into the tree while testing
+*.rar
+/owner-data/
+
+# Credentials and tokens -- brief sections 9.4, 16
+.env
+.env.*
+*.pem
+*.p12
+credentials*.json
+client_secret*.json
+token*.json
