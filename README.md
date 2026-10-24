@@ -1,10 +1,8 @@
 # Project Prometheus 64
 
-A clean, modern desktop N64 player, part of **Project Prometheus**: keeping classic games playable, and their saves alive, instead of letting them fade into oblivion. It hosts a proven emulator core and adds its own picture pipeline, interface, controls, portable save library and optional backups.
+**Prometheus 64** is a clean, modern desktop N64 player, part of **Project Prometheus**: keeping classic games playable, and their saves alive, instead of letting them fade into oblivion. It hosts a proven emulator core and adds its own picture pipeline, interface, controls, portable save library and optional backups.
 
 The app plays games the user already owns and adds themselves. It never downloads, finds or distributes games (brief section 2).
-
-The repository is still named `evercart-64`; renaming it is a GitHub setting.
 
 - **What to build:** [`docs/BRIEF.md`](docs/BRIEF.md), the single source of truth
 - **Decisions:** [`docs/decisions/`](docs/decisions/)
