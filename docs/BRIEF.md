@@ -1,6 +1,6 @@
-# N64 Console: Project Brief (working title)
+# Project Prometheus 64: Project Brief
 
-A clean, modern desktop N64 player for the owner's personal game collection. It wraps a proven emulator core with a polished interface, high-end graphics, flexible controls, portable saves, optional Google Drive backup and simple online play with friends and family.
+**Prometheus 64** is a clean, modern desktop N64 player, part of **Project Prometheus**: keeping classic games playable and their saves alive. It plays games the user already owns. It wraps a proven emulator core with a polished interface, high-end graphics, flexible controls, portable saves, optional Google Drive backup and simple online play with friends and family.
 
 This document is the single source of truth for what to build. Read all of it before writing code. Items marked **VERIFY** are things the author believes are true but did not confirm; check them against current documentation before relying on them. Items under **Open questions** must be answered by the owner, so ask them instead of guessing.
 
@@ -56,7 +56,7 @@ Evaluate these options in a short spike (about one day) and recommend one in a s
 
 Decision criteria: ability to control scaling and shaders ourselves, accuracy (glitch-free), netplay feasibility, input flexibility, licensing, maintenance burden.
 
-**Licensing: VERIFY.** Many N64 cores and plugins are GPL. Work out what that means for how this app links to or loads them, and document it. If the repo is private and only for personal use the constraints are lighter, but record the decision.
+**Licensing: VERIFY.** Many N64 cores and plugins are GPL. Work out what that means for how this app links to or loads them, including what changes when the app is distributed, and document the decision.
 
 ### 4.2 Suggested layers
 
@@ -327,4 +327,4 @@ The owner's console may or may not be repairable and wants the option kept open.
 7. For the cartridge option: repaired console, flash cart, or a reader/writer?
 8. Roughly how far apart are online players, and is the connection wired?
 9. Cover art and game names: bundled, user-supplied, or fetched?
-10. App name and visual identity.
+10. ~~App name~~ (answered: the app is **Prometheus 64**; the project is Project Prometheus 64, part of Project Prometheus) and visual identity.
