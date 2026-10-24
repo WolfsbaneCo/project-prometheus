@@ -1,6 +1,6 @@
 # VERIFY checklist
 
-Every **VERIFY** item from the brief, plus the ones the decision notes added. Brief section 16 asks for these to be tracked in an issue; this file mirrors that issue so the list is versioned with the code.
+Every **VERIFY** item from the brief, plus the ones the decision notes added. Brief section 16 asks for these to be tracked in an issue: [WolfsbaneCo/evercart-64#1](https://github.com/WolfsbaneCo/evercart-64/issues/1). This file mirrors it so the list is versioned with the code.
 
 ## From the brief
 
