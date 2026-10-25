@@ -1,0 +1,3 @@
+// Embeds app.manifest for toolchains without manifest support in the linker (MinGW).
+#include <winuser.h>
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
