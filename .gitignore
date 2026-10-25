@@ -42,3 +42,8 @@ CMakeUserPresets.json
 credentials*.json
 client_secret*.json
 token*.json
+
+# Packaging output
+/stage/
+/dist/
+/core/
