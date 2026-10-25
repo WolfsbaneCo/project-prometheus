@@ -418,4 +418,65 @@ ImportReport import_project64(const ImportOptions& o) {
   return report;
 }
 
+std::vector<std::string> library_games(const fs::path& library) {
+  std::vector<std::string> games;
+  if (!fs::is_directory(library)) return games;
+  for (const auto& e : fs::directory_iterator(library)) {
+    if (e.is_directory() && fs::is_directory(e.path() / "current" / "canonical")) {
+      games.push_back(e.path().filename().string());
+    }
+  }
+  std::sort(games.begin(), games.end());
+  return games;
+}
+
+fs::path back_up_file(const fs::path& path, Clock::time_point now) {
+  fs::path backup = path;
+  backup += ".bak-" + stamp(now);
+  fs::copy_file(path, backup);
+  if (read_file(backup) != read_file(path)) throw std::runtime_error("backup verification failed: " + backup.string());
+  return backup;
+}
+
+ExportReport export_current(const ExportOptions& o) {
+  if (o.base_name.empty()) throw std::runtime_error("a file name is needed");
+  if (o.base_name.find_first_of("<>:\"/\\|?*") != std::string::npos) {
+    throw std::runtime_error("the file name cannot contain any of < > : \" / \\ | ? *");
+  }
+  const fs::path canonical = o.library / o.game / "current" / "canonical";
+  if (!fs::is_directory(canonical)) throw std::runtime_error("no current save for " + o.game);
+
+  FileSet files;
+  for (const auto& e : fs::directory_iterator(canonical)) {
+    if (auto role = match_role(Format::Canonical, e.path().filename().string())) files[*role] = read_file(e.path());
+  }
+  const FileSet encoded = encode(o.format, decode(Format::Canonical, files).save);
+
+  ExportReport r;
+  if (encoded.empty()) {
+    r.lines.push_back(o.game + ": the save holds no data; nothing to export");
+    return r;
+  }
+  std::vector<std::pair<fs::path, const Bytes*>> targets;
+  for (const auto& [role, data] : encoded) {
+    targets.emplace_back(o.out_dir / (o.format == Format::Canonical ? role : o.base_name + role), &data);
+    if (fs::exists(targets.back().first)) r.existing.push_back(targets.back().first);
+  }
+  if (!r.existing.empty() && !o.replace_existing) {
+    for (const auto& p : r.existing) r.lines.push_back("already exists, not replaced: " + p.string());
+    return r;
+  }
+  for (const auto& [target, data] : targets) {
+    if (fs::exists(target)) {
+      const fs::path backup = back_up_file(target, o.now);
+      r.lines.push_back("backed up the old file as " + backup.filename().string());
+      fs::remove(target);
+    }
+    write_new_file(target, *data);
+    r.written.push_back(target);
+    r.lines.push_back("wrote " + target.string() + " (" + std::to_string(data->size()) + " bytes)");
+  }
+  return r;
+}
+
 }  // namespace savekit

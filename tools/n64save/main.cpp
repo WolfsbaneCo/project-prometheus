@@ -9,7 +9,6 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
-#include <format>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -123,7 +122,7 @@ int cmd_convert(const std::vector<std::string>& args) {
   const auto encoded = encode(*to, decoded.save);
   if (encoded.empty()) std::cout << "nothing to write: the save holds no data\n";
 
-  const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+  const auto now = std::chrono::system_clock::now();
   for (const auto& [role, data] : encoded) {
     const fs::path target = out / (*to == Format::Canonical ? role : name + role);
     if (fs::exists(target)) {
@@ -131,9 +130,7 @@ int cmd_convert(const std::vector<std::string>& args) {
         std::cerr << target.string() << " exists; pass --overwrite to replace it (it is backed up first)\n";
         return 3;
       }
-      fs::path backup = target;
-      backup += std::format(".bak-{:%Y%m%dT%H%M%SZ}", now);
-      fs::copy_file(target, backup);
+      const fs::path backup = back_up_file(target, now);
       std::cout << "backed up " << target.string() << " -> " << backup.filename().string() << "\n";
       fs::remove(target);
     }

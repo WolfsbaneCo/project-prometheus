@@ -271,6 +271,55 @@ TEST_CASE("current never moves back to an older save") {
                     "SYNTHETIC SAVE NEWER", 20) == 0);
 }
 
+TEST_CASE("export writes the current save in another format and never silently replaces") {
+  FakeProject64 pj;
+  TempDir lib("export");
+  ImportOptions o;
+  o.source = pj.root;
+  o.library = lib.path / "N64 Saves";
+  import_project64(o);
+  CHECK(library_games(o.library) == std::vector<std::string>{"TESTGAME"});
+
+  ExportOptions e;
+  e.library = o.library;
+  e.game = "TESTGAME";
+  e.format = Format::RetroArchMupen64PlusNext;
+  e.out_dir = lib.path / "out";
+  e.base_name = "Test Game (USA)";
+  auto r = export_current(e);
+  const fs::path srm = e.out_dir / "Test Game (USA).srm";
+  CHECK(r.written == std::vector<fs::path>{srm});
+  const Bytes data = read_file(srm);
+  CHECK(data.size() == 0x48800);
+  const Bytes expected = pj64_sram("SYNTHETIC SAVE NEWER", 4096);
+  CHECK(std::memcmp(data.data() + 0x20800, expected.data(), expected.size()) == 0);
+
+  // A second export into the same place writes nothing unless asked to replace.
+  put(srm, Bytes{'o', 'l', 'd'}, fs::file_time_type::clock::now());
+  r = export_current(e);
+  CHECK(r.written.empty());
+  CHECK(r.existing == std::vector<fs::path>{srm});
+  CHECK(read_file(srm) == (Bytes{'o', 'l', 'd'}));
+
+  e.replace_existing = true;
+  r = export_current(e);
+  CHECK(r.written.size() == 1);
+  CHECK(read_file(srm).size() == 0x48800);
+  bool backed_up = false;
+  for (const auto& f : fs::directory_iterator(e.out_dir)) {
+    if (f.path().filename().string().starts_with("Test Game (USA).srm.bak-")) {
+      backed_up = read_file(f.path()) == Bytes{'o', 'l', 'd'};
+    }
+  }
+  CHECK(backed_up);
+
+  e.base_name = "bad/name";
+  CHECK_THROWS(export_current(e));
+  e.base_name = "x";
+  e.game = "NOSUCHGAME";
+  CHECK_THROWS(export_current(e));
+}
+
 TEST_CASE("library inside the source folder is refused") {
   FakeProject64 pj;
   ImportOptions o;
