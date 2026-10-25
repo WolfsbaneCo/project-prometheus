@@ -13,4 +13,4 @@ From brief section 17. Where the uploaded Project64 folder gives a hint, it is n
 | 7 | Cartridge route: repaired console, flash cart, or a reader/writer? | None | Phase 5 only |
 | 8 | How far apart are online players, and is the connection wired? | None | Phase 4 input-delay defaults |
 | 9 | Cover art and game names: bundled, user-supplied or fetched? | None | Library screen |
-| 10 | ~~App name~~ and visual identity. | **Answered:** the app is **Prometheus 64** (project: Project Prometheus 64, part of Project Prometheus). Visual identity is still open | Branding |
+| 10 | ~~App name~~ and visual identity. | **Answered:** the app is **Prometheus 64** (project: Project Prometheus 64, part of Project Prometheus). App icon and logo in [`assets/branding/`](../assets/branding/). Wider visual identity for the interface still open | Branding |
