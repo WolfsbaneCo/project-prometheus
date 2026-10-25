@@ -127,9 +127,11 @@ std::string shape_json(const Shape& shape) {
   return out + "}";
 }
 
-// Writes raw + canonical copies of a snapshot into `dir`, which must not exist yet.
-// Builds in a sibling ".partial" folder and renames, so a crash never leaves half an entry.
-void write_snapshot(const fs::path& dir, const Snapshot& s) {
+// Writes one save version into `dir`, which must not exist yet: canonical/ (always), raw/ (the
+// files exactly as found, when there are any), entry.json and id.txt. Builds in a sibling
+// ".partial" folder and renames, so a crash never leaves half an entry.
+void write_entry(const fs::path& dir, const std::string& id, const SaveSet& save,
+                 const std::vector<std::pair<std::string, const Bytes*>>& raw, const std::string& details) {
   if (fs::exists(dir)) throw std::runtime_error("refusing to overwrite " + dir.string());
   fs::path partial = dir;
   partial += ".partial";
@@ -140,20 +142,25 @@ void write_snapshot(const fs::path& dir, const Snapshot& s) {
     write_new_file(partial / fs::path(rel), data);
     files_json += (files_json.empty() ? "" : ",\n    ") + json_string(rel) + ": " + json_string(sha256_hex(data));
   };
-  for (const auto& [role, data] : s.files) add("raw/" + s.paths.at(role).filename().string(), data);
-  for (const auto& [role, data] : encode(Format::Canonical, s.decoded.save)) add("canonical/" + role, data);
+  for (const auto& [name, data] : raw) add("raw/" + name, *data);
+  for (const auto& [role, data] : encode(Format::Canonical, save)) add("canonical/" + role, data);
 
-  std::string entry = "{\n";
-  entry += "  \"id\": " + json_string(s.id) + ",\n";
-  entry += "  \"source_format\": \"project64\",\n";
-  entry += "  \"source_folder\": " + json_string(s.folder.string()) + ",\n";
-  entry += "  \"label\": " + json_string(s.label) + ",\n";
-  entry += "  \"modified\": " + json_string(iso_utc(s.modified)) + ",\n";
-  entry += "  \"shape\": " + shape_json(s.decoded.shape) + ",\n";
+  std::string entry = "{\n  \"id\": " + json_string(id) + ",\n" + details;
   entry += "  \"files\": {\n    " + files_json + "\n  }\n}\n";
   write_text_new(partial / "entry.json", entry);
-  write_text_new(partial / "id.txt", s.id + "\n");
+  write_text_new(partial / "id.txt", id + "\n");
   fs::rename(partial, dir);
+}
+
+void write_snapshot(const fs::path& dir, const Snapshot& s) {
+  std::vector<std::pair<std::string, const Bytes*>> raw;
+  for (const auto& [role, data] : s.files) raw.emplace_back(s.paths.at(role).filename().string(), &data);
+  std::string details;
+  details += "  \"source\": \"imported save file\",\n";
+  details += "  \"label\": " + json_string(s.label) + ",\n";
+  details += "  \"saved\": " + json_string(iso_utc(s.modified)) + ",\n";
+  details += "  \"shape\": " + shape_json(s.decoded.shape) + ",\n";
+  write_entry(dir, s.id, s.decoded.save, raw, details);
 }
 
 std::vector<fs::path> history_entries(const fs::path& history) {
@@ -241,8 +248,15 @@ void prune(const fs::path& history, std::size_t limit, bool dry_run, std::vector
 }
 
 // `imported` is the snapshot now in current/, or null when current/ holds a save from elsewhere.
-void write_info(const fs::path& game_dir, const std::string& base, const Snapshot* imported, std::size_t states,
-                Clock::time_point now) {
+struct CurrentInfo {
+  std::string source;
+  std::string label;
+  Clock::time_point saved;
+  const Shape* shape = nullptr;
+};
+
+// Rewrites info.json from what is on disk. `current` describes the save now in current/, when known.
+void write_info(const fs::path& game_dir, const std::string& base, const CurrentInfo* current, Clock::time_point now) {
   std::string types;
   if (fs::is_directory(game_dir / "current" / "canonical")) {
     std::vector<std::string> names;
@@ -260,30 +274,22 @@ void write_info(const fs::path& game_dir, const std::string& base, const Snapsho
   if (!device) device = std::getenv("HOSTNAME");
 
   std::string j = "{\n";
-  j += "  \"schema\": 1,\n";
+  j += "  \"schema\": 2,\n";
   j += "  \"game\": {\n";
-  j += "    \"internal_name\": " + json_string(base) + ",\n";
-  j += "    \"rom_id\": null,\n";
-  j += "    \"rom_id_note\": \"Not confirmed yet. Games are identified by ROM header and checksum; this is "
-       "filled in when the ROM is added to the library.\"\n";
+  j += "    \"internal_name\": " + json_string(base) + "\n";
   j += "  },\n";
   j += "  \"save_types\": [" + types + "],\n";
   j += "  \"current\": {\n";
   j += "    \"id\": " + json_string(read_id(game_dir / "current"));
-  if (imported) {
-    j += ",\n    \"source_format\": \"project64\",\n";
-    j += "    \"source_label\": " + json_string(imported->label) + ",\n";
-    j += "    \"modified\": " + json_string(iso_utc(imported->modified)) + ",\n";
-    j += "    \"shape\": " + shape_json(imported->decoded.shape);
+  if (current) {
+    j += ",\n    \"source\": " + json_string(current->source) + ",\n";
+    j += "    \"label\": " + json_string(current->label) + ",\n";
+    j += "    \"saved\": " + json_string(iso_utc(current->saved));
+    if (current->shape) j += ",\n    \"shape\": " + shape_json(*current->shape);
   }
   j += "\n  },\n";
   j += "  \"history\": [\n    " + history + "\n  ],\n";
-  j += "  \"project64_save_states\": {\n";
-  j += "    \"found\": " + std::to_string(states) + ",\n";
-  j += "    \"carried_across\": false,\n";
-  j += "    \"why\": \"A save state only loads in the emulator version that made it.\"\n";
-  j += "  },\n";
-  j += "  \"last_import\": " + json_string(iso_utc(now)) + ",\n";
+  j += "  \"updated\": " + json_string(iso_utc(now)) + ",\n";
   j += "  \"device\": " + json_string(device ? device : "unknown") + "\n";
   j += "}\n";
 
@@ -294,8 +300,8 @@ void write_info(const fs::path& game_dir, const std::string& base, const Snapsho
   std::error_code ec;
   fs::rename(partial, target, ec);
   if (ec) {
-    // Some platforms refuse to rename over an existing file. info.json is regenerated on every
-    // import from what is on disk, so replacing it in two steps loses nothing.
+    // Some platforms refuse to rename over an existing file. info.json is regenerated from what
+    // is on disk every time, so replacing it in two steps loses nothing.
     fs::remove(target);
     fs::rename(partial, target);
   }
@@ -412,10 +418,56 @@ ImportReport import_project64(const ImportOptions& o) {
     prune(history, o.history_limit, o.dry_run, lines);
     if (!o.dry_run) {
       const bool newest_is_current = current_updated || read_id(current) == newest.id;
-      write_info(game_dir, base, newest_is_current ? &newest : nullptr, game.states, o.now);
+      const CurrentInfo info{"imported save file", newest.label, newest.modified, &newest.decoded.shape};
+      write_info(game_dir, base, newest_is_current ? &info : nullptr, o.now);
     }
   }
   return report;
+}
+
+std::optional<SaveSet> load_current(const fs::path& library, const std::string& game) {
+  const fs::path canonical = library / safe_name(game) / "current" / "canonical";
+  if (!fs::is_directory(canonical)) return std::nullopt;
+  FileSet files;
+  for (const auto& e : fs::directory_iterator(canonical)) {
+    if (auto role = match_role(Format::Canonical, e.path().filename().string())) files[*role] = read_file(e.path());
+  }
+  return decode(Format::Canonical, files).save;
+}
+
+StoreResult store_current(const StoreOptions& o) {
+  const fs::path game_dir = o.library / safe_name(o.game);
+  const fs::path history = game_dir / "history";
+  const fs::path current = game_dir / "current";
+  StoreResult r;
+  r.id = snapshot_id(encode(Format::Canonical, o.save));
+  if (fs::exists(current) && read_id(current) == r.id) return r;  // unchanged
+
+  std::string details;
+  details += "  \"source\": " + json_string(o.source) + ",\n";
+  details += "  \"saved\": " + json_string(iso_utc(o.now)) + ",\n";
+  write_entry(history / (stamp(o.now) + "__" + r.id), r.id, o.save, {}, details);
+
+  fs::path incoming = game_dir / "current.incoming";
+  fs::remove_all(incoming);
+  write_entry(incoming, r.id, o.save, {}, details);
+  if (fs::exists(current)) {
+    const std::string old = read_id(current);
+    if (!history_has(history, old)) {
+      // The previous save is not in history (it was pruned, or came from elsewhere): keep it.
+      const fs::path backup = history / (stamp(o.now) + "__" + old + "__replaced");
+      if (!fs::exists(backup)) fs::copy(current, backup, fs::copy_options::recursive);
+    }
+    fs::remove_all(current);
+  }
+  fs::rename(incoming, current);
+  r.changed = true;
+
+  std::vector<std::string> ignored;
+  prune(history, o.history_limit, false, ignored);
+  const CurrentInfo info{o.source, o.source, o.now, nullptr};
+  write_info(game_dir, o.game, &info, o.now);
+  return r;
 }
 
 std::vector<std::string> library_games(const fs::path& library) {

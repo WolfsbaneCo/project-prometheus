@@ -160,7 +160,7 @@ TEST_CASE("import copies saves, never touches the source, and keeps history") {
   CHECK(std::memcmp(canonical.data(), "SYNTHETIC SAVE NEWER", 20) == 0);
   CHECK(count_dirs(game / "history") == 2);
   const std::string info = text_of(game / "info.json");
-  CHECK(info.find("\"found\": 2") != std::string::npos);
+  CHECK(info.find("project64") == std::string::npos);
   CHECK(info.find("\"shape\": {\".sra\": 4096}") != std::string::npos);
   CHECK(info.find("\"save_types\": [\"sram\"]") != std::string::npos);
 
@@ -318,6 +318,46 @@ TEST_CASE("export writes the current save in another format and never silently r
   e.base_name = "x";
   e.game = "NOSUCHGAME";
   CHECK_THROWS(export_current(e));
+}
+
+TEST_CASE("in-game saves from the app become current and keep history") {
+  TempDir lib("store");
+  const fs::path library = lib.path / "N64 Saves";
+  CHECK(!load_current(library, "TESTGAME").has_value());
+
+  Bytes sram(kSramSize, 0xFF);
+  std::memcpy(sram.data(), "FIRST", 5);
+  StoreOptions o;
+  o.library = library;
+  o.game = "TESTGAME";
+  o.save = SaveSet{{{Memory::Sram, sram}}};
+  o.now = std::chrono::system_clock::now() - 2h;
+  auto r = store_current(o);
+  CHECK(r.changed);
+  CHECK(load_current(library, "TESTGAME") == o.save);
+
+  // Storing the same save again changes nothing.
+  CHECK(!store_current(o).changed);
+  CHECK(count_dirs(library / "TESTGAME" / "history") == 1);
+
+  std::memcpy(sram.data(), "SECOND", 6);
+  o.save = SaveSet{{{Memory::Sram, sram}}};
+  o.now += 1h;
+  r = store_current(o);
+  CHECK(r.changed);
+  CHECK(load_current(library, "TESTGAME") == o.save);
+  CHECK(count_dirs(library / "TESTGAME" / "history") == 2);
+  CHECK(text_of(library / "TESTGAME" / "info.json").find("Prometheus 64") != std::string::npos);
+
+  // History keeps the newest N.
+  o.history_limit = 2;
+  for (int i = 0; i < 3; ++i) {
+    sram[10] = static_cast<uint8_t>(i);
+    o.save = SaveSet{{{Memory::Sram, sram}}};
+    o.now += 1h;
+    store_current(o);
+  }
+  CHECK(count_dirs(library / "TESTGAME" / "history") == 2);
 }
 
 TEST_CASE("library inside the source folder is refused") {

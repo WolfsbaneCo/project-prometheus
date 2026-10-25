@@ -3,10 +3,12 @@
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "savekit/formats.hpp"
+#include "savekit/save_set.hpp"
 
 namespace savekit {
 
@@ -36,6 +38,27 @@ struct ImportReport {
 //   <library>/<game>/info.json
 // Source files are opened read-only and never changed. Save states are reported, not copied.
 ImportReport import_project64(const ImportOptions& options);
+
+// The game's current save, if the library has one. `game` is the ROM's internal header name.
+std::optional<SaveSet> load_current(const std::filesystem::path& library, const std::string& game);
+
+struct StoreOptions {
+  std::filesystem::path library;
+  std::string game;  // the ROM's internal header name
+  SaveSet save;
+  std::string source = "Prometheus 64";
+  std::size_t history_limit = 10;
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+};
+
+struct StoreResult {
+  bool changed = false;  // false when the save equals the current one
+  std::string id;
+};
+
+// Makes `save` the game's current save and records it in history. The previous current save is
+// already in history (or is copied there first), so nothing is lost.
+StoreResult store_current(const StoreOptions& options);
 
 // Games in the library that have a current save, by folder name, sorted.
 std::vector<std::string> library_games(const std::filesystem::path& library);
