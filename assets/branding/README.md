@@ -15,18 +15,17 @@ A gold flame on a dark tile.
 
 ## Prometheus 64: `prometheus64/`
 
-A red flame, the N64 theme colour, with the acronym below it.
+A red flame, the N64 theme colour, with the acronym **"64"** below it.
 
 | File | Use |
 |---|---|
-| `prometheus64-icon.svg` | Master icon with **"64"**, 48 px and larger |
-| `prometheus64-icon-n64.svg` | Alternative with **"N64"** (see the trademark note below) |
+| `prometheus64-icon.svg` | Master icon with "64", 48 px and larger |
 | `prometheus64-icon-small.svg` | 16 to 40 px: flame only, because an acronym cannot be read below about 48 px |
-| `prometheus64.ico` / `prometheus64-n64.ico` | Windows icons: the flame only at 16 to 40 px, with the acronym at 48 to 256 px |
-| `png/` | 256, 512 and 1024 px exports of both |
+| `prometheus64.ico` | Windows icon: the flame only at 16 to 40 px, with "64" at 48 to 256 px |
+| `png/` | 256, 512 and 1024 px exports |
 | `prometheus64-lockup-on-dark.svg` / `-on-light.svg` | Flame above "PROMETHEUS 64", for splash screens and documents |
 
-**Trademark note:** "N64" and the Nintendo 64 logo are Nintendo trademarks. Emulators usually avoid them (Project64, simple64 and RMG all use plain "64"). The "64" version is the default here; the "N64" version is there if the project owner chooses it.
+**Why "64" and not "N64":** "N64" and the Nintendo 64 logo are Nintendo trademarks, which emulators usually avoid (Project64, simple64 and RMG all use plain "64"). The project owner chose "64". Don't add "N64", "Nintendo" or Nintendo's logos to the branding.
 
 ## Making a new variation
 
@@ -40,7 +39,7 @@ Keep the flame shape, the tile, the corner radius and the layout. Change only:
 - The flame is true vector paths, traced from the bitmap the Canva export embedded. Icons are about 3 to 5 KB instead of 560 KB.
 - The app icons drop the white square and the full name, which could not be read below about 64 px. The flame sits on a dark rounded tile with a soft glow, so the icons work on light and dark taskbars.
 - The flame fills about 70% of the tile (55% when the acronym sits below it), up from about 40%.
-- The "N" did not exist in the original lettering. It is drawn to match, with the same stem width as the original "H". The "6" and "4" are the original shapes.
+- The "6" and "4" of the acronym are the original letter shapes.
 - `source/prometheus64-original-canva.svg` is the original file, unchanged.
 
 ## Colours
