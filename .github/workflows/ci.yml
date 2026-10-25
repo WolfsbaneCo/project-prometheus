@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPROMETHEUS64_BUILD_APP=OFF
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Round-trip and golden tests
@@ -40,3 +40,110 @@ jobs:
             echo "$bad"
             exit 1
           fi
+
+  # The emulator core, cross-compiled at the commit pinned in the script. Cached on that commit.
+  core-windows:
+    name: Emulator core (Windows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Find the pinned core commit
+        id: pin
+        run: echo "commit=$(grep -oP '^CORE_COMMIT=\K[0-9a-f]+' tools/build-core-windows.sh)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: core
+          key: core-windows-${{ steps.pin.outputs.commit }}-${{ hashFiles('tools/build-core-windows.sh') }}
+      - name: Install MinGW-w64
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64 nasm
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: tools/build-core-windows.sh core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-windows
+          path: core/
+
+  app-linux:
+    name: Prometheus 64 (Linux build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install SDL build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxss-dev libxfixes-dev libxkbcommon-dev libxtst-dev libxrender-dev libxinerama-dev \
+            libwayland-dev libegl-dev libgl-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel
+
+  # The download for players: an installer and a portable zip.
+  app-windows:
+    name: Prometheus 64 (Windows installer)
+    runs-on: windows-latest
+    needs: core-windows
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure
+        run: cmake -S . -B build -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel --target prometheus64
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-windows
+          path: core
+      - name: Stage
+        shell: pwsh
+        run: |
+          $app = "build/apps/prometheus64/Release"
+          New-Item -ItemType Directory -Force stage/cores, stage/licenses | Out-Null
+          Copy-Item "$app/Prometheus64.exe" stage/
+          Copy-Item -Recurse "$app/assets" stage/
+          Copy-Item core/mupen64plus_next_libretro.dll stage/cores/
+          Copy-Item core/CORE-SOURCE.txt stage/cores/
+          Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, LICENSE stage/licenses/
+          Get-ChildItem -Recurse stage | Select-Object FullName, Length
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          version=$(grep -oP 'project\(prometheus64 VERSION \K[0-9.]+' CMakeLists.txt)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version=${GITHUB_REF#refs/tags/v}; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$PWD\stage" installer\prometheus64.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Compress-Archive -Path stage\* -DestinationPath "dist\Prometheus64-${{ steps.version.outputs.version }}-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Prometheus64-Windows
+          path: dist/
+
+  # Pushing a tag like v0.1.0 publishes the installer as a GitHub release.
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [app-windows, save-converters, no-game-or-save-files]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Prometheus64-Windows
+          path: dist
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "Prometheus 64 ${GITHUB_REF_NAME#v}" --generate-notes

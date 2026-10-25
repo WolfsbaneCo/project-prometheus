@@ -1,14 +1,48 @@
 # Project Prometheus 64
 
-**Prometheus 64** is a clean, modern desktop N64 player, part of **Project Prometheus**: keeping classic games playable, and their saves alive, instead of letting them fade into oblivion. It hosts a proven emulator core and adds its own picture pipeline, interface, controls, portable save library and optional backups.
+**Prometheus 64** is a modern desktop player for N64 games, part of **Project Prometheus**: keeping classic games playable, and their saves alive, instead of letting them fade into oblivion. It is built on a proven emulator core and adds its own sharper picture, simpler controls, couch multiplayer and a save library that keeps every save safe.
 
 The app plays games the user already owns and adds themselves. It never downloads, finds or distributes games (brief section 2).
 
+## Download and play (Windows 10 or 11, 64-bit)
+
+1. Open the repository's **Actions** tab, pick the latest green **CI** run and download **Prometheus64-Windows**. Once a version is tagged, the same files are on the **Releases** page.
+2. Run `Prometheus64-Setup-<version>.exe`. It installs for your user only, with no administrator prompt, and adds a Start menu shortcut. If you'd rather not install it, unzip `Prometheus64-<version>-portable.zip` anywhere and run `Prometheus64.exe`.
+3. Press **O** (or **Y** on a controller) and choose the folder that holds your game files (`.z64`, `.n64`, `.v64`). You can also drop a game file onto the window.
+4. Pick a game and press **Enter** (or **A**). To have a friend join, they press **Start** on another controller. Press **F1** for every key.
+
+| Key | What it does |
+|---|---|
+| Esc, or Back/Guide on a controller | Quick menu: save states, picture, fill mode, resolution, volume, players |
+| F2 / F3 | Next fill mode / next picture preset |
+| F5 / F7 / F6 | Save state / load state / next state slot |
+| F10 | Who's playing: seat controllers and keyboards for up to 4 players |
+| F11 or Alt+Enter | Fullscreen |
+| F12 | Screenshot |
+
+**Keyboard (one player):** arrows move, X = A, C = B, Z = Z, Enter = Start, A/S = L/R, I/J/K/L = C buttons, T/F/G/H = D-pad, Shift = walk. Two players can share one keyboard: the left half (WASD) and the right half (arrows) each become a controller from "Who's playing".
+
+**Saves** go into `Documents\N64 Saves`, one folder per game, with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file. The emulator's original file is only read, never changed.
+
+### Picture presets
+
+| Preset | Look |
+|---|---|
+| Clean (default) | High resolution matched to your screen, smooth edges |
+| Sharp | Clean plus extra sharpening |
+| Retro | 2x resolution with soft scanlines |
+| Native | Pixel-exact, original resolution and dithering, like the console |
+
+Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a little top and bottom), **Widescreen** (true 16:9 where the game allows it), **Ambient** (a soft glow of the picture fills the side bars) and **Stretch**.
+
+## Documents
+
 - **What to build:** [`docs/BRIEF.md`](docs/BRIEF.md), the single source of truth
 - **Decisions:** [`docs/decisions/`](docs/decisions/)
-  - [0001 Core, hosting approach and stack](docs/decisions/0001-core-and-stack.md) (proposed)
+  - [0001 Core, hosting approach and stack](docs/decisions/0001-core-and-stack.md)
   - [0002 Licensing](docs/decisions/0002-licensing.md) (proposed)
   - [0003 Save formats and the canonical master copy](docs/decisions/0003-save-formats.md)
+  - [0004 How the player is built](docs/decisions/0004-player-architecture.md)
 - **Waiting on the owner:** [`docs/open-questions.md`](docs/open-questions.md)
 - **Unverified assumptions:** [`docs/verify.md`](docs/verify.md)
 
@@ -16,40 +50,36 @@ The app plays games the user already owns and adds themselves. It never download
 
 | Phase | State |
 |---|---|
-| 0: Spike and decisions | Decision notes written. Prototype boot on the owner's PC still to do |
-| 1: Player | Not started |
-| 2: Saves | Started: `savekit` library, read-only inspector, Project64 importer, converters, round-trip tests |
-| 3 to 5 | Not started |
+| 1: Player | **Playable.** Library, picture presets, fill modes, internal resolution, fullscreen, quick menu, save states, local multiplayer up to 4, rumble, Windows installer. Still to come: the Vulkan renderer (ParaLLEl-RDP), per-person profiles and button remapping |
+| 2: Saves | **Working.** In-game saves stored in the library with history; imports from other emulators; `n64save` tool and converters |
+| 3: Google Drive sync | Not started |
+| 4: Netplay | Not started |
+| 5: Cartridge | Not started |
 
-## Save tools (`n64save`)
+## Building from source
 
-Build (CMake 3.20+, a C++20 compiler; no other dependencies):
+Needs CMake 3.20+ and a C++20 compiler. SDL3 is downloaded and built automatically.
 
 ```sh
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-Use:
+The emulator core is a separate download from its own project, built at a pinned commit by `tools/build-core-windows.sh` (MinGW-w64 on Linux). Put `mupen64plus_next_libretro.dll` in a `cores` folder next to `Prometheus64.exe`. CI does all of this and builds the installer with Inno Setup (`installer/prometheus64.iss`). Pushing a tag like `v0.1.0` publishes a release.
+
+On Linux, SDL needs the X11/Wayland, ALSA/PulseAudio and udev development packages (see `.github/workflows/ci.yml`).
+
+### `n64save`: save tools for the command line
 
 ```sh
-# Describe saves and save states; strictly read-only
-n64save inspect "C:/Games/Project 64 1.6/Save"
-
-# Copy Project64 saves into the library (never moves or edits the originals)
-n64save import-pj64 "C:/Games/Project 64 1.6" --library "%USERPROFILE%/Documents/N64 Saves" --dry-run
-n64save import-pj64 "C:/Games/Project 64 1.6" --library "%USERPROFILE%/Documents/N64 Saves"
-
-# Convert between formats (refuses to overwrite unless --overwrite, which backs up first)
-n64save formats
-n64save convert --from canonical --to retroarch-mupen64plus-next --name "Harvest Moon 64 (USA)" \
-  --out ./out "N64 Saves/HARVESTMOON64/current/canonical/sram.bin"
-
-# Identify a ROM by header and checksum (reads only the first 64 bytes)
-n64save rom-id "Harvest Moon 64 (USA).z64"
+n64save inspect "<folder with saves>"                       # describe saves; strictly read-only
+n64save formats                                            # list the save formats it converts
+n64save convert --from canonical --to retroarch-mupen64plus-next --name "<game>" \
+  --out ./out "N64 Saves/<GAME>/current/canonical/sram.bin"
+n64save rom-id "<game file>"                               # identify a game by header and checksum
 ```
 
 ## Ground rules
 
-Game files, saves, save states and credentials never go into this repository (see `.gitignore`). Tests use synthetic data only.
+Game files, saves, save states and credentials never go into this repository (see `.gitignore`; CI checks it). Tests use synthetic data or public-domain homebrew only.

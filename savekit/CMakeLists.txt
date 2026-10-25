@@ -8,3 +8,4 @@ add_library(savekit STATIC
   src/sha256.cpp
 )
 target_include_directories(savekit PUBLIC include)
+target_link_libraries(savekit PRIVATE p64_warnings)

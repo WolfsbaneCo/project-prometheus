@@ -160,7 +160,7 @@ TEST_CASE("import copies saves, never touches the source, and keeps history") {
   CHECK(std::memcmp(canonical.data(), "SYNTHETIC SAVE NEWER", 20) == 0);
   CHECK(count_dirs(game / "history") == 2);
   const std::string info = text_of(game / "info.json");
-  CHECK(info.find("\"found\": 2") != std::string::npos);
+  CHECK(info.find("project64") == std::string::npos);
   CHECK(info.find("\"shape\": {\".sra\": 4096}") != std::string::npos);
   CHECK(info.find("\"save_types\": [\"sram\"]") != std::string::npos);
 
@@ -269,6 +269,95 @@ TEST_CASE("current never moves back to an older save") {
   CHECK(report.conflicts.empty());
   CHECK(std::memcmp(read_file(o.library / "TESTGAME" / "current" / "canonical" / "sram.bin").data(),
                     "SYNTHETIC SAVE NEWER", 20) == 0);
+}
+
+TEST_CASE("export writes the current save in another format and never silently replaces") {
+  FakeProject64 pj;
+  TempDir lib("export");
+  ImportOptions o;
+  o.source = pj.root;
+  o.library = lib.path / "N64 Saves";
+  import_project64(o);
+  CHECK(library_games(o.library) == std::vector<std::string>{"TESTGAME"});
+
+  ExportOptions e;
+  e.library = o.library;
+  e.game = "TESTGAME";
+  e.format = Format::RetroArchMupen64PlusNext;
+  e.out_dir = lib.path / "out";
+  e.base_name = "Test Game (USA)";
+  auto r = export_current(e);
+  const fs::path srm = e.out_dir / "Test Game (USA).srm";
+  CHECK(r.written == std::vector<fs::path>{srm});
+  const Bytes data = read_file(srm);
+  CHECK(data.size() == 0x48800);
+  const Bytes expected = pj64_sram("SYNTHETIC SAVE NEWER", 4096);
+  CHECK(std::memcmp(data.data() + 0x20800, expected.data(), expected.size()) == 0);
+
+  // A second export into the same place writes nothing unless asked to replace.
+  put(srm, Bytes{'o', 'l', 'd'}, fs::file_time_type::clock::now());
+  r = export_current(e);
+  CHECK(r.written.empty());
+  CHECK(r.existing == std::vector<fs::path>{srm});
+  CHECK(read_file(srm) == (Bytes{'o', 'l', 'd'}));
+
+  e.replace_existing = true;
+  r = export_current(e);
+  CHECK(r.written.size() == 1);
+  CHECK(read_file(srm).size() == 0x48800);
+  bool backed_up = false;
+  for (const auto& f : fs::directory_iterator(e.out_dir)) {
+    if (f.path().filename().string().starts_with("Test Game (USA).srm.bak-")) {
+      backed_up = read_file(f.path()) == Bytes{'o', 'l', 'd'};
+    }
+  }
+  CHECK(backed_up);
+
+  e.base_name = "bad/name";
+  CHECK_THROWS(export_current(e));
+  e.base_name = "x";
+  e.game = "NOSUCHGAME";
+  CHECK_THROWS(export_current(e));
+}
+
+TEST_CASE("in-game saves from the app become current and keep history") {
+  TempDir lib("store");
+  const fs::path library = lib.path / "N64 Saves";
+  CHECK(!load_current(library, "TESTGAME").has_value());
+
+  Bytes sram(kSramSize, 0xFF);
+  std::memcpy(sram.data(), "FIRST", 5);
+  StoreOptions o;
+  o.library = library;
+  o.game = "TESTGAME";
+  o.save = SaveSet{{{Memory::Sram, sram}}};
+  o.now = std::chrono::system_clock::now() - 2h;
+  auto r = store_current(o);
+  CHECK(r.changed);
+  CHECK(load_current(library, "TESTGAME") == o.save);
+
+  // Storing the same save again changes nothing.
+  CHECK(!store_current(o).changed);
+  CHECK(count_dirs(library / "TESTGAME" / "history") == 1);
+
+  std::memcpy(sram.data(), "SECOND", 6);
+  o.save = SaveSet{{{Memory::Sram, sram}}};
+  o.now += 1h;
+  r = store_current(o);
+  CHECK(r.changed);
+  CHECK(load_current(library, "TESTGAME") == o.save);
+  CHECK(count_dirs(library / "TESTGAME" / "history") == 2);
+  CHECK(text_of(library / "TESTGAME" / "info.json").find("Prometheus 64") != std::string::npos);
+
+  // History keeps the newest N.
+  o.history_limit = 2;
+  for (int i = 0; i < 3; ++i) {
+    sram[10] = static_cast<uint8_t>(i);
+    o.save = SaveSet{{{Memory::Sram, sram}}};
+    o.now += 1h;
+    store_current(o);
+  }
+  CHECK(count_dirs(library / "TESTGAME" / "history") == 2);
 }
 
 TEST_CASE("library inside the source folder is refused") {
