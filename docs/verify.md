@@ -19,3 +19,15 @@ Every **VERIFY** item from the brief, plus the ones the decision notes added. Br
 - [ ] SDL3 multi-keyboard support on Windows (needed for press-to-join with two keyboards), and mappings for the owner's N64 controller adapter.
 - [ ] Project64 1.6's own Controller Pak file name (the importer currently expects `<name>_Cont_N.mpk`).
 - [ ] Save layout of the ParaLLEl N64 libretro core, before adding a RetroArch adapter for it.
+
+## Added by the player (Phase 1, see [0004](decisions/0004-player-architecture.md))
+
+Checked so far on Linux with a software GPU (Mesa llvmpipe) and public-domain homebrew test programs, and the Windows build under Wine. Not yet on real hardware or with a commercial game.
+
+- [ ] Sound is clean and in sync in a real game (the audio path is wired and receives the core's samples; never heard).
+- [ ] Physical gamepads: press Start to join, the button layout, rumble, and the owner's N64 controller adapter.
+- [ ] Picture presets and "Auto" internal resolution on the owner's GPU and screen (open question 2): speed at 5x and the look of Clean, Sharp, Retro and Native.
+- [ ] Widescreen fill mode in the owner's games: which ones draw correctly with the 16:9 hack.
+- [ ] Windows folder and file pickers (O and I on the library screen) and dropping a game file onto the window.
+- [ ] Installer on a clean Windows PC: install, Start menu shortcut, first launch, uninstall leaves `Documents\N64 Saves` alone.
+- [ ] Vulkan path for ParaLLEl-RDP: accurate rendering at high resolution, not wired yet.
