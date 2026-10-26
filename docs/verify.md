@@ -29,5 +29,7 @@ Checked so far on Linux with a software GPU (Mesa llvmpipe) and public-domain ho
 - [ ] Picture presets and "Auto" internal resolution on the owner's GPU and screen (open question 2): speed at 5x and the look of Clean, Sharp, Retro and Native.
 - [ ] Widescreen fill mode in the owner's games: which ones draw correctly with the 16:9 hack.
 - [ ] Windows folder and file pickers (O and I on the library screen) and dropping a game file onto the window.
+- [ ] Archives from the owner's own collection open (zip, 7z and RAR5 were checked with a real game; RAR4 only with libarchive's own sample file, because current RAR versions can no longer create RAR4 archives).
+- [ ] Double-clicking a `.z64` after installing: whether Windows opens Prometheus 64 straight away or asks once (it asks when another program, such as an older emulator, was chosen before).
 - [ ] Installer on a clean Windows PC: install, Start menu shortcut, first launch, uninstall leaves `Documents\N64 Saves` alone.
 - [ ] Vulkan path for ParaLLEl-RDP: accurate rendering at high resolution, not wired yet.
