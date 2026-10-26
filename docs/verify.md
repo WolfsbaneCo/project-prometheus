@@ -7,8 +7,8 @@ Every **VERIFY** item from the brief, plus the ones the decision notes added. Br
 - [ ] **Licensing of cores and plugins (4.1).** Partly done in [0002](decisions/0002-licensing.md): licences recorded and handling until the first distribution decided. Still open: "or later" status of GLideN64, which ParaLLEl-RSP licence applies, and Qt module licences.
 - [x] **Exact VI options of the chosen renderer (5.1).** ParaLLEl-RDP in Mupen64Plus-Next exposes dither filter, divot filter, gamma dither, VI anti-aliasing, VI bilinear, overscan, native texture LOD, native texrects, super-sampled read-back, deinterlace method, downscaling and synchronous mode. Internal resolution is 1x, 2x, 4x or 8x only. See [0001](decisions/0001-core-and-stack.md).
 - [x] **Current save formats of each target (8.3).** Project64, standalone mupen64plus and RetroArch with Mupen64Plus-Next checked against source. See [0003](decisions/0003-save-formats.md).
-- [ ] **Is the `drive.file` OAuth scope enough? (9.4)** Check before Phase 3. It must cover "Restore from Drive" on a new install, which needs to find a folder the app created from a different install.
-- [ ] **Refresh-token expiry for "external" apps in "testing" status (9.4).** Check the current Google rules, and whether an internal Workspace app avoids the expiry. Depends on open question 6.
+- [ ] **Is the `drive.file` OAuth scope enough? (9.4)** It must cover "Restore from Drive" on a new install, which needs to find a folder the app created from a different install. Google's scope guide calls `drive.file` non-sensitive and per-file; that files made by one install (or one client of the same Cloud project, such as a later Android one) are visible to another is expected from how Google defines "the app", but not yet checked against real Google. See [0006](decisions/0006-drive-backup.md).
+- [x] **Refresh-token expiry for "external" apps in "testing" status (9.4).** Google's own setup docs: refresh tokens expire after 7 days while the consent screen is in Testing, and generally don't once it is In production. The setup guide publishes the app ([`google-drive-setup.md`](google-drive-setup.md)); an internal Workspace app would shut out players outside that Workspace, so the app is External.
 - [ ] **Cartridge compatibility per save type (13).** EEPROM, battery SRAM and FlashRAM support, and the dump byte order of the chosen reader, writer or flash cart. Phase 5.
 
 ## Added by the decision notes
@@ -46,3 +46,11 @@ Checked with two copies of the app on one Linux machine through a local copy of 
 - [ ] A Mario Party session and a Smash 64 match between two homes (brief 14, Phase 4): input delay that feels right, how often "Waiting for…" appears on Wi-Fi.
 - [ ] Rumble Pak and Controller Pak choice online: each port gets a Rumble Pak when its player's controller can rumble. Games that store data on the Controller Pak would not see it for a rumbling player.
 - [ ] Brief 11.6 (optional): give guests a copy of the finished save. Not built; guests' saves are simply left alone.
+
+## Added by Google Drive backup (Phase 3, see [0006](decisions/0006-drive-backup.md))
+
+Checked against a stand-in for Google's sign-in and Drive API (the same requests the app makes): two Linux "computers" and a Windows one under Wine, sharing one Drive.
+
+- [ ] The whole flow against real Google, once the project is registered: the sign-in page, the token exchange (a forum report says Desktop clients need the client secret even with PKCE; the app sends it when the build has one), `about` with only `drive.file`, multipart uploads and the 7-day question after publishing.
+- [ ] Windows Credential Manager on a real Windows PC (checked under Wine), and that the browser's return to `127.0.0.1` raises no firewall prompt.
+- [ ] Brief 9.5 (settings sync), section 10 (sharing on a home network) and optional encryption: not built yet.

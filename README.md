@@ -42,6 +42,15 @@ Online games happen in a private **group**. One person sets the group up once, a
 
 Each computer runs the game itself and only controller presses travel, so everyone keeps their own picture settings, and couch players can join too (two on one computer and two on another). The host's save is used and stays on the host's computer, backed up first; guests' own saves aren't touched. Save states are off while online, the host's menu pauses everyone, and only the host can reset. If someone drops out, the host keeps playing offline. Under about 40 ms of ping plays great, up to 80 ms is fine for most games; a wired connection plays smoother than Wi-Fi. Details: [`relay/README.md`](relay/README.md).
 
+### Backing up to Google Drive
+
+Press **B** in the library (or click **Back up**), then **Connect Google Drive** and sign in in your browser. Your saves go into a folder called **N64 Saves** in your Google Drive, quietly, when you close Prometheus 64 and every hour while it's open. Only saves go up, never games. Prometheus 64 can only see that folder, nothing else in your Drive.
+
+- **Carry on on another computer:** connect the same Google account there, and your in-game saves come down by themselves. Save states are backed up too, but they stay with the computer that made them.
+- **Saved on two computers in between?** The Backup screen asks which one to keep, and the other stays in history. Nothing is ever overwritten without asking.
+- **Offline?** Saves stay on the computer and go up when the connection returns.
+- The library shows when the last backup ran. **Back up now** runs one straight away, **Disconnect** signs out and leaves the files in Drive, and both automatic backups and save states can be switched off.
+
 ### Picture presets
 
 | Preset | Look |
@@ -66,6 +75,8 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0003 Save formats and the canonical master copy](docs/decisions/0003-save-formats.md)
   - [0004 How the player is built](docs/decisions/0004-player-architecture.md)
   - [0005 Online play](docs/decisions/0005-online-play.md)
+  - [0006 Google Drive backup](docs/decisions/0006-drive-backup.md)
+- **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
 - **Waiting on the owner:** [`docs/open-questions.md`](docs/open-questions.md)
 - **Unverified assumptions:** [`docs/verify.md`](docs/verify.md)
 
@@ -75,7 +86,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 |---|---|
 | 1: Player | **Playable.** Library (with zip, 7z and rar), picture presets, fill modes, resolution up to supersampling, HD textures, fullscreen, quick menu, mouse, save states, local multiplayer up to 4, rumble, button remapping, Windows installer. Still to come: the Vulkan renderer (ParaLLEl-RDP) and per-person profiles |
 | 2: Saves | **Working.** In-game saves stored in the library with history; imports from other emulators; `n64save` tool and converters |
-| 3: Google Drive sync | Not started |
+| 3: Google Drive sync | **Working.** Connect in the app, automatic backups (on close, hourly, at start), carrying on across computers with in-game saves, choosing when two computers both saved, offline retries, save states as a per-computer backup. Checked against a stand-in for Google with two Linux computers and a Windows one; waiting for the project's Google registration ([setup](docs/google-drive-setup.md)). Still to come: syncing settings, device-to-device sharing on a home network, optional encryption |
 | 4: Netplay | **Working.** Private groups with a shared key file and a relay on the group owner's free Cloudflare account (set up from inside the app), game codes, lockstep with game and version checks, adjustable input delay, the host's save. Checked with Harvest Moon 64 and Super Smash Bros. between two copies on Linux and between Linux and Windows; not yet over the internet |
 | 5: Cartridge | Not started |
 
