@@ -11,16 +11,21 @@ The app plays games the user already owns and adds themselves. It never download
 3. Press **O** (or **Y** on a controller) and choose the folder that holds your games: `.z64`, `.n64` and `.v64` files, or the same packed in `.zip`, `.7z` or `.rar` archives (no need to unpack them; an archive with several games shows each one). You can also drop a game onto the window, or double-click a game file if you ticked that option in the installer.
 4. Pick a game and press **Enter** (or **A**). To have a friend join, they press **Start** on another controller. Press **F1** for every key.
 
+The **mouse** works everywhere: click a game to play it, click menu items (the ‹ › arrows change a value), click the shortcuts along the bottom of the library, and right-click during a game for the menu. Menus also move with W/A/S/D or the number pad, for keyboards without working arrow keys.
+
 | Key | What it does |
 |---|---|
-| Esc, or Back/Guide on a controller | Quick menu: save states, picture, fill mode, resolution, volume, players |
+| Esc, right-click, or Back/Guide on a controller | Quick menu: save states, picture, fill mode, resolution, volume, players, controls |
+| C (in the library) | Controls: change any key or controller button |
 | F2 / F3 | Next fill mode / next picture preset |
 | F5 / F7 / F6 | Save state / load state / next state slot |
 | F10 | Who's playing: seat controllers and keyboards for up to 4 players |
 | F11 or Alt+Enter | Fullscreen |
 | F12 | Screenshot |
 
-**Keyboard (one player):** arrows move, X = A, C = B, Z = Z, Enter = Start, A/S = L/R, I/J/K/L = C buttons, T/F/G/H = D-pad, Shift = walk. Two players can share one keyboard: the left half (WASD) and the right half (arrows) each become a controller from "Who's playing".
+**Keyboard (one player), by default:** arrows move, X = A, C = B, Z = Z, Enter = Start, A/S = L/R, I/J/K/L = C buttons, T/F/G/H = D-pad, Shift = walk. Two players can share one keyboard: the left half (WASD) and the right half (arrows) each become a controller from "Who's playing".
+
+**Changing the controls:** press **C** in the library (or Menu > Controls). Pick Keyboard, Left half, Right half or Controller, click a control and press the key or button you want. A key that is already in use swaps places, so nothing is left without a key. Changes save straight away; "Reset to defaults" undoes them.
 
 **Saves** go into `Documents\N64 Saves`, one folder per game, with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file. The emulator's original file is only read, never changed.
 

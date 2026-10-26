@@ -26,6 +26,7 @@ Checked so far on Linux with a software GPU (Mesa llvmpipe) and public-domain ho
 
 - [ ] Sound is clean and in sync in a real game (the audio path is wired and receives the core's samples; never heard).
 - [ ] Physical gamepads: press Start to join, the button layout, rumble, and the owner's N64 controller adapter.
+- [ ] Remapping a real controller on the Controls screen (the binding logic is unit-tested; capturing a press needs a device).
 - [ ] Picture presets and "Auto" internal resolution on the owner's GPU and screen (open question 2): speed at 5x and the look of Clean, Sharp, Retro and Native.
 - [ ] Widescreen fill mode in the owner's games: which ones draw correctly with the 16:9 hack.
 - [ ] Windows folder and file pickers (O and I on the library screen) and dropping a game file onto the window.
