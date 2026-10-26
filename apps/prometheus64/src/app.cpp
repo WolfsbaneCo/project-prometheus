@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <tuple>
 
 #include "archive.hpp"
 #include "savekit/formats.hpp"
@@ -26,12 +27,21 @@ const Color kBg0 = rgb(0x17100F), kBg1 = rgb(0x0A0A0B), kPanel = rgb(0x18181B), 
             kRed = rgb(0xE8262E), kText = rgb(0xF4F1EE), kDim = rgb(0xA59F9B), kFaint = rgb(0x6E6966);
 const Color kPlayerColors[4] = {rgb(0xE8262E), rgb(0x3D7BF0), rgb(0x2FB45A), rgb(0xF2C12E)};
 
-enum UiAction { kUp, kDown, kLeft, kRight, kAccept, kBack, kMenu };
+enum UiAction { kUp, kDown, kLeft, kRight, kAccept, kBack, kMenu, kPrevTab, kNextTab };
 enum DialogKind { kFolderChosen = 1, kSaveChosen = 2 };
 enum MenuId {
   kResume, kSaveState, kLoadState, kSlot, kPicture, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
-  kPlayers, kReset, kQuit
+  kPlayers, kControlsItem, kReset, kQuit
 };
+// Clickable areas (App::Hit::kind).
+enum HitKind {
+  kHitPanel, kHitTile, kHitAddGames, kHitHint, kHitMenuRow, kHitMenuDec, kHitMenuInc, kHitMenuButton, kHitTab,
+  kHitEntry, kHitSeatingDone
+};
+// Footer shortcuts on the library screen (kHitHint arg).
+enum HintId { kHintPlay, kHintFolder, kHintImport, kHintControls, kHintPlayers, kHintFullscreen, kHintHelp };
+constexpr int kEntryReset = -1, kEntryDone = -2;
+constexpr uint64_t kMouseIdleNs = 2'500'000'000;  // in a game, the cursor hides after this
 
 struct PresetDef {
   const char* name;
@@ -269,6 +279,7 @@ bool App::init(std::string& error) {
   }
 
   input_.init();
+  input_.load_bindings(settings_);
   rescan();
   set_fullscreen(opt_.fullscreen || settings_.get_int("fullscreen", 0) == 1);
   if (!opt_.rom.empty()) {
@@ -385,7 +396,7 @@ bool App::start_game(const Game& game) {
   acc_ns_ = 0;
   last_ns_ = SDL_GetTicksNS();
   settings_.set("last_game", utf8(game.path));
-  toast(game.title + "  -  press Esc (or Back on a controller) for the menu", 5);
+  toast(game.title + "  -  Esc, right-click or Back on a controller opens the menu", 5);
   if (input_.keyboard_shared()) toast("Two players share the keyboard: gamepads work better", 5);
   return true;
 }
@@ -673,6 +684,26 @@ void App::loop() {
       ++next_key;
     }
 
+    // Test mode: left clicks ("frame:x,y" in pixels), sent like real mouse events.
+    for (const auto& c : opt_.clicks) {
+      const auto colon = c.find(':'), comma = c.find(',');
+      if (std::stoull(c.substr(0, colon)) != frames_drawn) continue;
+      const float d = SDL_GetWindowPixelDensity(window_) > 0 ? SDL_GetWindowPixelDensity(window_) : 1.0f;
+      const float x = std::stof(c.substr(colon + 1, comma - colon - 1)) / d, y = std::stof(c.substr(comma + 1)) / d;
+      SDL_Event m{};
+      m.type = SDL_EVENT_MOUSE_MOTION;
+      m.motion.x = x;
+      m.motion.y = y;
+      handle(m);
+      m = {};
+      m.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+      m.button.button = SDL_BUTTON_LEFT;
+      m.button.x = x;
+      m.button.y = y;
+      m.button.down = true;
+      handle(m);
+    }
+
     // Test mode: held N64 buttons ("from-to:player:button").
     for (const auto& h : opt_.holds) {
       const auto dash = h.find('-'), c1 = h.find(':'), c2 = h.find(':', c1 + 1);
@@ -759,6 +790,13 @@ void App::handle(const SDL_Event& e) {
     menu_index_ = 0;
   }
 
+  // The Controls screen waiting for a key or button gets it before anything else can act on it.
+  if (overlay_ == Overlay::Controls && controls_capture_ && handle_capture(e)) return;
+  if (e.type == SDL_EVENT_MOUSE_MOTION || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_WHEEL) {
+    handle_mouse(e);
+    return;
+  }
+
   // Seat players first, so a gamepad's first press joins instead of acting.
   if (input_.handle_event(e)) return;
   if (handle_hotkey(e)) return;
@@ -838,14 +876,16 @@ bool App::handle_hotkey(const SDL_Event& e) {
 
 void App::handle_home(const SDL_Event& e) {
   if (e.type == SDL_EVENT_KEY_DOWN) {
+    // Arrows, WASD or the number pad all move, for keyboards with missing or broken arrow keys.
     switch (e.key.scancode) {
-      case SDL_SCANCODE_UP: ui_action(kUp); break;
-      case SDL_SCANCODE_DOWN: ui_action(kDown); break;
-      case SDL_SCANCODE_LEFT: ui_action(kLeft); break;
-      case SDL_SCANCODE_RIGHT: ui_action(kRight); break;
+      case SDL_SCANCODE_UP: case SDL_SCANCODE_W: case SDL_SCANCODE_KP_8: ui_action(kUp); break;
+      case SDL_SCANCODE_DOWN: case SDL_SCANCODE_S: case SDL_SCANCODE_KP_2: ui_action(kDown); break;
+      case SDL_SCANCODE_LEFT: case SDL_SCANCODE_A: case SDL_SCANCODE_KP_4: ui_action(kLeft); break;
+      case SDL_SCANCODE_RIGHT: case SDL_SCANCODE_D: case SDL_SCANCODE_KP_6: ui_action(kRight); break;
       case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER: ui_action(kAccept); break;
       case SDL_SCANCODE_O: choose_games_folder(); break;
       case SDL_SCANCODE_I: choose_save_to_import(); break;
+      case SDL_SCANCODE_C: open_controls(); break;
       default: break;
     }
   } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
@@ -864,12 +904,14 @@ void App::handle_home(const SDL_Event& e) {
 void App::handle_menu(const SDL_Event& e) {
   if (e.type == SDL_EVENT_KEY_DOWN) {
     switch (e.key.scancode) {
-      case SDL_SCANCODE_UP: ui_action(kUp); break;
-      case SDL_SCANCODE_DOWN: ui_action(kDown); break;
-      case SDL_SCANCODE_LEFT: ui_action(kLeft); break;
-      case SDL_SCANCODE_RIGHT: ui_action(kRight); break;
+      case SDL_SCANCODE_UP: case SDL_SCANCODE_W: case SDL_SCANCODE_KP_8: ui_action(kUp); break;
+      case SDL_SCANCODE_DOWN: case SDL_SCANCODE_S: case SDL_SCANCODE_KP_2: ui_action(kDown); break;
+      case SDL_SCANCODE_LEFT: case SDL_SCANCODE_A: case SDL_SCANCODE_KP_4: ui_action(kLeft); break;
+      case SDL_SCANCODE_RIGHT: case SDL_SCANCODE_D: case SDL_SCANCODE_KP_6: ui_action(kRight); break;
       case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER: case SDL_SCANCODE_SPACE: ui_action(kAccept); break;
       case SDL_SCANCODE_ESCAPE: case SDL_SCANCODE_BACKSPACE: ui_action(kBack); break;
+      case SDL_SCANCODE_Q: ui_action(kPrevTab); break;
+      case SDL_SCANCODE_E: case SDL_SCANCODE_TAB: ui_action(kNextTab); break;
       default: break;
     }
   } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
@@ -880,12 +922,18 @@ void App::handle_menu(const SDL_Event& e) {
       case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: ui_action(kRight); break;
       case SDL_GAMEPAD_BUTTON_SOUTH: ui_action(kAccept); break;
       case SDL_GAMEPAD_BUTTON_EAST: case SDL_GAMEPAD_BUTTON_BACK: case SDL_GAMEPAD_BUTTON_GUIDE: ui_action(kBack); break;
+      case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: ui_action(kPrevTab); break;
+      case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: ui_action(kNextTab); break;
       default: break;
     }
   }
 }
 
 void App::ui_action(int action) {
+  if (overlay_ == Overlay::Controls) {
+    controls_action(action);
+    return;
+  }
   if (overlay_ == Overlay::Seating || overlay_ == Overlay::Help) {
     if (action == kBack || action == kAccept || action == kMenu) {
       input_.stop_seating();
@@ -952,6 +1000,7 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Volume", std::to_string(settings_.get_int("volume", 80)) + "%", kVolume},
       {"Fullscreen", fullscreen_ ? "On" : "Off", kFullscreenItem},
       {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers},
+      {"Controls", "", kControlsItem},
       {"Reset game", "", kReset},
       {"Quit to library", "", kQuit},
   };
@@ -1023,6 +1072,9 @@ void App::menu_change(int id, int dir) {
         overlay_ = Overlay::Seating;
       }
       break;
+    case kControlsItem:
+      if (dir == 0) open_controls();
+      break;
     case kReset:
       if (dir == 0) {
         core_.reset();
@@ -1048,14 +1100,27 @@ void App::draw() {
     video_.draw_game(out_w_, out_h_, current_look());
   }
   ui_.begin(out_w_, out_h_);
+  hits_.clear();
+  drawing_overlay_ = false;
   if (screen_ == Screen::Home) draw_home();
+  const bool playing = screen_ == Screen::Playing && overlay_ == Overlay::None;
+  if (playing && mouse_recent()) {
+    // The mouse moved during a game: offer the menu, for players without a free key or button.
+    const float s = out_h_ / 1080.0f;
+    draw_button(out_w_ - 32 * s, 28 * s, "Menu", s, false, false, kHitMenuButton, 0, true);
+  }
+  drawing_overlay_ = true;
   if (overlay_ == Overlay::Menu) draw_menu();
   if (overlay_ == Overlay::Seating) draw_seating();
   if (overlay_ == Overlay::Help) draw_help();
+  if (overlay_ == Overlay::Controls) draw_controls();
   if (overlay_ == Overlay::None) draw_toasts();  // messages wait while a menu is open
   ui_.end();
-  SDL_HideCursor();
-  if (screen_ == Screen::Home || overlay_ != Overlay::None) SDL_ShowCursor();
+  if (!playing || mouse_recent()) {
+    SDL_ShowCursor();
+  } else {
+    SDL_HideCursor();
+  }
 }
 
 void App::draw_players_strip(float x, float y, float s) {
@@ -1082,11 +1147,33 @@ void App::draw_home() {
   ui_.text(margin + 92 * s, 52 * s, "Prometheus 64", 44 * s, kText, true);
   ui_.text(margin + 94 * s, 106 * s, "Classics, rekindled", 21 * s, kDim);
 
+  // Footer: every shortcut is also a button.
   const float footer_h = 84 * s;
   ui_.rect(0, H - footer_h, W, footer_h, rgb(0x0C0C0D, 0.92f));
-  const std::string hints = games_.empty() ? "O  Choose games folder      F10  Who's playing      F11  Fullscreen      F1  Help"
-                                           : "Enter / A  Play      O / Y  Games folder      I  Import a save      F10  Who's playing      F11  Fullscreen      F1  Help";
-  ui_.text(margin, H - footer_h + 30 * s, hints, 19 * s, kDim);
+  struct HintChip {
+    const char* key;
+    const char* label;
+    int id;
+  };
+  std::vector<HintChip> chips;
+  if (!games_.empty()) chips.push_back({"Enter", "Play", kHintPlay});
+  chips.push_back({"O", games_.empty() ? "Choose games folder" : "Games folder", kHintFolder});
+  if (!games_.empty()) chips.push_back({"I", "Import a save", kHintImport});
+  chips.push_back({"C", "Controls", kHintControls});
+  chips.push_back({"F10", "Who's playing", kHintPlayers});
+  chips.push_back({"F11", "Fullscreen", kHintFullscreen});
+  chips.push_back({"F1", "Help", kHintHelp});
+  float hx = margin - 14 * s;
+  const float hy = H - footer_h + 18 * s, hh = 48 * s, hs = 19 * s;
+  for (const HintChip& c : chips) {
+    const float kw = ui_.measure(c.key, hs, true), lw = ui_.measure(c.label, hs);
+    const float w = kw + lw + 40 * s;
+    if (mouse_over(hx, hy, w, hh)) ui_.rect(hx, hy, w, hh, rgb(0xFFFFFF, 0.07f), 12 * s);
+    ui_.text(hx + 14 * s, hy + 12 * s, c.key, hs, kText, true);
+    ui_.text(hx + 26 * s + kw, hy + 12 * s, c.label, hs, kDim);
+    add_hit(hx, hy, w, hh, kHitHint, c.id);
+    hx += w + 6 * s;
+  }
   draw_players_strip(W - margin - (4 * 190 + 3 * 10) * s, 70 * s, s);
 
   if (games_.empty()) {
@@ -1096,6 +1183,8 @@ void App::draw_home() {
     ui_.text(W / 2, cy + 60 * s, "Press O (or Y on a controller) to choose the folder with your N64 game files.", 22 * s,
              kDim, false, Align::Center);
     ui_.text(W / 2, cy + 94 * s, "Zipped games (.zip, .7z, .rar) work too. You can also drop a game onto this window.", 22 * s, kDim, false, Align::Center);
+    const float bw = ui_.measure("Choose games folder", 22 * s, true) + 56 * s;
+    draw_button(W / 2 - bw / 2, cy + 150 * s, "Choose games folder", s, true, false, kHitAddGames);
     return;
   }
 
@@ -1103,8 +1192,13 @@ void App::draw_home() {
   const int cols = std::max(1, static_cast<int>((W - 2 * margin + gap) / (tile_w + gap)));
   const float grid_w = cols * tile_w + (cols - 1) * gap, left = (W - grid_w) / 2;
   const int rows_visible = std::max(1, static_cast<int>((H - footer_h - top + gap) / (tile_h + gap)));
-  const int sel_row = selected_ / cols;
-  const int first_row = std::max(0, sel_row - rows_visible + 1);
+  // Scroll only as far as needed to keep the selection visible, so pointing at a tile never moves
+  // the grid under the mouse.
+  const int sel_row = selected_ / cols, total_rows = (static_cast<int>(games_.size()) + cols - 1) / cols;
+  if (sel_row < home_first_row_) home_first_row_ = sel_row;
+  if (sel_row >= home_first_row_ + rows_visible) home_first_row_ = sel_row - rows_visible + 1;
+  home_first_row_ = std::clamp(home_first_row_, 0, std::max(0, total_rows - rows_visible));
+  const int first_row = home_first_row_;
   std::error_code ec;
   for (int i = first_row * cols; i < static_cast<int>(games_.size()); ++i) {
     const int row = i / cols - first_row, col = i % cols;
@@ -1112,6 +1206,7 @@ void App::draw_home() {
     const Game& g = games_[i];
     const bool sel = i == selected_;
     const float x = left + col * (tile_w + gap), y = top + row * (tile_h + gap);
+    add_hit(x, y, tile_w, tile_h, kHitTile, i);
     if (sel) {
       ui_.rect(x - 10 * s, y - 10 * s, tile_w + 20 * s, tile_h + 20 * s, kRed.with_alpha(0.10f), 26 * s);
       ui_.gradient(x, y, tile_w, tile_h, rgb(0x3A1517), kTile, 18 * s);
@@ -1143,6 +1238,7 @@ void App::draw_menu() {
   const float px = (W - pw) / 2, py = std::max(20 * s, (H - ph) / 2);
   ui_.rect(px, py, pw, ph, kPanel.with_alpha(0.97f), 24 * s);
   ui_.outline(px, py, pw, ph, rgb(0xFFFFFF, 0.06f), 24 * s, 1.5f * s);
+  add_hit(px, py, pw, ph, kHitPanel);
   ui_.image(ui_.logo(), px + 30 * s, py + 30 * s, 48 * s, 48 * s);
   ui_.text(px + 94 * s, py + 30 * s, ui_.fit(game_ ? game_->title : "", 28 * s, pw - 130 * s, true), 28 * s, kText, true);
   ui_.text(px + 94 * s, py + 66 * s, "Paused", 18 * s, kDim);
@@ -1153,16 +1249,28 @@ void App::draw_menu() {
       ui_.rect(px + 18 * s, y, pw - 36 * s, row - 6 * s, kRed.with_alpha(0.16f), 12 * s);
       ui_.rect(px + 18 * s, y + 10 * s, 4 * s, row - 26 * s, kRed, 2 * s);
     }
+    add_hit(px + 18 * s, y, pw - 36 * s, row - 6 * s, kHitMenuRow, i);
     ui_.text(px + 40 * s, y + 11 * s, items[i].label, 21 * s, sel ? kText : kText.with_alpha(0.82f), sel);
     if (!items[i].value.empty()) {
       const bool adjustable = items[i].id >= kSlot && items[i].id <= kVolume;
-      const std::string v = adjustable && sel ? "<  " + items[i].value + "  >" : items[i].value;
-      ui_.text(px + pw - 40 * s, y + 11 * s, v, 21 * s, sel ? kText : kDim, false, Align::Right);
+      if (adjustable && sel) {
+        // Clickable arrows either side of the value.
+        const float bs = 32 * s, by = y + (row - 6 * s - bs) / 2, inc_x = px + pw - 36 * s - bs;
+        const float vw = ui_.measure(items[i].value, 21 * s), dec_x = inc_x - 12 * s - vw - 12 * s - bs;
+        for (const auto& [bx, glyph, kind] : {std::tuple{dec_x, "<", kHitMenuDec}, std::tuple{inc_x, ">", kHitMenuInc}}) {
+          ui_.rect(bx, by, bs, bs, mouse_over(bx, by, bs, bs) ? kRed.with_alpha(0.55f) : rgb(0xFFFFFF, 0.08f), 9 * s);
+          ui_.text(bx + bs / 2, by + 4 * s, glyph, 20 * s, kText, true, Align::Center);
+          add_hit(bx, by, bs, bs, kind, i);
+        }
+        ui_.text(inc_x - 12 * s, y + 11 * s, items[i].value, 21 * s, kText, false, Align::Right);
+      } else {
+        ui_.text(px + pw - 40 * s, y + 11 * s, items[i].value, 21 * s, sel ? kText : kDim, false, Align::Right);
+      }
     }
     y += row;
   }
-  ui_.text(px + pw / 2, py + ph - 42 * s, "Up/Down choose     Left/Right change     Enter / A select     Esc / B back", 16 * s,
-           kFaint, false, Align::Center);
+  ui_.text(px + pw / 2, py + ph - 42 * s, "Up/Down or W/S choose     Left/Right change     Enter select     Esc back     Mouse: click",
+           16 * s, kFaint, false, Align::Center);
 }
 
 void App::draw_seating() {
@@ -1195,7 +1303,9 @@ void App::draw_seating() {
     ui_.text(W / 2, y0 + ch + 70 * s, "gamepads work better, and stick-spinning minigames are much easier on one.", 20 * s,
              rgb(0xF2C12E), false, Align::Center);
   }
-  ui_.text(W / 2, H - 70 * s, "F10, Esc or B when everyone has joined", 20 * s, kDim, false, Align::Center);
+  ui_.text(W / 2, H - 130 * s, "F10, Esc or B when everyone has joined", 20 * s, kDim, false, Align::Center);
+  const float bw = ui_.measure("Done", 22 * s, true) + 56 * s;
+  draw_button(W / 2 - bw / 2, H - 92 * s, "Done", s, true, false, kHitSeatingDone);
 }
 
 void App::draw_help() {
@@ -1206,16 +1316,26 @@ void App::draw_help() {
   ui_.rect(px, py, pw, ph, kPanel, 24 * s);
   ui_.text(px + 40 * s, py + 32 * s, "Controls", 34 * s, kText, true);
   struct Row {
-    const char* a;
-    const char* b;
+    std::string a, b;
   };
+  // The keyboard and controller columns show the bindings in use (changed on the Controls screen).
+  auto k = [&](int c) { return input_.key_label(0, c); };
+  auto four = [&](int first, const char* sep) {
+    return k(first) + sep + k(first + 1) + sep + k(first + 2) + sep + k(first + 3);
+  };
+  const bool arrows = input_.key(0, kStickUp) == SDL_SCANCODE_UP && input_.key(0, kStickDown) == SDL_SCANCODE_DOWN &&
+                      input_.key(0, kStickLeft) == SDL_SCANCODE_LEFT && input_.key(0, kStickRight) == SDL_SCANCODE_RIGHT;
   const Row keyboard[] = {
-      {"Control stick", "Arrow keys (hold Left Shift to walk)"}, {"A / B", "X / C"}, {"Z trigger", "Z"},
-      {"L / R", "A / S"}, {"Start", "Enter"}, {"C buttons", "I J K L"}, {"D-pad", "T F G H"},
+      {"Control stick", arrows ? std::string("Arrow keys") : four(kStickUp, " / ")},
+      {"Walk (hold)", k(kWalk)}, {"A / B", k(kA) + " / " + k(kB)}, {"Z trigger", k(kZ)},
+      {"L / R", k(kL) + " / " + k(kR)}, {"Start", k(kStart)}, {"C buttons", four(kCUp, " ")},
+      {"D-pad", four(kDUp, " ")},
   };
   const Row pad[] = {
-      {"Control stick", "Left stick"}, {"A / B", "A / X"}, {"Z trigger", "Either trigger"}, {"L / R", "Bumpers"},
-      {"Start", "Start"}, {"C buttons", "Right stick (or B and Y)"}, {"Menu", "Back or Guide"},
+      {"Control stick", "Left stick"}, {"A / B", input_.pad_label(kA) + " / " + input_.pad_label(kB)},
+      {"Z trigger", input_.pad_label(kZ)}, {"L / R", input_.pad_label(kL) + " / " + input_.pad_label(kR)},
+      {"Start", input_.pad_label(kStart)}, {"C-Up / C-Down", input_.pad_label(kCUp) + " / " + input_.pad_label(kCDown)},
+      {"Menu", "Back or Guide"},
   };
   const Row hotkeys[] = {
       {"Esc", "Menu"}, {"F11 / Alt+Enter", "Fullscreen"}, {"F2", "Next fill mode"}, {"F3", "Next picture style"},
@@ -1232,13 +1352,362 @@ void App::draw_help() {
       y += 34 * s;
     }
   };
-  column(px + 40 * s, "Keyboard", keyboard, 7);
+  column(px + 40 * s, "Keyboard", keyboard, 8);
   column(px + pw / 3 + 20 * s, "Controller", pad, 7);
   column(px + 2 * pw / 3, "Shortcuts", hotkeys, 9);
+  ui_.text(px + 40 * s, py + ph - 122 * s,
+           "Change any key or button on the Controls screen: press C in the library, or Menu > Controls.", 18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 90 * s,
-           "Two players on one keyboard: left uses WASD, F/G for A/B; right uses the arrows, . and , for A/B.", 18 * s, kDim);
+           "The mouse works everywhere: click a game to play, click menu items, right-click during a game for the menu.",
+           18 * s, kDim);
   ui_.text(px + 40 * s, py + ph - 58 * s, "Your games save automatically into Documents\\N64 Saves, with the last 10 versions kept.",
            18 * s, kDim);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Mouse
+
+void App::add_hit(float x, float y, float w, float h, int kind, int arg) {
+  hits_.push_back({x, y, w, h, kind, arg, drawing_overlay_});
+}
+
+const App::Hit* App::hit_at(float x, float y) const {
+  const bool overlay = overlay_ != Overlay::None;
+  for (auto it = hits_.rbegin(); it != hits_.rend(); ++it) {  // last drawn is on top
+    if (it->overlay == overlay && x >= it->x && y >= it->y && x < it->x + it->w && y < it->y + it->h) return &*it;
+  }
+  return nullptr;
+}
+
+bool App::mouse_recent() const { return mouse_seen_ns_ && SDL_GetTicksNS() - mouse_seen_ns_ < kMouseIdleNs; }
+
+bool App::mouse_over(float x, float y, float w, float h) const {
+  return (screen_ == Screen::Home || overlay_ != Overlay::None || mouse_recent()) && mouse_x_ >= x && mouse_y_ >= y &&
+         mouse_x_ < x + w && mouse_y_ < y + h;
+}
+
+void App::handle_mouse(const SDL_Event& e) {
+  const float d = SDL_GetWindowPixelDensity(window_) > 0 ? SDL_GetWindowPixelDensity(window_) : 1.0f;
+  if (e.type == SDL_EVENT_MOUSE_MOTION) {
+    mouse_x_ = e.motion.x * d;
+    mouse_y_ = e.motion.y * d;
+    mouse_seen_ns_ = SDL_GetTicksNS();
+    if (const Hit* h = hit_at(mouse_x_, mouse_y_)) hover(*h);
+    return;
+  }
+  if (e.type == SDL_EVENT_MOUSE_WHEEL) {
+    const int dir = e.wheel.y > 0 ? 1 : e.wheel.y < 0 ? -1 : 0;
+    if (dir == 0) return;
+    if (overlay_ == Overlay::Menu) {
+      const Hit* h = hit_at(mouse_x_, mouse_y_);
+      const auto items = menu_items();
+      if (h && (h->kind == kHitMenuRow || h->kind == kHitMenuDec || h->kind == kHitMenuInc) &&
+          items[h->arg].id >= kSlot && items[h->arg].id <= kVolume) {
+        menu_index_ = h->arg;
+        ui_action(dir > 0 ? kRight : kLeft);
+      }
+    } else if (overlay_ == Overlay::None && screen_ == Screen::Home) {
+      ui_action(dir > 0 ? kUp : kDown);
+    }
+    return;
+  }
+  // Button press.
+  mouse_x_ = e.button.x * d;
+  mouse_y_ = e.button.y * d;
+  mouse_seen_ns_ = SDL_GetTicksNS();
+  if (e.button.button == SDL_BUTTON_RIGHT) {
+    if (overlay_ != Overlay::None) {
+      ui_action(kBack);
+    } else if (screen_ == Screen::Playing) {
+      ui_action(kMenu);
+    }
+    return;
+  }
+  if (e.button.button != SDL_BUTTON_LEFT) return;
+  if (const Hit* h = hit_at(mouse_x_, mouse_y_)) {
+    const Hit hit = *h;  // a copy: hits_ is rebuilt whenever the screen is drawn again
+    click(hit);
+  } else if (overlay_ != Overlay::None) {
+    ui_action(kBack);  // a click outside an open menu closes it
+  }
+}
+
+void App::hover(const Hit& h) {
+  switch (h.kind) {
+    case kHitTile: selected_ = h.arg; break;
+    case kHitMenuRow: case kHitMenuDec: case kHitMenuInc: menu_index_ = h.arg; break;
+    case kHitEntry: if (!controls_capture_) controls_index_ = h.arg; break;
+    default: break;
+  }
+}
+
+void App::click(const Hit& h) {
+  switch (h.kind) {
+    case kHitTile:
+      selected_ = h.arg;
+      start_game(games_[h.arg]);
+      break;
+    case kHitAddGames: choose_games_folder(); break;
+    case kHitHint:
+      switch (h.arg) {
+        case kHintPlay: ui_action(kAccept); break;
+        case kHintFolder: choose_games_folder(); break;
+        case kHintImport: choose_save_to_import(); break;
+        case kHintControls: open_controls(); break;
+        case kHintPlayers:
+          input_.start_seating();
+          overlay_ = Overlay::Seating;
+          break;
+        case kHintFullscreen: set_fullscreen(!fullscreen_); break;
+        case kHintHelp: overlay_ = Overlay::Help; break;
+        default: break;
+      }
+      break;
+    case kHitMenuRow: menu_index_ = h.arg; ui_action(kAccept); break;
+    case kHitMenuDec: menu_index_ = h.arg; ui_action(kLeft); break;
+    case kHitMenuInc: menu_index_ = h.arg; ui_action(kRight); break;
+    case kHitMenuButton: ui_action(kMenu); break;
+    case kHitTab:
+      controls_tab_ = h.arg;
+      controls_index_ = 0;
+      controls_capture_ = false;
+      break;
+    case kHitEntry: controls_index_ = h.arg; ui_action(kAccept); break;
+    case kHitSeatingDone: ui_action(kAccept); break;
+    default: break;  // kHitPanel: a click on a menu's background does nothing
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Controls screen
+
+std::vector<App::ControlsEntry> App::controls_entries() const {
+  std::vector<ControlsEntry> out;
+  int row = 0;
+  if (controls_tab_ < Input::kKeyLayouts) {
+    for (int c : std::initializer_list<int>{kStickUp, kStickDown, kStickLeft, kStickRight, kWalk, kDUp, kDDown, kDLeft,
+                                            kDRight}) {
+      out.push_back({c, 0, row++});
+    }
+  } else {
+    row = 1;  // row 0 shows the control stick, which is always the left stick
+    for (int c : {kDUp, kDDown, kDLeft, kDRight}) out.push_back({c, 0, row++});
+  }
+  row = 0;
+  for (int c : {kA, kB, kZ, kStart, kL, kR, kCUp, kCDown, kCLeft, kCRight}) out.push_back({c, 1, row++});
+  out.push_back({kEntryReset, 0, 100});
+  out.push_back({kEntryDone, 1, 100});
+  return out;
+}
+
+void App::open_controls() {
+  if (overlay_ == Overlay::Controls) return;
+  controls_return_ = overlay_ == Overlay::Menu ? Overlay::Menu : Overlay::None;
+  overlay_ = Overlay::Controls;
+  controls_index_ = 0;
+  controls_capture_ = false;
+  // Start on the tab for the device player 1 uses.
+  const Seat& p1 = input_.seat(0);
+  controls_tab_ = p1.kind == DeviceKind::Gamepad ? Input::kKeyLayouts : p1.kind == DeviceKind::Keyboard ? p1.layout : 0;
+}
+
+void App::close_controls() {
+  controls_capture_ = false;
+  input_.save_bindings(settings_);
+  settings_.save();
+  overlay_ = controls_return_;
+}
+
+void App::controls_action(int action) {
+  const auto entries = controls_entries();
+  const int n = static_cast<int>(entries.size());
+  controls_index_ = std::clamp(controls_index_, 0, n - 1);
+  const ControlsEntry cur = entries[controls_index_];
+  switch (action) {
+    case kUp: controls_index_ = (controls_index_ + n - 1) % n; break;
+    case kDown: controls_index_ = (controls_index_ + 1) % n; break;
+    case kLeft: case kRight: {
+      // Jump to the nearest row in the other column.
+      int best = controls_index_, best_d = 1 << 30;
+      for (int i = 0; i < n; ++i) {
+        if (entries[i].column == cur.column) continue;
+        const int dist = std::abs(entries[i].row - cur.row);
+        if (dist < best_d) {
+          best = i;
+          best_d = dist;
+        }
+      }
+      controls_index_ = best;
+      break;
+    }
+    case kPrevTab: case kNextTab:
+      controls_tab_ = (controls_tab_ + (action == kNextTab ? 1 : Input::kKeyLayouts)) % (Input::kKeyLayouts + 1);
+      controls_index_ = 0;
+      break;
+    case kAccept:
+      if (cur.control == kEntryDone) {
+        close_controls();
+      } else if (cur.control == kEntryReset) {
+        if (controls_tab_ < Input::kKeyLayouts) {
+          input_.reset_keys(controls_tab_);
+        } else {
+          input_.reset_pad();
+        }
+        input_.save_bindings(settings_);
+        settings_.save();
+        toast("Controls reset to the defaults");
+      } else {
+        controls_capture_ = true;
+      }
+      break;
+    case kBack: case kMenu: close_controls(); break;
+    default: break;
+  }
+}
+
+bool App::handle_capture(const SDL_Event& e) {
+  const auto entries = controls_entries();
+  const int control = entries[std::clamp(controls_index_, 0, static_cast<int>(entries.size()) - 1)].control;
+  const bool keyboard_tab = controls_tab_ < Input::kKeyLayouts;
+  auto finish = [&]() {
+    controls_capture_ = false;
+    input_.save_bindings(settings_);
+    settings_.save();
+  };
+  switch (e.type) {
+    case SDL_EVENT_KEY_DOWN: {
+      if (e.key.repeat) return true;
+      const SDL_Scancode sc = e.key.scancode;
+      if (sc == SDL_SCANCODE_ESCAPE) {
+        controls_capture_ = false;
+      } else if (!keyboard_tab) {
+        toast("Press a button on the controller (Esc cancels)");
+      } else if (sc >= SDL_SCANCODE_F1 && sc <= SDL_SCANCODE_F12) {
+        toast("The F keys are shortcuts. Choose another key (Esc cancels)");
+      } else {
+        input_.bind_key(controls_tab_, control, sc);
+        finish();
+      }
+      return true;
+    }
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
+      const auto b = static_cast<SDL_GamepadButton>(e.gbutton.button);
+      if (b == SDL_GAMEPAD_BUTTON_BACK || b == SDL_GAMEPAD_BUTTON_GUIDE) {
+        controls_capture_ = false;  // these open the menu in a game, so they stay free
+      } else if (keyboard_tab) {
+        toast("Press a key on the keyboard (Back on the controller cancels)");
+      } else if (input_.bind_pad(control, e)) {
+        finish();
+      }
+      return true;
+    }
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+      if (!keyboard_tab && input_.bind_pad(control, e)) finish();
+      return true;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+      controls_capture_ = false;  // clicking anywhere cancels
+      return true;
+    default:
+      return false;
+  }
+}
+
+float App::draw_button(float x, float y, const std::string& label, float s, bool primary, bool focused, int kind,
+                       int arg, bool right_aligned) {
+  const float fs = 22 * s, w = ui_.measure(label, fs, true) + 56 * s, h = 52 * s;
+  if (right_aligned) x -= w;
+  const bool hot = mouse_over(x, y, w, h);
+  Color fill = primary ? kRed : rgb(0xFFFFFF, 0.08f);
+  if (hot) fill = primary ? rgb(0xF2474E) : rgb(0xFFFFFF, 0.14f);
+  ui_.rect(x, y, w, h, fill, 14 * s);
+  if (focused) ui_.outline(x - 4 * s, y - 4 * s, w + 8 * s, h + 8 * s, kText.with_alpha(0.8f), 17 * s, 2 * s);
+  ui_.text(x + w / 2, y + 13 * s, label, fs, kText, true, Align::Center);
+  add_hit(x, y, w, h, kind, arg);
+  return w;
+}
+
+void App::draw_controls() {
+  const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_), H = static_cast<float>(out_h_);
+  ui_.rect(0, 0, W, H, rgb(0x000000, 0.7f));
+  const float pw = std::min(W - 40 * s, 1180 * s), ph = std::min(H - 40 * s, 900 * s);
+  const float px = (W - pw) / 2, py = (H - ph) / 2;
+  ui_.rect(px, py, pw, ph, kPanel, 24 * s);
+  ui_.outline(px, py, pw, ph, rgb(0xFFFFFF, 0.06f), 24 * s, 1.5f * s);
+  add_hit(px, py, pw, ph, kHitPanel);
+  ui_.text(px + 40 * s, py + 30 * s, "Controls", 34 * s, kText, true);
+  ui_.text(px + 40 * s, py + 78 * s, "Click a control (or select it and press Enter), then press the key or button you want for it.",
+           18 * s, kDim);
+
+  // Tabs.
+  const char* tabs[] = {"Keyboard", "Left half", "Right half", "Controller"};
+  float tx = px + 40 * s;
+  const float ty = py + 118 * s, th = 46 * s;
+  for (int t = 0; t < 4; ++t) {
+    const float w = ui_.measure(tabs[t], 20 * s, true) + 44 * s;
+    const bool on = t == controls_tab_;
+    ui_.rect(tx, ty, w, th, on ? kRed : mouse_over(tx, ty, w, th) ? rgb(0xFFFFFF, 0.14f) : kTile, 23 * s);
+    ui_.text(tx + w / 2, ty + 12 * s, tabs[t], 20 * s, on ? kText : kDim, true, Align::Center);
+    add_hit(tx, ty, w, th, kHitTab, t);
+    tx += w + 10 * s;
+  }
+  ui_.text(tx + 10 * s, ty + 14 * s, "Q / E switch", 16 * s, kFaint);
+  const char* notes[] = {
+      "One player using the whole keyboard.",
+      "The left player when two people share the keyboard (Who's playing, then F).",
+      "The right player when two people share the keyboard (Who's playing, then . ).",
+      "Every controller. The left stick is always the control stick.",
+  };
+  ui_.text(px + 40 * s, ty + th + 18 * s, notes[controls_tab_], 18 * s, kFaint);
+
+  // Two columns of controls.
+  const auto entries = controls_entries();
+  const float top = ty + th + 66 * s, row_h = 46 * s, colw = (pw - 120 * s) / 2;
+  const float colx[2] = {px + 40 * s, px + 80 * s + colw};
+  ui_.text(colx[0] + 14 * s, top, "Movement", 20 * s, kRed, true);
+  ui_.text(colx[1] + 14 * s, top, "Buttons", 20 * s, kRed, true);
+  const float rows_top = top + 40 * s;
+  const bool pulse = (SDL_GetTicks() / 450) % 2 == 0;
+  auto chip = [&](float right, float y, const std::string& text, bool waiting, bool fixed) {
+    const float fs = 19 * s, cw = colw * 0.46f, x = right - cw;
+    ui_.rect(x, y + 5 * s, cw, row_h - 14 * s, waiting ? kRed.with_alpha(pulse ? 0.45f : 0.25f) : rgb(0xFFFFFF, fixed ? 0.04f : 0.09f), 10 * s);
+    ui_.text(x + cw / 2, y + 11 * s, ui_.fit(text, fs, cw - 20 * s), fs, fixed ? kFaint : kText, false, Align::Center);
+  };
+  if (controls_tab_ == Input::kKeyLayouts) {
+    ui_.text(colx[0] + 14 * s, rows_top + 11 * s, "Control stick", 20 * s, kDim);
+    chip(colx[0] + colw - 10 * s, rows_top, "Left stick", false, true);
+  }
+  for (int i = 0; i < static_cast<int>(entries.size()); ++i) {
+    const ControlsEntry& en = entries[i];
+    if (en.control < 0) continue;
+    const float x = colx[en.column], y = rows_top + en.row * row_h;
+    const bool focus = i == controls_index_, waiting = focus && controls_capture_;
+    if (focus) ui_.rect(x, y, colw, row_h - 4 * s, kRed.with_alpha(0.16f), 12 * s);
+    else if (mouse_over(x, y, colw, row_h - 4 * s)) ui_.rect(x, y, colw, row_h - 4 * s, rgb(0xFFFFFF, 0.05f), 12 * s);
+    ui_.text(x + 14 * s, y + 11 * s, Input::control_name(en.control), 20 * s, focus ? kText : kText.with_alpha(0.85f), focus);
+    std::string value;
+    if (waiting) {
+      value = controls_tab_ < Input::kKeyLayouts ? "Press a key..." : "Press a button...";
+    } else if (controls_tab_ < Input::kKeyLayouts) {
+      value = input_.key_label(controls_tab_, en.control);
+    } else {
+      value = input_.pad_label(en.control);
+    }
+    chip(x + colw - 10 * s, y, value, waiting, false);
+    add_hit(x, y, colw, row_h - 4 * s, kHitEntry, i);
+  }
+
+  // Bottom buttons.
+  const float by = py + ph - 84 * s;
+  int reset_i = 0, done_i = 0;
+  for (int i = 0; i < static_cast<int>(entries.size()); ++i) {
+    if (entries[i].control == kEntryReset) reset_i = i;
+    if (entries[i].control == kEntryDone) done_i = i;
+  }
+  draw_button(px + 40 * s, by, "Reset to defaults", s, false, controls_index_ == reset_i, kHitEntry, reset_i);
+  draw_button(px + pw - 40 * s, by, "Done", s, true, controls_index_ == done_i, kHitEntry, done_i, true);
+  ui_.text(px + pw / 2, by + 16 * s,
+           controls_capture_ ? "Esc cancels" : "A key that is already in use swaps places with this one",
+           16 * s, kFaint, false, Align::Center);
 }
 
 void App::draw_toasts() {

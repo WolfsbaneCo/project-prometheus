@@ -31,6 +31,7 @@ struct Options {
   std::string fill, preset;          // test overrides
   std::vector<std::string> keys;     // test mode: "frame:key name" presses
   std::vector<std::string> holds;    // test mode: "from-to:player:button" held N64 buttons
+  std::vector<std::string> clicks;   // test mode: "frame:x,y" left clicks, in pixels
   int poke_frame = 0;                // test mode: write a pattern into save memory at this frame
   std::filesystem::path dump_save;   // test mode: write the core's save memory here on exit
 };
@@ -42,7 +43,7 @@ class App {
 
  private:
   enum class Screen { Home, Playing };
-  enum class Overlay { None, Menu, Seating, Help };
+  enum class Overlay { None, Menu, Seating, Help, Controls };
   struct Toast {
     std::string text;
     uint64_t until_ns;
@@ -50,6 +51,16 @@ class App {
   struct MenuItem {
     std::string label, value;
     int id;
+  };
+  // A clickable area, recorded while drawing and tested against the mouse on the next events.
+  struct Hit {
+    float x, y, w, h;
+    int kind, arg;
+    bool overlay;  // drawn by an overlay: only overlay areas react while one is open
+  };
+  struct ControlsEntry {
+    int control;  // a Control, or kEntryReset / kEntryDone
+    int column, row;
   };
 
   bool init(std::string& error);
@@ -59,12 +70,28 @@ class App {
   void handle_home(const SDL_Event& e);
   void handle_menu(const SDL_Event& e);
   bool handle_hotkey(const SDL_Event& e);
+  void handle_mouse(const SDL_Event& e);
+  bool handle_capture(const SDL_Event& e);  // Controls screen waiting for a key or button
+  void hover(const Hit& h);
+  void click(const Hit& h);
+  const Hit* hit_at(float x, float y) const;
+  void add_hit(float x, float y, float w, float h, int kind, int arg = 0);
+  bool mouse_over(float x, float y, float w, float h) const;
+  bool mouse_recent() const;
   void ui_action(int action);  // shared by keyboard and gamepad: up/down/left/right/accept/back/menu
   void draw();
   void draw_home();
   void draw_menu();
   void draw_seating();
   void draw_help();
+  void draw_controls();
+  // A rounded button; returns its width. `primary` fills it red.
+  float draw_button(float x, float y, const std::string& label, float s, bool primary, bool focused, int kind,
+                    int arg = 0, bool right_aligned = false);
+  void open_controls();
+  void close_controls();
+  void controls_action(int action);
+  std::vector<ControlsEntry> controls_entries() const;
   void draw_toasts();
   void draw_players_strip(float x, float y, float s);
 
@@ -108,6 +135,15 @@ class App {
   Screen screen_ = Screen::Home;
   Overlay overlay_ = Overlay::None;
   int menu_index_ = 0;
+  int home_first_row_ = 0;
+  std::vector<Hit> hits_;
+  bool drawing_overlay_ = false;
+  float mouse_x_ = -1, mouse_y_ = -1;  // pixels
+  uint64_t mouse_seen_ns_ = 0;
+  int controls_tab_ = 0;  // 0-2: keyboard layouts, 3: controllers
+  int controls_index_ = 0;
+  bool controls_capture_ = false;
+  Overlay controls_return_ = Overlay::None;
   int slot_ = 1;
   bool running_ = true;
   bool fullscreen_ = false;
