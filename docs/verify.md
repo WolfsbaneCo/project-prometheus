@@ -28,7 +28,8 @@ Checked so far on Linux with a software GPU (Mesa llvmpipe) and public-domain ho
 - [ ] Physical gamepads: press Start to join, the button layout, rumble, and the owner's N64 controller adapter.
 - [ ] Remapping a real controller on the Controls screen (the binding logic is unit-tested; capturing a press needs a device).
 - [ ] Picture presets and "Auto" resolution on the owner's GPU and screen (open question 2): speed at the screen's own resolution with MSAA 4x and 4xBRZ textures (heaviest on a 4K screen), and the look of Clean, Sharp, Retro and Native.
-- [ ] Widescreen fill mode in the owner's games: which ones draw correctly with the 16:9 hack.
+- [ ] Widescreen fill mode in the owner's games: which ones draw correctly with the 16:9 hack. Harvest Moon 64's intro draws extra scenery correctly; objects popping in at the edges while the camera moves is still to check in normal play.
+- [ ] Super resolution on the owner's GPU: frame rate at twice the screen size with 4xBRZ textures.
 - [ ] Windows folder and file pickers (O and I on the library screen) and dropping a game file onto the window.
 - [ ] Archives from the owner's own collection open (zip, 7z and RAR5 were checked with a real game; RAR4 only with libarchive's own sample file, because current RAR versions can no longer create RAR4 archives).
 - [ ] Double-clicking a `.z64` after installing: whether Windows opens Prometheus 64 straight away or asks once (it asks when another program, such as an older emulator, was chosen before).

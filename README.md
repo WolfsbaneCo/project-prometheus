@@ -38,9 +38,11 @@ The **mouse** works everywhere: click a game to play it, click menu items (the â
 | Retro | 2x resolution with soft scanlines |
 | Native | Pixel-exact, original resolution and dithering, like the console |
 
+**Resolution** (in the menu, per game): **Auto** draws the game at exactly your screen's resolution. **Super** draws it at twice that and shrinks it by half, for the smoothest edges; it needs a strong graphics card. Fixed 1x to 8x are there too.
+
 **Textures** (in the menu, per game): **HD (crisp)** redraws the game's small textures at 4x with clean edges (xBRZ, the default), **HD (soft)** is gentler (HQ4X), **Original** keeps them as the console drew them.
 
-Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a little top and bottom), **Widescreen** (true 16:9 where the game allows it), **Ambient** (a soft glow of the picture fills the side bars) and **Stretch**.
+Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a little top and bottom), **Widescreen** (true 16:9 where the game allows it: Harvest Moon 64 shows extra scenery at both sides), **Ambient** (a soft glow of the picture fills the side bars) and **Stretch**.
 
 ## Documents
 
