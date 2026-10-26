@@ -101,8 +101,10 @@ class App {
   void restart_game_keep_progress();
   void apply_core_options(const Game& game);
   Look current_look() const;
-  int resolution_factor() const;  // 0 = auto (render at render_height)
-  int render_height() const;
+  // Rendering size for a game: a fixed factor, or 0 to render at exactly render_height.
+  int resolution_factor(const std::string& game_id) const;
+  int render_height(const std::string& game_id) const;
+  bool supersampling(const std::string& game_id) const;
   int texture_look(const std::string& game_id) const;
   void run_frames();
 

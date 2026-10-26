@@ -19,7 +19,7 @@ void main() {
 
 // One shader for the game picture and for the blurred "ambient" background behind it.
 // The picture is resampled with a Catmull-Rom (bicubic) filter: exact at 1:1, sharper than
-// bilinear when it is scaled. Only a frame more than twice the output size uses the mipmaps.
+// bilinear when it is scaled. A frame about twice the output size or more uses the mipmaps.
 const char* kFragment = R"(#version 330 core
 uniform sampler2D u_tex;
 uniform vec4 u_src;      // texture rect mapped onto the quad: x0, y0 (bottom), x1, y1 (top)
@@ -347,9 +347,10 @@ Rect Video::draw_game(int out_w, int out_h, const Look& look, float alpha) {
   const float dst[4] = {2.0f * r.x / out_w - 1.0f, 1.0f - 2.0f * (r.y + r.h) / out_h, 2.0f * (r.x + r.w) / out_w - 1.0f,
                         1.0f - 2.0f * r.y / out_h};
   const float step_x = (sx1 - sx0) / std::max(1, r.w), step_y = (sy1 - sy0) / std::max(1, r.h);
-  // Bicubic unless the frame is more than twice the size it is shown at (then mipmaps avoid
-  // shimmer). The sharp-pixel look keeps nearest-neighbour sampling.
-  bicubic_ = look.smooth && static_cast<float>(r.h) >= 0.5f * (sy1 - sy0) * th ? 1.0f : 0.0f;
+  // Bicubic unless the frame is about twice the size it is shown at or more: then the mipmaps
+  // average whole blocks of pixels (exactly 2x2 for supersampling). The sharp-pixel look keeps
+  // nearest-neighbour sampling.
+  bicubic_ = look.smooth && static_cast<float>(r.h) > 0.55f * (sy1 - sy0) * th ? 1.0f : 0.0f;
   gl::glUseProgram(program_);
   gl::glUniform1f(u_lines_, 240.0f * (sy1 - sy0) / v1);  // the N64's 240 lines, minus any crop
   if (alpha < 1.0f) {

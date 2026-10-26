@@ -41,6 +41,7 @@ enum HitKind {
 // Footer shortcuts on the library screen (kHitHint arg).
 enum HintId { kHintPlay, kHintFolder, kHintImport, kHintControls, kHintPlayers, kHintFullscreen, kHintHelp };
 constexpr int kEntryReset = -1, kEntryDone = -2;
+constexpr int kResSuper = 9;  // "resolution" setting: 0 auto, 1-8 fixed factor, 9 supersampled
 constexpr uint64_t kMouseIdleNs = 2'500'000'000;  // in a game, the cursor hides after this
 
 struct PresetDef {
@@ -339,21 +340,27 @@ void App::set_fullscreen(bool on) {
 // ---------------------------------------------------------------------------------------------
 // Games
 
-int App::resolution_factor() const {
-  const std::string id = game_ ? game_->id : "";
+int App::resolution_factor(const std::string& id) const {
   const Preset preset = static_cast<Preset>(std::clamp(settings_.game_int(id, "preset", 0), 0, 3));
   const int fixed = kPresets[static_cast<int>(preset)].factor;
   if (fixed > 0) return fixed;
   const int chosen = settings_.game_int(id, "resolution", 0);
-  if (chosen > 0) return std::clamp(chosen, 1, 8);
-  return 0;  // auto: render at the screen's own size (render_height)
+  if (chosen >= 1 && chosen <= 8) return chosen;
+  return 0;  // auto or super: render at an exact size (render_height)
 }
 
-int App::render_height() const {
+bool App::supersampling(const std::string& id) const {
+  return kPresets[std::clamp(settings_.game_int(id, "preset", 0), 0, 3)].factor == 0 &&
+         settings_.game_int(id, "resolution", 0) == kResSuper;
+}
+
+int App::render_height(const std::string& id) const {
   // The screen's full height, so in fullscreen every game pixel lands on exactly one screen pixel.
   int h = 1080;
   if (const SDL_DisplayMode* m = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window_))) h = m->h;
-  return std::clamp(h, 240, 2880);
+  h = std::clamp(h, 240, 2880);
+  // Super: twice the screen, shrunk by exactly half when shown (a clean 2x2 average per pixel).
+  return supersampling(id) ? std::min(h * 2, 4320) : h;
 }
 
 int App::texture_look(const std::string& id) const {
@@ -370,9 +377,9 @@ void App::apply_core_options(const Game& game) {
   set("rdp-plugin", settings_.get("renderer", p.rdp));
   set("rsp-plugin", settings_.get("renderer", p.rdp) == std::string("gliden64") ? "hle" : p.rsp);
   set("cpucore", "dynamic_recompiler");
-  set("EnableNativeResFactor", std::to_string(resolution_factor()));
+  set("EnableNativeResFactor", std::to_string(resolution_factor(game.id)));
   // Factor 0 renders at an exact size: the screen's height, at the picture's shape.
-  const int rh = render_height(), rw43 = (rh * 4 / 3 + 1) / 2 * 2, rw169 = (rh * 16 / 9 + 1) / 2 * 2;
+  const int rh = render_height(game.id), rw43 = (rh * 4 / 3 + 1) / 2 * 2, rw169 = (rh * 16 / 9 + 1) / 2 * 2;
   set("43screensize", std::to_string(rw43) + "x" + std::to_string(rh));
   set("169screensize", std::to_string(rw169) + "x" + std::to_string(rh));
   set("BilinearMode", p.bilinear);
@@ -380,7 +387,7 @@ void App::apply_core_options(const Game& game) {
   set("DitheringQuantization", p.dither ? "True" : "False");
   set("RDRAMImageDitheringMode", p.dither ? "BlueNoise" : "False");
   set("FXAA", std::to_string(p.fxaa));
-  set("MultiSampling", std::to_string(p.msaa));
+  set("MultiSampling", supersampling(game.id) ? "0" : std::to_string(p.msaa));  // supersampling smooths edges already
   const int tex = texture_look(game.id);
   set("txEnhancementMode", kTextureModes[tex]);
   set("txFilterMode", "None");
@@ -687,6 +694,7 @@ void App::run_frames() {
     acc_ns_ = 0;
     return;
   }
+  if (!opt_.screenshot.empty()) acc_ns_ = frame_ns;  // test mode: one game frame per drawn frame, so runs repeat exactly
   for (int runs = 0; acc_ns_ >= frame_ns && runs < 3; ++runs) {
     core_.run();
     acc_ns_ -= frame_ns;
@@ -1021,10 +1029,11 @@ std::vector<App::MenuItem> App::menu_items() const {
   const Look look = current_look();
   const int preset = std::clamp(settings_.game_int(id, "preset", 0), 0, 3);
   const int res_choice = settings_.game_int(id, "resolution", 0);
-  const int rh = render_height(), rw = look.fill == FillMode::Widescreen ? rh * 16 / 9 : rh * 4 / 3;
-  std::string res = kPresets[preset].factor > 0 ? "Set by the picture style"
-                    : res_choice > 0            ? std::to_string(res_choice) + "x"
-                                                : "Auto (" + std::to_string(rw) + "x" + std::to_string(rh) + ")";
+  const int rh = render_height(id), rw = look.fill == FillMode::Widescreen ? rh * 16 / 9 : rh * 4 / 3;
+  std::string res = kPresets[preset].factor > 0     ? "Set by the picture style"
+                    : res_choice == kResSuper        ? "Super (" + std::to_string(rw) + "x" + std::to_string(rh) + ")"
+                    : res_choice >= 1 && res_choice <= 8 ? std::to_string(res_choice) + "x"
+                                                     : "Auto (" + std::to_string(rw) + "x" + std::to_string(rh) + ")";
   const bool gliden = std::string(kPresets[preset].rdp) == "gliden64";
   return {
       {"Resume", "", kResume},
@@ -1096,8 +1105,17 @@ void App::menu_change(int id, int dir) {
       break;
     }
     case kResolution: {
-      const int r = (settings_.game_int(gid, "resolution", 0) + step + 9) % 9;  // 0 = auto, 1..8
+      // Order in the menu: Auto, Super, then fixed 1x to 8x.
+      static const int order[] = {0, kResSuper, 1, 2, 3, 4, 5, 6, 7, 8};
+      constexpr int n = static_cast<int>(std::size(order));
+      const int cur = settings_.game_int(gid, "resolution", 0);
+      int at = 0;
+      for (int i = 0; i < n; ++i) {
+        if (order[i] == cur) at = i;
+      }
+      const int r = order[(at + step + n) % n];
       settings_.set_game_int(gid, "resolution", r);
+      if (r == kResSuper) toast("Super: drawn at twice the screen size for the smoothest edges. Needs a strong graphics card", 5);
       restart_game_keep_progress();
       break;
     }
