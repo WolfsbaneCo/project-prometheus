@@ -9,6 +9,7 @@
 #include <fstream>
 #include <iterator>
 
+#include "archive.hpp"
 #include "savekit/formats.hpp"
 #include "savekit/library.hpp"
 
@@ -97,6 +98,14 @@ bool pak_has_notes(const savekit::Bytes& pak) {
     if (pak[at] || pak[at + 1] || pak[at + 2] || pak[at + 3]) return true;
   }
   return false;
+}
+
+// Unpacks the game when it is in an archive and hands it to the core.
+std::string load_into(Core& core, const Game& game) {
+  std::vector<uint8_t> data;
+  if (std::string err = load_game_data(game, data); !err.empty()) return err;
+  const fs::path name = game.entry.empty() ? game.path : game.path.parent_path() / from_utf8(game.entry).filename();
+  return core.load_game(name, std::move(data));
 }
 
 void SDLCALL dialog_done(void* userdata, const char* const* files, int) {
@@ -263,12 +272,13 @@ bool App::init(std::string& error) {
   rescan();
   set_fullscreen(opt_.fullscreen || settings_.get_int("fullscreen", 0) == 1);
   if (!opt_.rom.empty()) {
-    Game g;
-    if (!read_game(opt_.rom, g)) {
-      error = "not an N64 game file: " + utf8(opt_.rom);
+    std::string why;
+    auto found = read_games(opt_.rom, &why);
+    if (found.empty()) {
+      error = why.empty() ? "No N64 game found in " + utf8(opt_.rom) : "Could not read " + utf8(opt_.rom) + ": " + why;
       return false;
     }
-    if (!start_game(g)) {
+    if (!start_game(found.front())) {
       error = "could not start " + utf8(opt_.rom);
       return false;
     }
@@ -356,9 +366,9 @@ void App::apply_core_options(const Game& game) {
 bool App::start_game(const Game& game) {
   if (game_) stop_game();
   apply_core_options(game);
-  const std::string err = core_.load_game(game.path);
+  const std::string err = load_into(core_, game);
   if (!err.empty()) {
-    toast(err);
+    toast("Could not start " + game.title + ": " + err, 5);
     return false;
   }
   game_ = game;
@@ -414,7 +424,7 @@ void App::restart_game_keep_progress() {
     return;
   }
   apply_core_options(game);
-  if (!core_.load_game(game.path).empty()) {
+  if (!load_into(core_, game).empty()) {
     toast("Could not restart the game");
     game_.reset();
     screen_ = Screen::Home;
@@ -727,16 +737,19 @@ void App::handle(const SDL_Event& e) {
     return;
   }
   if (e.type == SDL_EVENT_DROP_FILE && e.drop.data) {
-    Game g;
     const fs::path file = from_utf8(e.drop.data);
-    if (read_game(file, g)) {
+    std::string why;
+    auto found = read_games(file, &why);
+    if (!found.empty()) {
       if (settings_.get("games_folder").empty()) {
         settings_.set("games_folder", utf8(file.parent_path()));
         rescan();
       }
-      start_game(g);
+      start_game(found.front());
+    } else if (!why.empty()) {
+      toast("Could not open that archive: " + why, 5);
     } else {
-      toast("That file is not an N64 game");
+      toast(archive::is_archive(file) ? "No N64 game in that archive" : "That file is not an N64 game");
     }
     return;
   }
@@ -1082,7 +1095,7 @@ void App::draw_home() {
     ui_.text(W / 2, cy, "Add your games", 40 * s, kText, true, Align::Center);
     ui_.text(W / 2, cy + 60 * s, "Press O (or Y on a controller) to choose the folder with your N64 game files.", 22 * s,
              kDim, false, Align::Center);
-    ui_.text(W / 2, cy + 94 * s, "You can also drop a game file onto this window.", 22 * s, kDim, false, Align::Center);
+    ui_.text(W / 2, cy + 94 * s, "Zipped games (.zip, .7z, .rar) work too. You can also drop a game onto this window.", 22 * s, kDim, false, Align::Center);
     return;
   }
 

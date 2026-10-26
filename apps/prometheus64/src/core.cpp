@@ -167,13 +167,11 @@ std::string Core::open(const std::filesystem::path& library) {
   return {};
 }
 
-std::string Core::load_game(const std::filesystem::path& rom) {
+std::string Core::load_game(const std::filesystem::path& rom, std::vector<uint8_t> data) {
   if (!api_) return "no emulator core loaded";
   if (game_loaded_) unload_game();
   rom_path_ = utf8(rom);
-  std::ifstream in(rom, std::ios::binary);
-  if (!in) return "could not open the game file";
-  rom_data_.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  rom_data_ = std::move(data);
 
   retro_game_info game{};
   game.path = rom_path_.c_str();

@@ -11,8 +11,11 @@ FetchContent_Declare(SDL3
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(SDL3)
 
+add_subdirectory(archives)
+
 add_executable(prometheus64 WIN32
   src/app.cpp
+  src/archive.cpp
   src/audio.cpp
   src/core.cpp
   src/gl.cpp
@@ -25,7 +28,7 @@ add_executable(prometheus64 WIN32
 )
 set_target_properties(prometheus64 PROPERTIES OUTPUT_NAME Prometheus64)
 target_include_directories(prometheus64 PRIVATE src third_party/libretro third_party/stb)
-target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_warnings)
+target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_archive p64_warnings)
 
 if(WIN32)
   configure_file(windows/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/version.h" @ONLY)

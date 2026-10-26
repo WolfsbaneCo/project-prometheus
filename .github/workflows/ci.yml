@@ -106,7 +106,7 @@ jobs:
           Copy-Item -Recurse "$app/assets" stage/
           Copy-Item core/mupen64plus_next_libretro.dll stage/cores/
           Copy-Item core/CORE-SOURCE.txt stage/cores/
-          Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, LICENSE stage/licenses/
+          Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, installer/libarchive-COPYING.txt, LICENSE stage/licenses/
           Get-ChildItem -Recurse stage | Select-Object FullName, Length
       - name: Version
         id: version

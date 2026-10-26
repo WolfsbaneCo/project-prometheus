@@ -40,7 +40,8 @@ class Core {
 
   // Loads the core library and calls retro_init. Returns an error message, or empty on success.
   std::string open(const std::filesystem::path& library);
-  std::string load_game(const std::filesystem::path& rom);
+  // `rom` is the name the core sees; `data` is the whole game (the app unpacks archives itself).
+  std::string load_game(const std::filesystem::path& rom, std::vector<uint8_t> data);
   void unload_game();
   // Unloads the game, shuts the core down and releases the library. Call while the GL context
   // still exists: the core's renderer frees GPU objects on the way out.
