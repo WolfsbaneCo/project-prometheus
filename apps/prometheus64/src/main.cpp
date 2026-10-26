@@ -36,6 +36,8 @@ int main(int argc, char** argv) {
       o.poke_frame = std::atoi(next().c_str());
     } else if (a == "--dump-save") {
       o.dump_save = next();
+    } else if (a == "--option") {
+      o.core_options.push_back(next());
     } else if (a == "--click") {
       o.clicks.push_back(next());
     } else if (a == "--hold") {

@@ -32,6 +32,7 @@ struct Options {
   std::vector<std::string> keys;     // test mode: "frame:key name" presses
   std::vector<std::string> holds;    // test mode: "from-to:player:button" held N64 buttons
   std::vector<std::string> clicks;   // test mode: "frame:x,y" left clicks, in pixels
+  std::vector<std::string> core_options;  // test mode: "key=value" core option overrides
   int poke_frame = 0;                // test mode: write a pattern into save memory at this frame
   std::filesystem::path dump_save;   // test mode: write the core's save memory here on exit
 };
@@ -100,7 +101,9 @@ class App {
   void restart_game_keep_progress();
   void apply_core_options(const Game& game);
   Look current_look() const;
-  int resolution_factor() const;
+  int resolution_factor() const;  // 0 = auto (render at render_height)
+  int render_height() const;
+  int texture_look(const std::string& game_id) const;
   void run_frames();
 
   void load_game_save();

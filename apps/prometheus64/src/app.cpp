@@ -30,7 +30,7 @@ const Color kPlayerColors[4] = {rgb(0xE8262E), rgb(0x3D7BF0), rgb(0x2FB45A), rgb
 enum UiAction { kUp, kDown, kLeft, kRight, kAccept, kBack, kMenu, kPrevTab, kNextTab };
 enum DialogKind { kFolderChosen = 1, kSaveChosen = 2 };
 enum MenuId {
-  kResume, kSaveState, kLoadState, kSlot, kPicture, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
+  kResume, kSaveState, kLoadState, kSlot, kPicture, kTextures, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
   kPlayers, kControlsItem, kReset, kQuit
 };
 // Clickable areas (App::Hit::kind).
@@ -51,15 +51,22 @@ struct PresetDef {
   int factor;  // 0 = match the display
   const char* bilinear;
   bool dither;
-  int fxaa;
+  int fxaa, msaa;
+  int textures;  // default TextureLook
   float sharpen, scanlines;
   bool smooth;
 };
+// Texture enhancement (GLideN64). xBRZ redraws the game's small textures at 4x with clean edges.
+enum TextureLook { kTexCrisp, kTexSoft, kTexOriginal, kTexCount };
+const char* const kTextureNames[kTexCount] = {"HD (crisp)", "HD (soft)", "Original"};
+const char* const kTextureModes[kTexCount] = {"4xBRZ", "HQ4X", "None"};
 const PresetDef kPresets[] = {
-    {"Clean", "High resolution, no dither grain, smooth edges", "gliden64", "hle", 0, "3point", false, 1, 0.0f, 0.0f, true},
-    {"Sharp", "Clean, with extra crispness", "gliden64", "hle", 0, "3point", false, 1, 0.45f, 0.0f, true},
-    {"Retro", "CRT-style scanlines", "gliden64", "hle", 2, "3point", false, 0, 0.0f, 0.65f, true},
-    {"Native", "Pixel-exact original picture (uses more CPU)", "angrylion", "parallel", 1, "3point", true, 0, 0.0f, 0.0f, false},
+    {"Clean", "Screen resolution, HD textures, smooth edges", "gliden64", "hle", 0, "3point", false, 0, 4, kTexCrisp, 0.0f,
+     0.0f, true},
+    {"Sharp", "Clean, with extra crispness", "gliden64", "hle", 0, "3point", false, 0, 4, kTexCrisp, 0.3f, 0.0f, true},
+    {"Retro", "CRT-style scanlines", "gliden64", "hle", 2, "3point", false, 0, 0, kTexOriginal, 0.0f, 0.65f, true},
+    {"Native", "Pixel-exact original picture (uses more CPU)", "angrylion", "parallel", 1, "3point", true, 0, 0,
+     kTexOriginal, 0.0f, 0.0f, false},
 };
 
 std::string utf8(const fs::path& p) {
@@ -339,10 +346,21 @@ int App::resolution_factor() const {
   if (fixed > 0) return fixed;
   const int chosen = settings_.game_int(id, "resolution", 0);
   if (chosen > 0) return std::clamp(chosen, 1, 8);
-  // Match the screen: 1080p -> 5x (rendered at 1200 lines, then downscaled), 1440p -> 6x, 4K -> 8x.
+  return 0;  // auto: render at the screen's own size (render_height)
+}
+
+int App::render_height() const {
+  // The screen's full height, so in fullscreen every game pixel lands on exactly one screen pixel.
   int h = 1080;
   if (const SDL_DisplayMode* m = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window_))) h = m->h;
-  return std::clamp((h + 239) / 240, 1, 8);
+  return std::clamp(h, 240, 2880);
+}
+
+int App::texture_look(const std::string& id) const {
+  const PresetDef& p = kPresets[std::clamp(settings_.game_int(id, "preset", 0), 0, 3)];
+  if (std::string(p.rdp) != "gliden64") return kTexOriginal;
+  const int t = settings_.game_int(id, "textures", -1);
+  return t >= 0 && t < kTexCount ? t : p.textures;
 }
 
 void App::apply_core_options(const Game& game) {
@@ -353,11 +371,21 @@ void App::apply_core_options(const Game& game) {
   set("rsp-plugin", settings_.get("renderer", p.rdp) == std::string("gliden64") ? "hle" : p.rsp);
   set("cpucore", "dynamic_recompiler");
   set("EnableNativeResFactor", std::to_string(resolution_factor()));
+  // Factor 0 renders at an exact size: the screen's height, at the picture's shape.
+  const int rh = render_height(), rw43 = (rh * 4 / 3 + 1) / 2 * 2, rw169 = (rh * 16 / 9 + 1) / 2 * 2;
+  set("43screensize", std::to_string(rw43) + "x" + std::to_string(rh));
+  set("169screensize", std::to_string(rw169) + "x" + std::to_string(rh));
   set("BilinearMode", p.bilinear);
   set("DitheringPattern", p.dither ? "True" : "False");
   set("DitheringQuantization", p.dither ? "True" : "False");
   set("RDRAMImageDitheringMode", p.dither ? "BlueNoise" : "False");
   set("FXAA", std::to_string(p.fxaa));
+  set("MultiSampling", std::to_string(p.msaa));
+  const int tex = texture_look(game.id);
+  set("txEnhancementMode", kTextureModes[tex]);
+  set("txFilterMode", "None");
+  set("txFilterIgnoreBG", tex == kTexOriginal ? "True" : "False");
+  set("CorrectTexrectCoords", "Auto");  // no thin gaps between the pieces of 2D images
   set("EnableOverscan", "Disabled");
   set("aspect", widescreen ? "16:9 adjusted" : "4:3");
   set("alt-map", "True");
@@ -372,6 +400,11 @@ void App::apply_core_options(const Game& game) {
   const bool pack = fs::is_directory(core_.system_dir / "Mupen64plus" / "hires_texture" / game.internal_name, ec);
   set("txHiresEnable", pack ? "True" : "False");
   set("txHiresFullAlphaChannel", pack ? "True" : "False");
+  // Test mode: "--option key=value" overrides, for comparing renderer settings.
+  for (const auto& o : opt_.core_options) {
+    const auto eq = o.find('=');
+    if (eq != std::string::npos) set(o.substr(0, eq).c_str(), o.substr(eq + 1));
+  }
 }
 
 bool App::start_game(const Game& game) {
@@ -988,15 +1021,18 @@ std::vector<App::MenuItem> App::menu_items() const {
   const Look look = current_look();
   const int preset = std::clamp(settings_.game_int(id, "preset", 0), 0, 3);
   const int res_choice = settings_.game_int(id, "resolution", 0);
+  const int rh = render_height(), rw = look.fill == FillMode::Widescreen ? rh * 16 / 9 : rh * 4 / 3;
   std::string res = kPresets[preset].factor > 0 ? "Set by the picture style"
                     : res_choice > 0            ? std::to_string(res_choice) + "x"
-                                                : "Auto (" + std::to_string(resolution_factor()) + "x)";
+                                                : "Auto (" + std::to_string(rw) + "x" + std::to_string(rh) + ")";
+  const bool gliden = std::string(kPresets[preset].rdp) == "gliden64";
   return {
       {"Resume", "", kResume},
       {"Save state", "slot " + std::to_string(slot_), kSaveState},
       {"Load state", "slot " + std::to_string(slot_), kLoadState},
       {"State slot", std::to_string(slot_), kSlot},
       {"Picture", kPresets[preset].name, kPicture},
+      {"Textures", gliden ? kTextureNames[texture_look(id)] : "Set by the picture style", kTextures},
       {"Fill mode", fill_mode_name(look.fill), kFill},
       {"Resolution", res, kResolution},
       {"Overscan crop", std::to_string(static_cast<int>(std::lround(look.overscan * 100))) + "%", kOverscan},
@@ -1037,6 +1073,14 @@ void App::menu_change(int id, int dir) {
       const int p = (settings_.game_int(gid, "preset", 0) + step + 4) % 4;
       settings_.set_game_int(gid, "preset", p);
       toast(std::string("Picture: ") + kPresets[p].name + " - " + kPresets[p].blurb);
+      restart_game_keep_progress();
+      break;
+    }
+    case kTextures: {
+      if (std::string(kPresets[std::clamp(settings_.game_int(gid, "preset", 0), 0, 3)].rdp) != "gliden64") break;
+      const int t = (texture_look(gid) + step + kTexCount) % kTexCount;
+      settings_.set_game_int(gid, "textures", t);
+      toast(std::string("Textures: ") + kTextureNames[t]);
       restart_game_keep_progress();
       break;
     }
