@@ -6,8 +6,8 @@ The app plays games the user already owns and adds themselves. It never download
 
 ## Download and play (Windows 10 or 11, 64-bit)
 
-1. Open the repository's **Actions** tab, pick the latest green **CI** run and download **Prometheus64-Windows**. Once a version is tagged, the same files are on the **Releases** page.
-2. Run `Prometheus64-Setup-<version>.exe`. It installs for your user only, with no administrator prompt, and adds a Start menu shortcut. If you'd rather not install it, unzip `Prometheus64-<version>-portable.zip` anywhere and run `Prometheus64.exe`.
+1. Download `Prometheus64-Setup-<version>.exe` from the **Releases** page. It is one file holding everything: the app, the emulator core, fonts and licences. (Test builds: the repository's **Actions** tab, latest green **CI** run, same file.)
+2. Run it. It installs for your user only, with no administrator prompt, and adds a Start menu shortcut.
 3. Press **O** (or **Y** on a controller) and choose the folder that holds your games: `.z64`, `.n64` and `.v64` files, or the same packed in `.zip`, `.7z` or `.rar` archives (no need to unpack them; an archive with several games shows each one). You can also drop a game onto the window, or double-click a game file if you ticked that option in the installer.
 4. Pick a game and press **Enter** (or **A**). To have a friend join, they press **Start** on another controller. Press **F1** for every key.
 

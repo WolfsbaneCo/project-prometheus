@@ -61,7 +61,7 @@ jobs:
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
         run: tools/build-core-windows.sh core
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: core-windows
           path: core/
@@ -82,7 +82,7 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
-  # The download for players: an installer and a portable zip.
+  # The download for players: one installer that holds the app, the core, fonts and licences.
   app-windows:
     name: Prometheus 64 (Windows installer)
     runs-on: windows-latest
@@ -93,7 +93,7 @@ jobs:
         run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release --parallel --target prometheus64
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: core-windows
           path: core
@@ -124,11 +124,11 @@ jobs:
           }
           & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$PWD\stage" installer\prometheus64.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Compress-Archive -Path stage\* -DestinationPath "dist\Prometheus64-${{ steps.version.outputs.version }}-portable.zip"
-      - uses: actions/upload-artifact@v4
+      # Uploaded as the bare .exe (not zipped), so the download is the installer itself.
+      - uses: actions/upload-artifact@v7
         with:
-          name: Prometheus64-Windows
-          path: dist/
+          path: dist/Prometheus64-Setup-${{ steps.version.outputs.version }}.exe
+          archive: false
 
   # Pushing a tag like v0.1.0 publishes the installer as a GitHub release.
   release:
@@ -139,11 +139,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          name: Prometheus64-Windows
+          pattern: Prometheus64-Setup-*
           path: dist
+          merge-multiple: true
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "Prometheus 64 ${GITHUB_REF_NAME#v}" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" $(find dist -type f -name '*.exe') --repo "$GITHUB_REPOSITORY" --title "Prometheus 64 ${GITHUB_REF_NAME#v}" --generate-notes
