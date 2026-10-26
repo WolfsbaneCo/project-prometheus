@@ -36,7 +36,7 @@ enum MenuId {
 // Clickable areas (App::Hit::kind).
 enum HitKind {
   kHitPanel, kHitTile, kHitAddGames, kHitHint, kHitMenuRow, kHitMenuDec, kHitMenuInc, kHitMenuButton, kHitTab,
-  kHitEntry, kHitSeatingDone
+  kHitEntry, kHitSeatingDone, kHitSeatRemove, kHitSeatingReset
 };
 // Footer shortcuts on the library screen (kHitHint arg).
 enum HintId { kHintPlay, kHintFolder, kHintImport, kHintControls, kHintPlayers, kHintFullscreen, kHintHelp };
@@ -911,6 +911,9 @@ void App::handle_menu(const SDL_Event& e) {
       case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER: case SDL_SCANCODE_SPACE: ui_action(kAccept); break;
       case SDL_SCANCODE_ESCAPE: case SDL_SCANCODE_BACKSPACE: ui_action(kBack); break;
       case SDL_SCANCODE_Q: ui_action(kPrevTab); break;
+      case SDL_SCANCODE_DELETE:
+        if (overlay_ == Overlay::Seating) input_.clear_seats();
+        break;
       case SDL_SCANCODE_E: case SDL_SCANCODE_TAB: ui_action(kNextTab); break;
       default: break;
     }
@@ -1277,11 +1280,11 @@ void App::draw_seating() {
   const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_), H = static_cast<float>(out_h_);
   ui_.rect(0, 0, W, H, rgb(0x000000, 0.65f));
   ui_.text(W / 2, H * 0.16f, "Who's playing?", 48 * s, kText, true, Align::Center);
-  ui_.text(W / 2, H * 0.16f + 70 * s, "Controllers: press any button.   Keyboard: press Enter.", 22 * s, kDim, false,
-           Align::Center);
+  ui_.text(W / 2, H * 0.16f + 70 * s, "To join: a controller presses any button, the keyboard presses Enter.", 22 * s, kDim,
+           false, Align::Center);
   ui_.text(W / 2, H * 0.16f + 104 * s, "Two people on one keyboard: left player presses F, right player presses . (period)",
            20 * s, kFaint, false, Align::Center);
-  const float cw = 380 * s, ch = 300 * s, gap = 30 * s, total = 4 * cw + 3 * gap;
+  const float cw = 380 * s, ch = 330 * s, gap = 30 * s, total = 4 * cw + 3 * gap;
   const float x0 = std::max(20 * s, (W - total) / 2), y0 = H * 0.36f;
   const float scale = std::min(1.0f, (W - 40 * s) / total);
   for (int i = 0; i < Input::kPlayers; ++i) {
@@ -1296,6 +1299,10 @@ void App::draw_seating() {
     for (std::size_t l = 0; l < lines.size(); ++l) {
       ui_.text(x + w / 2, y0 + 180 * s + l * 28 * s, lines[l], 20 * s, seat.empty() ? kFaint : kDim, false, Align::Center);
     }
+    if (!seat.empty()) {
+      const float bw = ui_.measure("Remove", 22 * s, true) + 56 * s;
+      draw_button(x + w / 2 - bw / 2, y0 + ch - 76 * s, "Remove", s, false, false, kHitSeatRemove, i);
+    }
   }
   if (input_.keyboard_shared()) {
     ui_.text(W / 2, y0 + ch + 40 * s, "Two players share the keyboard. Many keyboards miss keys pressed together;", 20 * s,
@@ -1303,9 +1310,10 @@ void App::draw_seating() {
     ui_.text(W / 2, y0 + ch + 70 * s, "gamepads work better, and stick-spinning minigames are much easier on one.", 20 * s,
              rgb(0xF2C12E), false, Align::Center);
   }
-  ui_.text(W / 2, H - 130 * s, "F10, Esc or B when everyone has joined", 20 * s, kDim, false, Align::Center);
-  const float bw = ui_.measure("Done", 22 * s, true) + 56 * s;
-  draw_button(W / 2 - bw / 2, H - 92 * s, "Done", s, true, false, kHitSeatingDone);
+  ui_.text(W / 2, H - 130 * s, "Enter, Esc or B when everyone has joined.   Delete: start over", 20 * s, kDim, false,
+           Align::Center);
+  draw_button(W / 2 - 8 * s, H - 92 * s, "Start over", s, false, false, kHitSeatingReset, 0, true);
+  draw_button(W / 2 + 8 * s, H - 92 * s, "Done", s, true, false, kHitSeatingDone);
 }
 
 void App::draw_help() {
@@ -1474,6 +1482,8 @@ void App::click(const Hit& h) {
       break;
     case kHitEntry: controls_index_ = h.arg; ui_action(kAccept); break;
     case kHitSeatingDone: ui_action(kAccept); break;
+    case kHitSeatRemove: input_.remove_seat(h.arg); break;
+    case kHitSeatingReset: input_.clear_seats(); break;
     default: break;  // kHitPanel: a click on a menu's background does nothing
   }
 }

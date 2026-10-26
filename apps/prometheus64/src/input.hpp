@@ -1,9 +1,9 @@
 // Players, devices and the N64 controller each one drives.
 //
 // Any gamepad joins as the next free player by pressing Start. The keyboard is player 1 when no
-// gamepad is connected. "Who's playing" (F10) clears the seats and lets every device claim one:
-// gamepads with any button, the keyboard with Enter, or two keyboard players with F (left half)
-// and . (right half).
+// gamepad is connected. "Who's playing" (F10) shows the seats and lets new devices claim the free
+// ones: gamepads with any button, the keyboard with Enter, or two keyboard players with F (left
+// half) and . (right half). Players can be removed one by one, or all at once to start over.
 //
 // Every binding can be changed on the Controls screen and is kept in the settings: one set of
 // keys for each keyboard layout, and one set of buttons shared by all gamepads.
@@ -65,8 +65,10 @@ class Input {
   int16_t retro_state(unsigned port, unsigned device, unsigned index, unsigned id) const;
   bool rumble(unsigned port, bool strong, uint16_t strength);
 
-  void start_seating();  // "Who's playing": clears every seat
-  void stop_seating() { seating_ = false; }
+  void start_seating();  // "Who's playing": seated players stay, free seats can be claimed
+  void stop_seating();   // if nobody is seated, the keyboard takes player 1 again
+  void clear_seats();    // "Start over"
+  void remove_seat(int player);
   bool seating() const { return seating_; }
 
   const Seat& seat(int player) const { return seats_[player]; }

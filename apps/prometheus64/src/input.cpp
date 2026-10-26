@@ -149,11 +149,22 @@ void Input::seat_device(int player, Seat seat) {
   notices_.push_back(player_label(player) + ": " + seat.name);
 }
 
-void Input::start_seating() {
-  seating_ = true;
-  for (auto& s : seats_) s = {};
+void Input::start_seating() { seating_ = true; }
+
+void Input::stop_seating() {
+  seating_ = false;
+  auto_seat_keyboard();
+}
+
+void Input::clear_seats() {
+  for (auto& seat : seats_) seat = {};
   for (auto& st : state_) st = {};
-  notices_.push_back("Who's playing? Controllers: press any button. Keyboard: Enter (F = left half, . = right half)");
+}
+
+void Input::remove_seat(int player) {
+  if (player < 0 || player >= kPlayers) return;
+  seats_[player] = {};
+  state_[player] = {};
 }
 
 bool Input::handle_event(const SDL_Event& e) {
