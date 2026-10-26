@@ -23,13 +23,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 option(PROMETHEUS64_BUILD_APP "Build the Prometheus 64 app (downloads SDL3)" ON)
 
+include(CTest)
+
 add_subdirectory(savekit)
 add_subdirectory(tools/n64save)
 if(PROMETHEUS64_BUILD_APP)
   add_subdirectory(apps/prometheus64)
 endif()
-
-include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(tests)
 endif()

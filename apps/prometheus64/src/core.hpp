@@ -40,7 +40,8 @@ class Core {
 
   // Loads the core library and calls retro_init. Returns an error message, or empty on success.
   std::string open(const std::filesystem::path& library);
-  std::string load_game(const std::filesystem::path& rom);
+  // `rom` is the name the core sees; `data` is the whole game (the app unpacks archives itself).
+  std::string load_game(const std::filesystem::path& rom, std::vector<uint8_t> data);
   void unload_game();
   // Unloads the game, shuts the core down and releases the library. Call while the GL context
   // still exists: the core's renderer frees GPU objects on the way out.
@@ -56,6 +57,9 @@ class Core {
   // RETRO_MEMORY_SAVE_RAM: the cartridge and Controller Pak memory, in the core's layout.
   uint8_t* save_ram();
   std::size_t save_ram_size();
+  // RETRO_MEMORY_SYSTEM_RAM: the console's RDRAM. Online play compares it to detect desyncs.
+  const uint8_t* system_ram();
+  std::size_t system_ram_size();
 
   // Options take effect at the next game load unless the core re-reads them live.
   void set_option(const std::string& key, const std::string& value);

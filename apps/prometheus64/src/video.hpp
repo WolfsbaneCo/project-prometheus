@@ -55,6 +55,8 @@ class Video {
                  float step_x, float step_y, float alpha);
 
   GLuint program_ = 0, vao_ = 0;
+  GLint u_bicubic_ = -1, u_size_ = -1;
+  float bicubic_ = 0.0f, size_w_ = 1.0f, size_h_ = 1.0f;
   GLint u_src_ = -1, u_dst_ = -1, u_mode_ = -1, u_lod_ = -1, u_dim_ = -1, u_step_ = -1, u_sharpen_ = -1,
         u_scan_ = -1, u_lines_ = -1, u_alpha_ = -1;
   GLuint target_fbo_ = 0, target_tex_ = 0, target_depth_ = 0;

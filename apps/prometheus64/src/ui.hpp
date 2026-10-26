@@ -39,7 +39,8 @@ class Ui {
   // Shortens with an ellipsis to fit `max_width`.
   std::string fit(const std::string& utf8, float size, float max_width, bool bold = false) const;
 
-  GLuint logo() const { return logo_tex_; }
+  GLuint logo() const { return logo_tex_; }                    // with "64": 48 px and larger
+  GLuint logo_small() const { return logo_small_tex_ ? logo_small_tex_ : logo_tex_; }  // flame only
 
  private:
   struct Glyph {
@@ -60,7 +61,7 @@ class Ui {
   void use_texture(GLuint tex);
 
   Font regular_, bold_;
-  GLuint atlas_tex_ = 0, logo_tex_ = 0, program_ = 0, vao_ = 0, vbo_ = 0, bound_tex_ = 0;
+  GLuint atlas_tex_ = 0, logo_tex_ = 0, logo_small_tex_ = 0, program_ = 0, vao_ = 0, vbo_ = 0, bound_tex_ = 0;
   GLint u_screen_ = -1;
   int width_ = 0, height_ = 0;
   std::vector<Vertex> batch_;

@@ -61,7 +61,7 @@ jobs:
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
         run: tools/build-core-windows.sh core
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: core-windows
           path: core/
@@ -76,13 +76,37 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
             libxss-dev libxfixes-dev libxkbcommon-dev libxtst-dev libxrender-dev libxinerama-dev \
-            libwayland-dev libegl-dev libgl-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+            libwayland-dev libegl-dev libgl-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
+            libssl-dev
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --parallel
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
 
-  # The download for players: an installer and a portable zip.
+  # The online play relay (relay/), run locally by wrangler and checked from outside.
+  relay:
+    name: Online relay
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relay
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Test
+        run: |
+          npm run dev > wrangler.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8787/ > /dev/null && break; sleep 1; done
+          npm test || { cat wrangler.log; exit 1; }
+
+  # The download for players: one installer that holds the app, the core, fonts and licences.
   app-windows:
     name: Prometheus 64 (Windows installer)
     runs-on: windows-latest
@@ -90,10 +114,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Configure
-        run: cmake -S . -B build -A x64
+        # Google Drive backup needs the app's Google client ID: repository secrets, never in the repo.
+        # Without them the build works, with Drive backup switched off.
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        shell: pwsh
+        run: cmake -S . -B build -A x64 "-DP64_GOOGLE_CLIENT_ID=$env:GOOGLE_CLIENT_ID" "-DP64_GOOGLE_CLIENT_SECRET=$env:GOOGLE_CLIENT_SECRET"
       - name: Build
         run: cmake --build build --config Release --parallel --target prometheus64
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: core-windows
           path: core
@@ -106,7 +136,7 @@ jobs:
           Copy-Item -Recurse "$app/assets" stage/
           Copy-Item core/mupen64plus_next_libretro.dll stage/cores/
           Copy-Item core/CORE-SOURCE.txt stage/cores/
-          Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, LICENSE stage/licenses/
+          Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, installer/libarchive-COPYING.txt, LICENSE stage/licenses/
           Get-ChildItem -Recurse stage | Select-Object FullName, Length
       - name: Version
         id: version
@@ -124,11 +154,11 @@ jobs:
           }
           & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$PWD\stage" installer\prometheus64.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Compress-Archive -Path stage\* -DestinationPath "dist\Prometheus64-${{ steps.version.outputs.version }}-portable.zip"
-      - uses: actions/upload-artifact@v4
+      # Uploaded as the bare .exe (not zipped), so the download is the installer itself.
+      - uses: actions/upload-artifact@v7
         with:
-          name: Prometheus64-Windows
-          path: dist/
+          path: dist/Prometheus64-Setup-${{ steps.version.outputs.version }}.exe
+          archive: false
 
   # Pushing a tag like v0.1.0 publishes the installer as a GitHub release.
   release:
@@ -139,11 +169,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          name: Prometheus64-Windows
+          pattern: Prometheus64-Setup-*
           path: dist
+          merge-multiple: true
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "Prometheus 64 ${GITHUB_REF_NAME#v}" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" $(find dist -type f -name '*.exe') --repo "$GITHUB_REPOSITORY" --title "Prometheus 64 ${GITHUB_REF_NAME#v}" --generate-notes

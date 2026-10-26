@@ -1,0 +1,14 @@
+{
+  "name": "prometheus-relay",
+  "private": true,
+  "description": "Relay for online play in Project Prometheus apps (Cloudflare Worker)",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787 --var GROUP_KEY:dev-group-key",
+    "deploy": "wrangler deploy",
+    "test": "node test/relay.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.153.0"
+  }
+}

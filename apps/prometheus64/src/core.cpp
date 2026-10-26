@@ -167,13 +167,11 @@ std::string Core::open(const std::filesystem::path& library) {
   return {};
 }
 
-std::string Core::load_game(const std::filesystem::path& rom) {
+std::string Core::load_game(const std::filesystem::path& rom, std::vector<uint8_t> data) {
   if (!api_) return "no emulator core loaded";
   if (game_loaded_) unload_game();
   rom_path_ = utf8(rom);
-  std::ifstream in(rom, std::ios::binary);
-  if (!in) return "could not open the game file";
-  rom_data_.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  rom_data_ = std::move(data);
 
   retro_game_info game{};
   game.path = rom_path_.c_str();
@@ -230,6 +228,14 @@ uint8_t* Core::save_ram() {
 
 std::size_t Core::save_ram_size() {
   return game_loaded_ ? api_->get_memory_size(RETRO_MEMORY_SAVE_RAM) : 0;
+}
+
+const uint8_t* Core::system_ram() {
+  return game_loaded_ ? static_cast<const uint8_t*>(api_->get_memory_data(RETRO_MEMORY_SYSTEM_RAM)) : nullptr;
+}
+
+std::size_t Core::system_ram_size() {
+  return game_loaded_ ? api_->get_memory_size(RETRO_MEMORY_SYSTEM_RAM) : 0;
 }
 
 void Core::set_option(const std::string& key, const std::string& value) {

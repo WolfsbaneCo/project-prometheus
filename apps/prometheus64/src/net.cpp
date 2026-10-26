@@ -1,0 +1,225 @@
+#include "net.hpp"
+
+#include <curl/curl.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <sys/select.h>
+#endif
+
+#include <chrono>
+
+namespace p64::net {
+namespace {
+
+constexpr const char* kUserAgent = "Prometheus64";
+
+size_t collect(char* data, size_t size, size_t count, void* user) {
+  static_cast<std::string*>(user)->append(data, size * count);
+  return size * count;
+}
+
+// Waits until the socket can be read (or written), up to `ms` milliseconds.
+void wait_socket(curl_socket_t sock, bool for_write, int ms) {
+  if (sock == CURL_SOCKET_BAD) return;
+  fd_set set;
+  FD_ZERO(&set);
+  FD_SET(sock, &set);
+  timeval tv{0, ms * 1000};
+  select(static_cast<int>(sock + 1), for_write ? nullptr : &set, for_write ? &set : nullptr, nullptr, &tv);
+}
+
+// What a refused relay connection means, in plain words (the relay answers with these codes).
+std::string refusal(long status) {
+  switch (status) {
+    case 400: return "This version of Prometheus 64 doesn't match the group's relay. Everyone needs the same version";
+    case 401: return "Your key file doesn't open this group's games. If the group was set up again, ask for the new key file";
+    case 403: return "This game is full";
+    case 404: return "No game is open with this code. Check the code with the host";
+    case 423: return "This game has already started. Ask the host to open a new one";
+    case 503: return "The group's relay isn't set up properly. Whoever set it up can do it again";
+    case 0: return "Could not reach the relay. Check your internet connection";
+    default: return "The relay refused the connection (HTTP " + std::to_string(status) + ")";
+  }
+}
+
+}  // namespace
+
+void init() { curl_global_init(CURL_GLOBAL_DEFAULT); }
+
+void shutdown() { curl_global_cleanup(); }
+
+Response request(const std::string& method, const std::string& url, const std::vector<std::string>& headers,
+                 const std::string& body, const std::vector<Part>& parts, long timeout_s) {
+  Response r;
+  CURL* c = curl_easy_init();
+  if (!c) {
+    r.error = "out of memory";
+    return r;
+  }
+  curl_slist* list = nullptr;
+  for (const auto& h : headers) list = curl_slist_append(list, h.c_str());
+  curl_mime* mime = nullptr;
+  curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, method.c_str());
+  curl_easy_setopt(c, CURLOPT_HTTPHEADER, list);
+  curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
+  curl_easy_setopt(c, CURLOPT_TIMEOUT, timeout_s);
+  curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 20L);
+  curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(c, CURLOPT_NOPROXY, "localhost,127.0.0.1");
+  curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, collect);
+  curl_easy_setopt(c, CURLOPT_WRITEDATA, &r.body);
+  if (!parts.empty()) {
+    mime = curl_mime_init(c);
+    for (const auto& p : parts) {
+      curl_mimepart* part = curl_mime_addpart(mime);
+      curl_mime_name(part, p.name.c_str());
+      curl_mime_data(part, p.data.data(), p.data.size());
+      if (!p.filename.empty()) curl_mime_filename(part, p.filename.c_str());
+      if (!p.content_type.empty()) curl_mime_type(part, p.content_type.c_str());
+    }
+    curl_easy_setopt(c, CURLOPT_MIMEPOST, mime);
+  } else if (!body.empty() || method == "POST" || method == "PUT") {
+    curl_easy_setopt(c, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
+  }
+  const CURLcode res = curl_easy_perform(c);
+  if (res == CURLE_OK) {
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &r.status);
+  } else {
+    r.error = curl_easy_strerror(res);
+  }
+  if (mime) curl_mime_free(mime);
+  curl_slist_free_all(list);
+  curl_easy_cleanup(c);
+  return r;
+}
+
+void WebSocket::open(const std::string& url) {
+  close();
+  stop_ = false;
+  finished_ = false;
+  thread_ = std::thread(&WebSocket::run, this, url);
+}
+
+void WebSocket::send(std::string binary) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  outgoing_.push_back(std::move(binary));
+}
+
+void WebSocket::close() {
+  if (!thread_.joinable()) return;
+  stop_ = true;
+  thread_.join();
+  std::lock_guard<std::mutex> lock(mutex_);
+  outgoing_.clear();
+}
+
+std::vector<WebSocket::Event> WebSocket::poll() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  std::vector<Event> out;
+  out.swap(events_);
+  return out;
+}
+
+void WebSocket::push(Event::Kind kind, std::string data) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  events_.push_back({kind, std::move(data)});
+}
+
+void WebSocket::run(std::string url) {
+  CURL* c = curl_easy_init();
+  if (!c) {
+    push(Event::Closed, "out of memory");
+    finished_ = true;
+    return;
+  }
+  curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(c, CURLOPT_CONNECT_ONLY, 2L);  // 2: WebSocket upgrade, then hand the stream to us
+  curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
+  curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
+  curl_easy_setopt(c, CURLOPT_NOPROXY, "localhost,127.0.0.1");
+  curl_easy_setopt(c, CURLOPT_TCP_NODELAY, 1L);
+  curl_easy_setopt(c, CURLOPT_TCP_KEEPALIVE, 1L);
+  const CURLcode res = curl_easy_perform(c);
+  long status = 0;
+  curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
+  if (res != CURLE_OK || (status != 0 && status != 101)) {
+    push(Event::Closed, res == CURLE_OK || status ? refusal(status) : refusal(0));
+    curl_easy_cleanup(c);
+    finished_ = true;
+    return;
+  }
+  push(Event::Open, {});
+
+  curl_socket_t sock = CURL_SOCKET_BAD;
+  curl_easy_getinfo(c, CURLINFO_ACTIVESOCKET, &sock);
+  std::string message;  // a message can arrive in several pieces
+  std::string reason = "Disconnected";
+  bool open = true;
+  char buffer[64 * 1024];
+
+  while (open && !stop_) {
+    // Send everything queued.
+    std::deque<std::string> out;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      out.swap(outgoing_);
+    }
+    for (const auto& msg : out) {
+      size_t done = 0;
+      while (open && done < msg.size()) {
+        size_t sent = 0;
+        // curl may take a long message in several calls: pass on what is left each time.
+        const CURLcode r = curl_ws_send(c, msg.data() + done, msg.size() - done, &sent, 0, CURLWS_BINARY);
+        if (r == CURLE_AGAIN) {
+          wait_socket(sock, true, 50);
+        } else if (r != CURLE_OK) {
+          reason = "Connection lost";
+          open = false;
+        }
+        done += sent;
+      }
+    }
+    if (!open) break;
+
+    // Read everything waiting.
+    wait_socket(sock, false, 2);
+    for (;;) {
+      size_t got = 0;
+      const curl_ws_frame* meta = nullptr;
+      const CURLcode r = curl_ws_recv(c, buffer, sizeof buffer, &got, &meta);
+      if (r == CURLE_AGAIN) break;
+      if (r != CURLE_OK) {
+        reason = r == CURLE_GOT_NOTHING ? "The relay closed the connection" : "Connection lost";
+        open = false;
+        break;
+      }
+      if (meta->flags & CURLWS_CLOSE) {
+        // Close frame: a 2-byte code, then the reason text.
+        if (got > 2) reason.assign(buffer + 2, got - 2);
+        open = false;
+        break;
+      }
+      if (meta->flags & (CURLWS_PING | CURLWS_PONG)) continue;  // curl answers pings itself
+      message.append(buffer, got);
+      if (meta->bytesleft == 0 && !(meta->flags & CURLWS_CONT)) {
+        push((meta->flags & CURLWS_TEXT) ? Event::Text : Event::Binary, std::move(message));
+        message.clear();
+      }
+    }
+  }
+
+  if (stop_) {
+    size_t sent = 0;
+    curl_ws_send(c, "", 0, &sent, 0, CURLWS_CLOSE);
+  } else {
+    push(Event::Closed, reason);
+  }
+  curl_easy_cleanup(c);
+  finished_ = true;
+}
+
+}  // namespace p64::net
