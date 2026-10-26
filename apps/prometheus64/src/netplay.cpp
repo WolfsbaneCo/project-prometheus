@@ -356,7 +356,7 @@ void Netplay::broadcast_lobby() {
   if (!is_host()) return;
   if (!delay_chosen_) delay_ = suggested_delay();
   Writer w;
-  w.u8(kLobby).u8(static_cast<unsigned>(delay_)).str(game_.id).str(game_.title).bytes(game_.sha.data(), 32);
+  w.u8(kLobby).u8(static_cast<unsigned>(delay_)).str(game_.id).str(game_.title).str(game_.internal_name).str(game_.region).bytes(game_.sha.data(), 32);
   w.u8(static_cast<unsigned>(players_.size()));
   for (const auto& p : players_) {
     w.u8(static_cast<unsigned>(p.id)).str(p.name).u16(static_cast<unsigned>(std::max(0, p.ping_ms)));
@@ -402,7 +402,7 @@ void Netplay::start(const std::vector<uint8_t>& save) {
     w.u8(static_cast<unsigned>(ports_[i].player & 0xFF)).u8(static_cast<unsigned>(ports_[i].local));
     w.u8(static_cast<unsigned>(paks_[i]));
   }
-  w.str(game_.id).str(game_.title).bytes(game_.sha.data(), 32);
+  w.str(game_.id).str(game_.title).str(game_.internal_name).str(game_.region).bytes(game_.sha.data(), 32);
   w.u32(static_cast<uint32_t>(save.size())).bytes(save.data(), save.size());
   send(kBroadcast, w.b);
   ws_.send(std::string{static_cast<char>(kToRelay), 1});  // the relay turns away anyone who arrives now
@@ -483,6 +483,8 @@ void Netplay::on_binary(const std::string& data) {
       GameInfo g;
       g.id = r.str();
       g.title = r.str();
+      g.internal_name = r.str();
+      g.region = r.str();
       r.bytes(g.sha.data(), 32);
       const unsigned n = r.u8();
       std::vector<Player> list;
@@ -548,6 +550,8 @@ void Netplay::on_binary(const std::string& data) {
       GameInfo g;
       g.id = r.str();
       g.title = r.str();
+      g.internal_name = r.str();
+      g.region = r.str();
       r.bytes(g.sha.data(), 32);
       const uint32_t n = r.u32();
       std::vector<uint8_t> save(n);

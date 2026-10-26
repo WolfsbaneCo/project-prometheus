@@ -14,6 +14,7 @@
 #include "app.hpp"
 #include "app_shared.hpp"
 #include "json.hpp"
+#include "savekit/rom_header.hpp"
 #include "savekit/sha256.hpp"
 
 namespace fs = std::filesystem;
@@ -201,6 +202,8 @@ std::vector<int> App::local_seats() const {
   return seats;
 }
 
+// Fingerprint of the game as the console sees it: a .v64 (byte-swapped) or .n64 (word-reversed)
+// copy, zipped or not, under any name, matches the same game as a .z64.
 bool App::game_sha(const Game& game, std::array<uint8_t, 32>& out) {
   const std::string key = utf8(game.path) + "|" + game.entry;
   if (auto it = sha_cache_.find(key); it != sha_cache_.end()) {
@@ -208,7 +211,17 @@ bool App::game_sha(const Game& game, std::array<uint8_t, 32>& out) {
     return true;
   }
   std::vector<uint8_t> data;
-  if (!load_game_data(game, data).empty()) return false;
+  if (!load_game_data(game, data).empty() || data.size() < 0x40) return false;
+  const auto header = savekit::parse_rom_header(savekit::Bytes(data.begin(), data.begin() + 0x40));
+  if (!header) return false;
+  if (header->byte_order == savekit::RomByteOrder::ByteSwapped) {
+    for (std::size_t i = 0; i + 1 < data.size(); i += 2) std::swap(data[i], data[i + 1]);
+  } else if (header->byte_order == savekit::RomByteOrder::LittleEndian) {
+    for (std::size_t i = 0; i + 3 < data.size(); i += 4) {
+      std::swap(data[i], data[i + 3]);
+      std::swap(data[i + 1], data[i + 2]);
+    }
+  }
   if (!hex_to_bytes(savekit::sha256_hex(data), out)) return false;
   sha_cache_[key] = out;
   return true;
@@ -332,6 +345,8 @@ void App::host_online() {
   Netplay::GameInfo info;
   info.id = g.id;
   info.title = g.title;
+  info.internal_name = g.internal_name;
+  info.region = g.region;
   if (!game_sha(g, info.sha)) {
     online_note_ = "Could not read " + g.title;
     return;
@@ -462,19 +477,36 @@ void App::process_net_events() {
         toast(e.text, 5);
         break;
       case Netplay::Event::CheckGame: {
-        bool ok = false, found = false;
+        // Any copy of the same release works, whatever its file. Another region or revision, or a
+        // changed copy (a hack, a damaged file), would play differently and fall out of step.
+        bool ok = false, same_release = false;
+        const Game* same_game = nullptr;
         for (const Game& g : games_) {
-          if (g.id != e.game.id) continue;
-          found = true;
-          std::array<uint8_t, 32> sha{};
-          if (game_sha(g, sha) && sha == e.game.sha) {
-            ok = true;
-            break;
+          if (g.id == e.game.id) {
+            same_release = true;
+            std::array<uint8_t, 32> sha{};
+            if (game_sha(g, sha) && sha == e.game.sha) {
+              ok = true;
+              break;
+            }
+          } else if (!e.game.internal_name.empty() && g.internal_name == e.game.internal_name) {
+            same_game = &g;
           }
         }
-        net_.report_game(ok, ok      ? std::string()
-                             : found ? "Has a different version of " + e.game.title
-                                     : "Doesn't have " + e.game.title);
+        std::string problem;
+        if (ok) {
+          problem.clear();
+        } else if (same_release) {
+          problem = "Has a changed copy of " + e.game.title + " (a hack or a damaged file)";
+        } else if (same_game && same_game->region != e.game.region && !e.game.region.empty()) {
+          problem = "Has the " + same_game->region + " version of " + e.game.title + ", the host has the " +
+                    e.game.region + " one";
+        } else if (same_game) {
+          problem = "Has another release of " + e.game.title + " (a different revision)";
+        } else {
+          problem = "Doesn't have " + e.game.title;
+        }
+        net_.report_game(ok, problem);
         break;
       }
       case Netplay::Event::LoadGame: {

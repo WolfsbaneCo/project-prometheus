@@ -21,15 +21,16 @@ namespace p64 {
 
 class Netplay {
  public:
-  static constexpr int kProtocol = 1;  // this app's own messages (the relay has its own version)
+  static constexpr int kProtocol = 2;  // this app's own messages (the relay has its own version)
   static constexpr int kPorts = 4;
   static constexpr int kMinDelay = 2, kMaxDelay = 12;
 
   enum class Phase { Off, Connecting, Lobby, Starting, Running };
 
   struct GameInfo {
-    std::string id, title;
-    std::array<uint8_t, 32> sha{};  // SHA-256 of the game file: everyone needs the identical game
+    std::string id, title, internal_name, region;
+    // SHA-256 of the game as the console sees it (any file format): everyone needs the same release.
+    std::array<uint8_t, 32> sha{};
   };
 
   struct Player {
