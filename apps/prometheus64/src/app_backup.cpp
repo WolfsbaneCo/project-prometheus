@@ -209,8 +209,8 @@ void App::draw_backup() {
   y += 64 * s;
 
   if (!google::configured()) {
-    para("This copy of Prometheus 64 was built without Google Drive backup. The installer from the project's "
-         "releases has it.", 21, kDim);
+    para("Google Drive backup isn't switched on in this copy of Prometheus 64 yet: the app is still waiting to be "
+         "registered with Google. It arrives in an update; your saves stay safe on this computer until then.", 21, kDim);
     button(px + pw - 48 * s, py + ph - 92 * s, "Close", false, kBbClose, true);
     return;
   }
