@@ -59,6 +59,12 @@ Root: HKA; Subkey: "Software\Classes\.v64\OpenWithProgids"; ValueType: string; V
 Root: HKA; Subkey: "Software\Classes\.zip\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.7z\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.rar\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
+; Online key files (.prometheuskey, shared by every Project Prometheus app): double-clicking one
+; adds the group's key, so the player can host and join online games.
+Root: HKA; Subkey: "Software\Classes\.prometheuskey"; ValueType: string; ValueName: ""; ValueData: "ProjectPrometheus.OnlineKey"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\ProjectPrometheus.OnlineKey"; ValueType: string; ValueName: ""; ValueData: "Project Prometheus online key"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\ProjectPrometheus.OnlineKey\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\Prometheus64.exe,0"
+Root: HKA; Subkey: "Software\Classes\ProjectPrometheus.OnlineKey\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Prometheus64.exe"" ""%1"""
 
 [Run]
 Filename: "{app}\Prometheus64.exe"; Description: "Start Prometheus 64"; Flags: nowait postinstall skipifsilent

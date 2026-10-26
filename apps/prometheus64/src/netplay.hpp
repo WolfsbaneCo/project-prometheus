@@ -21,7 +21,7 @@ namespace p64 {
 
 class Netplay {
  public:
-  static constexpr int kProtocol = 1;
+  static constexpr int kProtocol = 1;  // this app's own messages (the relay has its own version)
   static constexpr int kPorts = 4;
   static constexpr int kMinDelay = 2, kMaxDelay = 12;
 
@@ -64,10 +64,11 @@ class Netplay {
   };
 
   // Lobby.
-  void host(const std::string& relay_url, const std::string& name, const GameInfo& game, int local_players,
-            uint8_t rumble_mask, const std::string& versions);
-  void join(const std::string& relay_url, const std::string& code, const std::string& name, int local_players,
-            uint8_t rumble_mask, const std::string& versions);
+  // `key` is the group's key (from its key file); joining also needs the host's room code.
+  void host(const std::string& relay_url, const std::string& key, const std::string& name, const GameInfo& game,
+            int local_players, uint8_t rumble_mask, const std::string& versions);
+  void join(const std::string& relay_url, const std::string& key, const std::string& code, const std::string& name,
+            int local_players, uint8_t rumble_mask, const std::string& versions);
   void leave();                 // disconnect from the room or session
   void update();                // pump the network, every frame
   std::vector<Event> take_events();

@@ -17,7 +17,7 @@ The **mouse** works everywhere: click a game to play it, click menu items (the â
 |---|---|
 | Esc, right-click, or Back/Guide on a controller | Quick menu: save states, picture, fill mode, resolution, volume, players, controls |
 | C (in the library) | Controls: change any key or controller button |
-| N (in the library) | Play online with friends anywhere |
+| N (in the library) | Play online with friends in your group |
 | F2 / F3 | Next fill mode / next picture preset |
 | F5 / F7 / F6 | Save state / load state / next state slot |
 | F10 | Who's playing: seat controllers and keyboards for up to 4 players |
@@ -32,10 +32,13 @@ The **mouse** works everywhere: click a game to play it, click menu items (the â
 
 ### Playing online
 
-Press **N** in the library (or click **Play online**). Everyone needs Prometheus 64 and the same game file in their library; the app checks both and says what's missing.
+Online games happen in a private **group**. One person sets the group up once, and everyone in it shares the group's **key file**. Playing a game then takes two things: the key file (once) and the host's **game code** (each game). Nothing changes for anyone who doesn't use online play.
 
-- **To host:** pick the game in the library, press N, then **Host**. The first time, the app walks you through a one-time setup (about 2 minutes): a free Cloudflare account and a key you copy and paste. The app then installs a small relay on *your* account; the key isn't kept. You get an invite code like `K7Q2M.alex` to send to your friends. When everyone shows up, choose the input delay (the suggested one covers the slowest connection) and press **Start**.
-- **To join:** press N, then **Join**, and type or paste the code. No account or setup needed.
+- **Starting a group (one person, once, about 2 minutes):** press **N** in the library (or click **Play online**), then **Set up**. The app walks you through a free Cloudflare account and a Cloudflare key you copy and paste; it installs a small relay on *your* account and doesn't keep that Cloudflare key. It then gives you the group's key file: click **Save key file** and send the `.prometheuskey` file to your friends.
+- **Joining a group:** double-click the key file, drop it onto the window, or press N and click **Add key file**. The installer never contains a key.
+- **Hosting a game:** anyone in the group can. Pick the game, press N, then **Host this game**. You get a five-character game code like `K7Q2M`; send it to your friends. When everyone shows up, choose the input delay (the suggested one covers the slowest connection) and press **Start**.
+- **Joining a game:** press N, then **Join**, and type or paste the host's code. Everyone needs the same version of Prometheus 64 and the same game file; the app checks both and says what's missing.
+- The key file is for all of Project Prometheus, not only this app: future Project Prometheus apps with online features (trading in a GBA app, say) use the same key and the same relay. It's kept once per computer, so they find it without adding it again. Setting the group up again makes a new key, and old copies stop working. **Remove key** forgets it on this computer.
 
 Each computer runs the game itself and only controller presses travel, so everyone keeps their own picture settings, and couch players can join too (two on one computer and two on another). The host's save is used and stays on the host's computer, backed up first; guests' own saves aren't touched. Save states are off while online, the host's menu pauses everyone, and only the host can reset. If someone drops out, the host keeps playing offline. Under about 40 ms of ping plays great, up to 80 ms is fine for most games; a wired connection plays smoother than Wi-Fi. Details: [`relay/README.md`](relay/README.md).
 
@@ -73,7 +76,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 | 1: Player | **Playable.** Library (with zip, 7z and rar), picture presets, fill modes, resolution up to supersampling, HD textures, fullscreen, quick menu, mouse, save states, local multiplayer up to 4, rumble, button remapping, Windows installer. Still to come: the Vulkan renderer (ParaLLEl-RDP) and per-person profiles |
 | 2: Saves | **Working.** In-game saves stored in the library with history; imports from other emulators; `n64save` tool and converters |
 | 3: Google Drive sync | Not started |
-| 4: Netplay | **Working.** Invite codes through a relay on the host's own free Cloudflare account (set up from inside the app), lockstep with game and version checks, adjustable input delay, the host's save. Checked between two copies on Linux and between Linux and Windows; not yet over the internet |
+| 4: Netplay | **Working.** Private groups with a shared key file and a relay on the group owner's free Cloudflare account (set up from inside the app), game codes, lockstep with game and version checks, adjustable input delay, the host's save. Checked with Harvest Moon 64 and Super Smash Bros. between two copies on Linux and between Linux and Windows; not yet over the internet |
 | 5: Cartridge | Not started |
 
 ## Building from source

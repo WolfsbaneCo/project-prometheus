@@ -5,6 +5,7 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <random>
 
 #include "json.hpp"
 #include "net.hpp"
@@ -13,7 +14,7 @@
 namespace p64::cloudflare {
 namespace {
 
-constexpr const char* kScriptName = "prometheus64-relay";
+constexpr const char* kScriptName = "prometheus-relay";  // one relay for all Project Prometheus apps
 constexpr const char* kCompatibilityDate = "2026-09-01";
 
 std::string api_base() {
@@ -83,11 +84,15 @@ std::string signup_url() { return "https://dash.cloudflare.com/sign-up"; }
 std::string token_page_url() {
   const std::string permissions = R"([{"key":"workers_scripts","type":"edit"},{"key":"account_settings","type":"read"}])";
   return "https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=" + url_encode(permissions) +
-         "&accountId=*&zoneId=all&name=" + url_encode("Prometheus 64 online play");
+         "&accountId=*&zoneId=all&name=" + url_encode("Project Prometheus online play");
 }
 
-std::string relay_url_for(const std::string& subdomain) {
-  return std::string("wss://") + kScriptName + "." + subdomain + ".workers.dev";
+std::string new_group_key() {
+  static const char* chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  std::random_device rd;  // the system's secure random source on Windows and Linux
+  std::string key;
+  for (int i = 0; i < 43; ++i) key += chars[rd() & 63];
+  return key;
 }
 
 Result install_relay(const std::string& raw_token, const std::function<void(const std::string&)>& progress) {
@@ -144,12 +149,14 @@ Result install_relay(const std::string& raw_token, const std::function<void(cons
     return res;
   }
 
-  progress("Installing the relay...");
+  progress("Installing the relay for your group...");
+  const std::string group_key = new_group_key();
   // The room storage is created once (migration "v1"); later installs only update the code.
   bool exists = api.call("GET", base + "/services/" + kScriptName);
   const std::string tag = exists ? api.last["result"]["default_environment"]["script"]["migration_tag"].str() : "";
   std::string metadata = std::string("{\"main_module\":\"index.js\",\"compatibility_date\":\"") + kCompatibilityDate +
-                         "\",\"bindings\":[{\"type\":\"durable_object_namespace\",\"name\":\"ROOMS\",\"class_name\":\"Room\"}]";
+                         "\",\"bindings\":[{\"type\":\"durable_object_namespace\",\"name\":\"ROOMS\",\"class_name\":\"Room\"},"
+                         "{\"type\":\"secret_text\",\"name\":\"GROUP_KEY\",\"text\":" + json::quote(group_key) + "}]";
   if (tag != "v1") metadata += ",\"migrations\":{\"new_tag\":\"v1\",\"steps\":[{\"new_sqlite_classes\":[\"Room\"]}]}";
   metadata += "}";
   const std::vector<net::Part> parts = {
@@ -168,21 +175,22 @@ Result install_relay(const std::string& raw_token, const std::function<void(cons
   }
 
   res.ok = true;
-  res.subdomain = subdomain;
-  res.relay_host = std::string(kScriptName) + "." + subdomain + ".workers.dev";
+  res.group_key = group_key;
+  const std::string relay_host = std::string(kScriptName) + "." + subdomain + ".workers.dev";
+  res.relay_url = "wss://" + relay_host;
 
   // A brand-new address can take a minute to appear on the internet.
   progress("Testing the relay...");
   const bool stand_in = std::getenv("P64_CLOUDFLARE_API") != nullptr;  // tests: there is no real address
   for (int i = 0; i < 12 && !stand_in; ++i) {
-    const net::Response r = net::request("GET", "https://" + res.relay_host + "/", {}, {}, {}, 10);
-    if (r.status == 200 && r.body.find("Prometheus 64 relay") != std::string::npos) {
-      res.message = "Online play is ready";
+    const net::Response r = net::request("GET", "https://" + relay_host + "/", {}, {}, {}, 10);
+    if (r.status == 200 && r.body.find("Project Prometheus relay") != std::string::npos) {
+      res.message = "Your group is ready";
       return res;
     }
     SDL_Delay(5000);
   }
-  res.message = "Online play is set up. Your new address can take a few minutes to start working";
+  res.message = "Your group is ready. Its new address can take a few minutes to start working";
   return res;
 }
 

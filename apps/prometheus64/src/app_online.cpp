@@ -9,9 +9,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 
 #include "app.hpp"
 #include "app_shared.hpp"
+#include "json.hpp"
 #include "savekit/sha256.hpp"
 
 namespace fs = std::filesystem;
@@ -24,8 +26,35 @@ constexpr std::size_t kSrmSize = 0x48800;
 // Buttons on the online screens (kHitOnline arg).
 enum OnlineButton {
   kObHost, kObJoin, kObSetup, kObClose, kObBack, kObSignup, kObTokenPage, kObPasteToken, kObInstall, kObFixPage,
-  kObPasteCode, kObJoinGo, kObCopyCode, kObStart, kObLeave, kObDelayDown, kObDelayUp, kObDone
+  kObPasteCode, kObJoinGo, kObCopyCode, kObStart, kObLeave, kObDelayDown, kObDelayUp, kObDone, kObAddKey, kObSaveKey,
+  kObRemoveKey
 };
+
+// The group's key file: which relay, and the key that opens it. Small JSON, and not tied to this
+// app: every Project Prometheus app with online play (a GBA one trading Pokemon, say) uses the same
+// key file and relay, each in its own rooms.
+constexpr const char* kKeyFileType = "Project Prometheus online key";
+constexpr const char* kKeyExt = ".prometheuskey";
+
+struct GroupKey {
+  std::string group, relay, key;
+};
+
+bool parse_key(const std::string& text, GroupKey& out) {
+  json::Value v;
+  if (!json::parse(text, v) || v["type"].str() != kKeyFileType) return false;
+  out.relay = v["relay"].str();
+  out.key = v["key"].str();
+  out.group = v["group"].str().substr(0, 60);
+  if (out.group.empty()) out.group = "your group";
+  return out.key.size() >= 8 && (out.relay.rfind("wss://", 0) == 0 || out.relay.rfind("ws://", 0) == 0);
+}
+
+std::string key_json(const GroupKey& k) {
+  return std::string("{\n  \"type\": ") + json::quote(kKeyFileType) + ",\n  \"version\": 1,\n  \"group\": " +
+         json::quote(k.group) + ",\n  \"relay\": " + json::quote(k.relay) + ",\n  \"key\": " + json::quote(k.key) +
+         "\n}\n";
+}
 
 std::string default_name() {
   for (const char* var : {"USERNAME", "USER"}) {
@@ -67,17 +96,101 @@ std::string App::versions() const {
   return std::string("Prometheus 64 ") + P64_VERSION + " / core " + (core ? core : "?");
 }
 
-std::string App::hosting_relay_url() const {
-  if (const char* v = std::getenv("P64_RELAY_URL"); v && *v) return v;  // tests and private relays
-  if (const std::string custom = settings_.get("relay_url"); !custom.empty()) return custom;
-  if (const std::string sub = settings_.get("relay_subdomain"); !sub.empty()) return cloudflare::relay_url_for(sub);
-  return {};
+// The group this computer belongs to, from its key file (tests can point elsewhere).
+std::string App::relay_url() const {
+  if (const char* v = std::getenv("P64_RELAY_URL"); v && *v) return v;
+  return group_relay_;
 }
 
-std::string App::invite_code() const {
-  const std::string sub = settings_.get("relay_subdomain");
-  const bool custom = std::getenv("P64_RELAY_URL") || !settings_.get("relay_url").empty();
-  return net_.code() + (custom || sub.empty() ? std::string() : "." + sub);
+std::string App::group_key() const {
+  if (const char* v = std::getenv("P64_RELAY_KEY"); v && *v) return v;
+  return group_key_;
+}
+
+bool App::has_group_key() const { return !relay_url().empty() && !group_key().empty(); }
+
+// One key per computer for every Project Prometheus app: kept next to the apps' own folders
+// (".../Project Prometheus/online.prometheuskey"), so a later app finds it without asking again.
+fs::path App::group_key_path() const {
+  fs::path dir = pref_dir_;
+  if (!dir.has_filename()) dir = dir.parent_path();  // the pref path ends in a separator
+  return dir.parent_path() / ("online" + std::string(kKeyExt));
+}
+
+void App::load_group_key() {
+  std::ifstream in(group_key_path(), std::ios::binary);
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  GroupKey k;
+  if (!parse_key(text, k)) k = {};
+  group_name_ = k.group;
+  group_relay_ = k.relay;
+  group_key_ = k.key;
+}
+
+bool App::store_group_key(const std::string& group, const std::string& relay, const std::string& key) {
+  const fs::path file = group_key_path();
+  const fs::path tmp = fs::path(file).concat(".tmp");
+  std::error_code ec;
+  fs::create_directories(file.parent_path(), ec);
+  {
+    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+    out << key_json({group, relay, key});
+    if (!out) return false;
+  }
+  fs::rename(tmp, file, ec);
+  if (ec) return false;
+  load_group_key();
+  return true;
+}
+
+void App::forget_group_key() {
+  std::error_code ec;
+  fs::remove(group_key_path(), ec);
+  load_group_key();
+}
+
+bool App::import_key_file(const fs::path& file) {
+  std::ifstream in(file, std::ios::binary);
+  std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  GroupKey k;
+  if (!parse_key(text.substr(0, 4096), k)) {
+    toast("That isn't a Project Prometheus key file", 5);
+    return false;
+  }
+  if (!store_group_key(k.group, k.relay, k.key)) {
+    toast("Could not keep the key on this computer", 5);
+    return false;
+  }
+  toast("Added the key for " + group_name_ + ". You can host and join its online games now", 6);
+  online_note_.clear();
+  return true;
+}
+
+bool App::save_key_file(fs::path file) {
+  if (!has_group_key()) return false;
+  if (file.extension() != kKeyExt) file += kKeyExt;
+  std::ofstream out(file, std::ios::binary | std::ios::trunc);
+  out << key_json({group_name_.empty() ? std::string("Our group") : group_name_, relay_url(), group_key()});
+  if (!out) {
+    toast("Could not save the key file there", 5);
+    return false;
+  }
+  toast("Key file saved. Send it to the friends you want to play with", 6);
+  return true;
+}
+
+void App::choose_key_file() {
+  static const SDL_DialogFileFilter filters[] = {{"Project Prometheus key file", "prometheuskey"}};
+  auto* info = new std::pair<uint32_t, int>(user_event_, kKeyChosen);
+  SDL_ShowOpenFileDialog(dialog_done, info, window_, filters, 1, nullptr, false);
+}
+
+void App::choose_key_save() {
+  static const SDL_DialogFileFilter filters[] = {{"Project Prometheus key file", "prometheuskey"}};
+  auto* info = new std::pair<uint32_t, int>(user_event_, kKeySaveAs);
+  const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
+  const std::string where = docs ? utf8(from_utf8(docs) / ("Project Prometheus online key" + std::string(kKeyExt))) : std::string();
+  SDL_ShowSaveFileDialog(dialog_done, info, window_, filters, 1, where.empty() ? nullptr : where.c_str());
 }
 
 std::vector<int> App::local_seats() const {
@@ -106,6 +219,7 @@ void App::open_online() {
   overlay_ = Overlay::Online;
   online_focus_ = 0;
   online_note_.clear();
+  confirm_remove_key_ = false;
   online_page_ = net_.active() ? OnlinePage::Lobby : OnlinePage::Main;
 }
 
@@ -126,11 +240,11 @@ void App::focus_field(TextField field) {
 bool App::handle_text(const SDL_Event& e) {
   if (text_field_ == TextField::None || overlay_ != Overlay::Online) return false;
   std::string* target = text_field_ == TextField::Name ? &name_input_ : text_field_ == TextField::Token ? &token_input_ : &code_input_;
-  const std::size_t limit = text_field_ == TextField::Name ? 24 : text_field_ == TextField::Token ? 200 : 40;
+  const std::size_t limit = text_field_ == TextField::Name ? 24 : text_field_ == TextField::Token ? 200 : 5;
   auto add = [&](const char* text) {
     for (const char* c = text; *c; ++c) {
       const unsigned char ch = static_cast<unsigned char>(*c);
-      if (text_field_ == TextField::Code && !(std::isalnum(ch) || ch == '.' || ch == '-')) continue;
+      if (text_field_ == TextField::Code && !std::isalnum(ch)) continue;
       if (text_field_ == TextField::Token && std::isspace(ch)) continue;
       if (ch < 0x20) continue;
       if (target->size() < limit) target->push_back(static_cast<char>(ch));
@@ -195,9 +309,9 @@ void App::finish_setup() {
   }
   if (setup_thread_.joinable()) setup_thread_.join();
   if (r.ok) {
-    settings_.set("relay_subdomain", r.subdomain);
-    settings_.save();
-    token_input_.clear();  // the key is never kept
+    const std::string who = name_input_.empty() ? default_name() : name_input_;
+    if (!store_group_key(who + "'s group", r.relay_url, r.group_key)) toast("Could not keep the group key on this computer", 6);
+    token_input_.clear();  // the Cloudflare key is never kept
   }
 }
 
@@ -209,10 +323,9 @@ void App::host_online() {
     online_note_ = "Add your games first: Choose games folder on the library screen";
     return;
   }
-  const std::string url = hosting_relay_url();
-  if (url.empty()) {
-    online_page_ = OnlinePage::Setup;
-    online_focus_ = 0;
+  if (!has_group_key()) {
+    online_note_ = "Add your group's key file first, or set up a new group";
+    online_page_ = OnlinePage::Main;
     return;
   }
   const Game& g = hosted_game_ ? *hosted_game_ : games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)];
@@ -230,38 +343,26 @@ void App::host_online() {
   for (std::size_t k = 0; k < seats.size(); ++k) {
     if (input_.has_rumble(seats[k])) rumble |= static_cast<uint8_t>(1u << k);
   }
-  net_.host(url, name_input_.empty() ? default_name() : name_input_, info, static_cast<int>(std::max<std::size_t>(1, seats.size())),
-            rumble, versions());
+  net_.host(relay_url(), group_key(), name_input_.empty() ? default_name() : name_input_, info,
+            static_cast<int>(std::max<std::size_t>(1, seats.size())), rumble, versions());
   printed_invite_ = false;
   online_page_ = OnlinePage::Lobby;
   online_focus_ = 0;
 }
 
 void App::join_online() {
-  // An invite is CODE.subdomain (the host's own relay) or just CODE (a relay set up here).
-  std::string text;
-  for (char c : code_input_) {
-    if (!std::isspace(static_cast<unsigned char>(c))) text += c;
-  }
-  const auto dot = text.find('.');
-  std::string code = text.substr(0, dot);
-  std::string sub = dot == std::string::npos ? std::string() : text.substr(dot + 1);
-  for (char& c : code) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-  for (char& c : sub) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  if (code.size() != 5) {
-    online_note_ = "An invite code looks like K7Q2M.alex: five letters or numbers, a dot, then a name";
+  // Joining takes both: the group's key (from its key file) and the host's five-character code.
+  if (!has_group_key()) {
+    online_note_ = "Add your group's key file first: ask whoever set up the group for it";
+    online_page_ = OnlinePage::Main;
     return;
   }
-  std::string url;
-  if (const char* v = std::getenv("P64_RELAY_URL"); v && *v) {
-    url = v;
-  } else if (!sub.empty()) {
-    url = cloudflare::relay_url_for(sub);
-  } else {
-    url = hosting_relay_url();
+  std::string code;
+  for (char c : code_input_) {
+    if (std::isalnum(static_cast<unsigned char>(c))) code += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
   }
-  if (url.empty()) {
-    online_note_ = "Ask your friend for the whole code: it has a dot and a name after the five letters";
+  if (code.size() != 5) {
+    online_note_ = "A game code is five letters or numbers, like K7Q2M. Ask the host for it";
     return;
   }
   focus_field(TextField::None);
@@ -270,7 +371,7 @@ void App::join_online() {
   for (std::size_t k = 0; k < seats.size(); ++k) {
     if (input_.has_rumble(seats[k])) rumble |= static_cast<uint8_t>(1u << k);
   }
-  net_.join(url, code, name_input_.empty() ? default_name() : name_input_,
+  net_.join(relay_url(), group_key(), code, name_input_.empty() ? default_name() : name_input_,
             static_cast<int>(std::max<std::size_t>(1, seats.size())), rumble, versions());
   online_note_.clear();
   online_page_ = OnlinePage::Lobby;
@@ -432,7 +533,7 @@ void App::process_net_events() {
   if (!net_.active()) return;
   // Test mode hooks.
   if (opt_.online_host && !printed_invite_ && !net_.code().empty()) {
-    std::printf("online-invite %s\n", invite_code().c_str());
+    std::printf("online-invite %s\n", net_.code().c_str());
     std::fflush(stdout);
     printed_invite_ = true;
   }
@@ -543,46 +644,57 @@ void App::draw_online() {
       at_y += 28 * s;
     }
   };
-  const std::string relay = hosting_relay_url();
 
   if (online_page_ == OnlinePage::Main) {
-    title("Play online", "Play with friends anywhere. Everyone needs Prometheus 64 and the same game in their library.");
+    const bool keyed = has_group_key();
+    title("Play online", keyed ? "You're in " + (group_name_.empty() ? std::string("a group") : group_name_) +
+                                     ". Host a game and send its code to friends in the group, or join with a code."
+                               : "Online games happen in a private group. One person sets the group up once on a free "
+                                 "Cloudflare account and shares the group's key file. Anyone with the key file can then "
+                                 "host, or join with the host's game code.");
     ui_.text(x, y + 14 * s, "Your name", 20 * s, kDim);
     draw_field(x + 160 * s, y, 380 * s, s, TextField::Name, name_input_, "Your name", false);
     y += 96 * s;
-    // Host card.
-    const std::string game = games_.empty() ? std::string()
-                                            : games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)].title;
-    ui_.rect(x, y, inner, 150 * s, kTile, 18 * s);
-    ui_.text(x + 28 * s, y + 26 * s, "Host a game", 26 * s, kText, true);
-    ui_.text(x + 28 * s, y + 66 * s,
-             ui_.fit(games_.empty() ? "Add your games first (Choose games folder on the library screen)"
-                     : relay.empty() ? "One-time setup first (about 2 minutes), then you get an invite code for " + game
-                                     : "Get an invite code for " + game + " to send to your friends",
-                     19 * s, inner - 340 * s),
-             19 * s, kDim);
-    online_button(x + inner - 28 * s, y + 49 * s, relay.empty() ? "Set up and host" : "Host " + std::string(games_.empty() ? "" : "this game"),
-                  s, true, kObHost, true, !games_.empty());
-    y += 172 * s;
-    // Join card.
-    ui_.rect(x, y, inner, 150 * s, kTile, 18 * s);
-    ui_.text(x + 28 * s, y + 26 * s, "Join a friend's game", 26 * s, kText, true);
-    ui_.text(x + 28 * s, y + 66 * s, "Type the invite code your friend sent you. No setup needed", 19 * s, kDim);
-    online_button(x + inner - 28 * s, y + 49 * s, "Join", s, true, kObJoin, true);
-    y += 186 * s;
-    ui_.text(x, y, relay.empty() ? "Online play isn't set up on this computer yet. Only hosts need it."
-                                 : "Set up: your games go through " + relay.substr(relay.find("//") + 2),
-             18 * s, kFaint);
+    auto card = [&](const std::string& head, const std::string& body, const std::string& button, int id, bool enabled) {
+      ui_.rect(x, y, inner, 150 * s, kTile, 18 * s);
+      ui_.text(x + 28 * s, y + 26 * s, head, 26 * s, kText, true);
+      ui_.text(x + 28 * s, y + 66 * s, ui_.fit(body, 19 * s, inner - 340 * s), 19 * s, kDim);
+      online_button(x + inner - 28 * s, y + 49 * s, button, s, true, id, true, enabled);
+      y += 172 * s;
+    };
+    if (keyed) {
+      const std::string game = games_.empty() ? std::string()
+                                              : games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)].title;
+      card("Host a game", games_.empty() ? "Add your games first (Choose games folder on the library screen)"
+                                         : "Opens " + game + " and gives you a code to send to your friends",
+           "Host this game", kObHost, !games_.empty());
+      card("Join a game", "Type the code the host sent you", "Join", kObJoin, true);
+    } else {
+      card("I have a key file", "Got a key file from a friend? Add it, then join or host", "Add key file", kObAddKey, true);
+      card("Start a new group", "One-time setup on your free Cloudflare account, about 2 minutes", "Set up", kObSetup, true);
+    }
+    y += 14 * s;
+    if (keyed) {
+      ui_.text(x, y, "Friends need your group's key file (once) and the game code (each game).", 18 * s, kFaint);
+    } else {
+      ui_.text(x, y, "You can also drop a key file onto this window, or double-click it. The same key works in every "
+                     "Project Prometheus app.", 18 * s, kFaint);
+    }
     note(y + 36 * s);
-    online_button(x, py + ph - 92 * s, relay.empty() ? "Set up online play" : "Set up again", s, false, kObSetup);
+    float bx = x;
+    if (keyed) {
+      bx += online_button(bx, py + ph - 92 * s, "Save key file", s, false, kObSaveKey) + 14 * s;
+      online_button(bx, py + ph - 92 * s, confirm_remove_key_ ? "Click again to remove" : "Remove key", s, false,
+                    kObRemoveKey);
+    }
     online_button(px + pw - 48 * s, py + ph - 92 * s, "Close", s, false, kObClose, true);
     return;
   }
 
   if (online_page_ == OnlinePage::Setup) {
-    title("Set up online play",
-          "Online games go through a small relay on your own free Cloudflare account. You do this once, and only "
-          "whoever hosts needs it. Your friends just type your invite code.");
+    title("Start a new group",
+          "Online games go through a small relay on your own free Cloudflare account. You do this once. Then you "
+          "save the group's key file and send it to your friends: only people with it can join your games.");
     auto step = [&](int n, const std::string& head, const std::string& body, float h) {
       ui_.rect(x, y, 44 * s, 44 * s, kRed, 22 * s);
       ui_.text(x + 22 * s, y + 8 * s, std::to_string(n), 24 * s, kText, true, Align::Center);
@@ -604,6 +716,7 @@ void App::draw_online() {
              126 * s);
     online_button(x + inner, t, "Open the key page", s, false, kObTokenPage, true);
     step(3, "Paste the key here", "It's used once to install the relay and never saved.", 76 * s);
+
     draw_field(x + 68 * s, y, inner - 68 * s - 300 * s, s, TextField::Token, token_input_, "Paste your key", true);
     online_button(x + inner - 140 * s, y, "Paste", s, false, kObPasteToken, true);
     online_button(x + inner, y, "Set up", s, true, kObInstall, true, !setup_running_ && !token_input_.empty());
@@ -625,15 +738,25 @@ void App::draw_online() {
         ly += 30 * s;
       }
       if (!result.fix_url.empty()) online_button(x, ly + 8 * s, "Open the fix page", s, false, kObFixPage);
+      if (result.ok) {
+        ui_.text(x, ly + 4 * s, "Now save your group's key file and send it to the friends you want to play with.", 19 * s, kText);
+        online_button(x, ly + 44 * s, "Save key file", s, true, kObSaveKey);
+      }
+    } else if (has_group_key()) {
+      for (const auto& line : wrap(ui_, "You already have a group key. Setting up again makes a new one, and the old key "
+                                        "file stops working: everyone would need the new one.", 19 * s, inner, false, 2)) {
+        ui_.text(x, y, line, 19 * s, rgb(0xF2C12E));
+        y += 28 * s;
+      }
     }
     online_button(x, py + ph - 92 * s, "Back", s, false, kObBack);
-    if (!relay.empty()) online_button(px + pw - 48 * s, py + ph - 92 * s, "Host a game now", s, true, kObHost, true);
+    if (result.ok) online_button(px + pw - 48 * s, py + ph - 92 * s, "Host a game now", s, false, kObHost, true);
     return;
   }
 
   if (online_page_ == OnlinePage::Join) {
-    title("Join a friend's game", "Type the invite code your friend sent you. It looks like K7Q2M.alex");
-    draw_field(x, y, inner - 300 * s, s, TextField::Code, code_input_, "Invite code", false);
+    title("Join a game", "Type the game code the host sent you: five letters or numbers, like K7Q2M.");
+    draw_field(x, y, inner - 300 * s, s, TextField::Code, code_input_, "Game code", false);
     online_button(x + inner - 140 * s, y, "Paste", s, false, kObPasteCode, true);
     online_button(x + inner, y, "Join", s, true, kObJoinGo, true, !code_input_.empty());
     y += 96 * s;
@@ -655,11 +778,11 @@ void App::draw_online() {
   y += 70 * s;
   if (host) {
     ui_.rect(x, y, inner, 110 * s, kTile, 18 * s);
-    ui_.text(x + 28 * s, y + 18 * s, "Invite code", 19 * s, kDim);
-    ui_.text(x + 28 * s, y + 46 * s, invite_code(), 40 * s, kText, true);
+    ui_.text(x + 28 * s, y + 18 * s, "Game code", 19 * s, kDim);
+    ui_.text(x + 28 * s, y + 46 * s, net_.code(), 40 * s, kText, true);
     online_button(x + inner - 28 * s, y + 29 * s, "Copy", s, false, kObCopyCode, true);
     y += 124 * s;
-    ui_.text(x, y, "Send this code to your friends. They choose Play online, then Join.", 19 * s, kDim);
+    ui_.text(x, y, "Send this code to your friends. They need your group's key file too, then Play online > Join.", 19 * s, kDim);
     y += 46 * s;
   }
   ui_.text(x, y, "Players", 22 * s, kRed, true);
@@ -728,6 +851,7 @@ void App::draw_online_status() {
 }
 
 void App::online_click(int id) {
+  if (id != kObRemoveKey) confirm_remove_key_ = false;
   switch (id) {
     case kObHost:
       online_note_.clear();
@@ -742,6 +866,18 @@ void App::online_click(int id) {
     case kObSetup:
       online_page_ = OnlinePage::Setup;
       online_focus_ = 0;
+      online_note_.clear();
+      break;
+    case kObAddKey: choose_key_file(); break;
+    case kObSaveKey: choose_key_save(); break;
+    case kObRemoveKey:
+      if (!confirm_remove_key_) {
+        confirm_remove_key_ = true;
+        break;
+      }
+      confirm_remove_key_ = false;
+      forget_group_key();
+      toast("Key removed from this computer. Add the key file again any time to play online", 5);
       break;
     case kObClose:
       focus_field(TextField::None);
@@ -760,7 +896,8 @@ void App::online_click(int id) {
         std::string& target = id == kObPasteToken ? token_input_ : code_input_;
         target.clear();
         for (const char* c = clip; *c; ++c) {
-          if (!std::isspace(static_cast<unsigned char>(*c))) target += *c;
+          const unsigned char ch = static_cast<unsigned char>(*c);
+          if (id == kObPasteCode ? std::isalnum(ch) && target.size() < 5 : !std::isspace(ch)) target += *c;
         }
         SDL_free(clip);
       }
@@ -776,8 +913,8 @@ void App::online_click(int id) {
     }
     case kObJoinGo: join_online(); break;
     case kObCopyCode:
-      SDL_SetClipboardText(invite_code().c_str());
-      toast("Invite code copied");
+      SDL_SetClipboardText(net_.code().c_str());
+      toast("Game code copied");
       break;
     case kObStart: start_online_game(); break;
     case kObLeave:

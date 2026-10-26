@@ -1,6 +1,8 @@
 // Interface constants and helpers shared by the app's screens (app.cpp, app_online.cpp).
 #pragma once
 
+#include <SDL3/SDL.h>
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -16,7 +18,7 @@ inline const Color kBg0 = rgb(0x17100F), kBg1 = rgb(0x0A0A0B), kPanel = rgb(0x18
 inline const Color kPlayerColors[4] = {rgb(0xE8262E), rgb(0x3D7BF0), rgb(0x2FB45A), rgb(0xF2C12E)};
 
 enum UiAction { kUp, kDown, kLeft, kRight, kAccept, kBack, kMenu, kPrevTab, kNextTab };
-enum DialogKind { kFolderChosen = 1, kSaveChosen = 2 };
+enum DialogKind { kFolderChosen = 1, kSaveChosen = 2, kKeyChosen = 3, kKeySaveAs = 4 };
 enum MenuId {
   kResume, kSaveState, kLoadState, kSlot, kPicture, kTextures, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
   kPlayers, kControlsItem, kReset, kQuit
@@ -71,6 +73,20 @@ inline std::vector<std::string> wrap(const Ui& ui, const std::string& text, floa
   }
   for (auto& l : lines) l = ui.fit(l, size, width, bold);
   return lines;
+}
+
+// File dialogs answer on another thread: hand the chosen path to the main loop as an event
+// (userdata: a new pair of the event type and a DialogKind, freed here).
+inline void SDLCALL dialog_done(void* userdata, const char* const* files, int) {
+  auto* info = static_cast<std::pair<uint32_t, int>*>(userdata);
+  if (files && files[0]) {
+    SDL_Event e{};
+    e.type = info->first;
+    e.user.code = info->second;
+    e.user.data1 = SDL_strdup(files[0]);
+    SDL_PushEvent(&e);
+  }
+  delete info;
 }
 
 }  // namespace p64

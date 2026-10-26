@@ -48,6 +48,7 @@ struct Options {
   bool online_start = false;         // test mode: the host starts as soon as everyone is ready
   uint32_t online_exit_frame = 0;    // test mode: print the RAM hash at this online frame and quit
   std::string setup_token;           // test mode: run the online setup with this key at start
+  std::filesystem::path save_key;    // test mode: save the group's key file here at start
 };
 
 class App {
@@ -131,8 +132,17 @@ class App {
   void run_online_frames(uint64_t frame_ns);
   bool game_sha(const Game& game, std::array<uint8_t, 32>& out);
   std::string versions() const;
-  std::string hosting_relay_url() const;
-  std::string invite_code() const;
+  std::string relay_url() const;
+  std::string group_key() const;
+  bool has_group_key() const;
+  std::filesystem::path group_key_path() const;
+  void load_group_key();
+  bool store_group_key(const std::string& group, const std::string& relay, const std::string& key);
+  void forget_group_key();
+  bool import_key_file(const std::filesystem::path& file);
+  bool save_key_file(std::filesystem::path file);
+  void choose_key_file();
+  void choose_key_save();
   std::vector<int> local_seats() const;
   bool online_blocks(int menu_id);  // explains and returns true when a menu action is off online
   void draw_toasts();
@@ -197,6 +207,8 @@ class App {
   OnlinePage online_page_ = OnlinePage::Main;
   TextField text_field_ = TextField::None;
   std::string name_input_, token_input_, code_input_, online_note_;
+  bool confirm_remove_key_ = false;  // "Remove key" asks once more before forgetting the group
+  std::string group_name_, group_relay_, group_key_;  // the online group, from the shared key file
   std::vector<int> online_buttons_;  // buttons drawn on the current online page, for keyboard focus
   int online_focus_ = 0;
   std::thread setup_thread_;

@@ -6,7 +6,7 @@
 // --press <frame>:<key name> --hold <from>-<to>:<player>:<button> --poke-save <frame>
 // --dump-save <file> --fullscreen --ram-hash --option key=value --click <frame>:x,y
 // Online tests: --online-host (with a game) --online-join <code> --online-start --online-exit-frame N
-// --online-setup <key> (against P64_CLOUDFLARE_API)
+// --online-setup <key> (against P64_CLOUDFLARE_API) --save-key <file>
 
 #include <SDL3/SDL_main.h>
 
@@ -48,6 +48,8 @@ int main(int argc, char** argv) {
       o.online_host = true;
     } else if (a == "--online-join") {
       o.online_join = next();
+    } else if (a == "--save-key") {
+      o.save_key = std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(next().c_str())));
     } else if (a == "--online-setup") {
       o.setup_token = next();
     } else if (a == "--online-start") {

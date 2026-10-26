@@ -33,9 +33,12 @@ void wait_socket(curl_socket_t sock, bool for_write, int ms) {
 // What a refused relay connection means, in plain words (the relay answers with these codes).
 std::string refusal(long status) {
   switch (status) {
-    case 400: return "This version of Prometheus 64 doesn't match the relay. Update the app (or the relay)";
+    case 400: return "This version of Prometheus 64 doesn't match the group's relay. Everyone needs the same version";
+    case 401: return "Your key file doesn't open this group's games. If the group was set up again, ask for the new key file";
     case 403: return "This game is full";
-    case 404: return "No game is open with this code. Check the code with your friend";
+    case 404: return "No game is open with this code. Check the code with the host";
+    case 423: return "This game has already started. Ask the host to open a new one";
+    case 503: return "The group's relay isn't set up properly. Whoever set it up can do it again";
     case 0: return "Could not reach the relay. Check your internet connection";
     default: return "The relay refused the connection (HTTP " + std::to_string(status) + ")";
   }

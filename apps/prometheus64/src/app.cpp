@@ -70,18 +70,6 @@ std::string load_into(Core& core, const Game& game) {
   return core.load_game(name, std::move(data));
 }
 
-void SDLCALL dialog_done(void* userdata, const char* const* files, int) {
-  auto* info = static_cast<std::pair<uint32_t, int>*>(userdata);
-  if (files && files[0]) {
-    SDL_Event e{};
-    e.type = info->first;
-    e.user.code = info->second;
-    e.user.data1 = SDL_strdup(files[0]);
-    SDL_PushEvent(&e);
-  }
-  delete info;
-}
-
 }  // namespace
 
 const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
@@ -115,6 +103,7 @@ bool App::init(std::string& error) {
   }
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
+  load_group_key();
   const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
   const fs::path default_library = (docs ? from_utf8(docs) : pref_dir_) / "N64 Saves";
   library_dir_ = from_utf8(settings_.get("library", utf8(default_library)));
@@ -243,6 +232,11 @@ bool App::init(std::string& error) {
   net::init();
   rescan();
   set_fullscreen(opt_.fullscreen || settings_.get_int("fullscreen", 0) == 1);
+  if (opt_.rom.extension() == ".prometheuskey") {
+    // A key file double-clicked in File Explorer: add it, then show online play.
+    if (import_key_file(opt_.rom)) open_online();
+    opt_.rom.clear();
+  }
   if (!opt_.rom.empty()) {
     std::string why;
     auto found = read_games(opt_.rom, &why);
@@ -260,6 +254,7 @@ bool App::init(std::string& error) {
       return false;
     }
   }
+  if (!opt_.save_key.empty()) save_key_file(opt_.save_key);
   if (!opt_.setup_token.empty()) {
     open_online();
     online_page_ = OnlinePage::Setup;
@@ -815,11 +810,19 @@ void App::handle(const SDL_Event& e) {
       toast(games_.empty() ? "No N64 games found in that folder" : "Found " + std::to_string(games_.size()) + " games");
     } else if (e.user.code == kSaveChosen) {
       import_save(from_utf8(path));
+    } else if (e.user.code == kKeyChosen) {
+      if (import_key_file(from_utf8(path)) && overlay_ != Overlay::Online) open_online();
+    } else if (e.user.code == kKeySaveAs) {
+      save_key_file(from_utf8(path));
     }
     return;
   }
   if (e.type == SDL_EVENT_DROP_FILE && e.drop.data) {
     const fs::path file = from_utf8(e.drop.data);
+    if (file.extension() == ".prometheuskey") {
+      if (import_key_file(file) && !game_) open_online();
+      return;
+    }
     std::string why;
     auto found = read_games(file, &why);
     if (!found.empty()) {
@@ -1831,13 +1834,19 @@ void App::draw_toasts() {
   const uint64_t now = SDL_GetTicksNS();
   while (!toasts_.empty() && toasts_.front().until_ns < now) toasts_.pop_front();
   const float s = out_h_ / 1080.0f;
-  float y = out_h_ - (screen_ == Screen::Home ? 110 : 40) * s;
+  // Above the library's footer, or at the top over the online screen (its buttons are at the bottom).
+  const bool top = overlay_ == Overlay::Online;
+  float y = top ? 12 * s : out_h_ - (screen_ == Screen::Home ? 110 : 40) * s;
   for (auto it = toasts_.rbegin(); it != toasts_.rend(); ++it) {
     const float left_ms = static_cast<float>(it->until_ns - now) / 1e6f;
     const float alpha = std::min(1.0f, left_ms / 400.0f);
     const std::string t = ui_.fit(it->text, 20 * s, out_w_ - 120 * s);
     const float w = ui_.measure(t, 20 * s) + 48 * s, h = 48 * s;
-    y -= h + 10 * s;
+    if (top) {
+      if (it != toasts_.rbegin()) y += h + 10 * s;
+    } else {
+      y -= h + 10 * s;
+    }
     ui_.rect((out_w_ - w) / 2, y, w, h, rgb(0x121214, 0.92f * alpha), 14 * s);
     ui_.rect((out_w_ - w) / 2 + 14 * s, y + h / 2 - 4 * s, 8 * s, 8 * s, kRed.with_alpha(alpha), 4 * s);
     ui_.text((out_w_ - w) / 2 + 32 * s, y + 13 * s, t, 20 * s, kText.with_alpha(alpha));

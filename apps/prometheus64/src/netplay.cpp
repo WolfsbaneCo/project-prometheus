@@ -12,6 +12,9 @@ namespace p64 {
 namespace {
 
 constexpr uint8_t kBroadcast = 255;
+constexpr uint8_t kToRelay = 254;
+constexpr int kRelayProtocol = 2;  // the relay's own version (relay/src/index.js), not this app's
+constexpr const char* kApp = "prometheus64";  // this app's rooms on the group's relay (other apps have their own)  // a message for the relay itself: [254, 1] = the game started
 constexpr int kBatch = 2;               // frames of input per message: halves the relay's message count
 constexpr uint32_t kHashEvery = 300;    // compare memory fingerprints every 5 seconds
 constexpr uint64_t kPingEveryNs = 1'000'000'000;
@@ -146,22 +149,26 @@ void Netplay::open(const std::string& url, const std::string& name) {
   ws_.open(url);
 }
 
-void Netplay::host(const std::string& relay_url, const std::string& name, const GameInfo& game, int local_players,
-                   uint8_t rumble_mask, const std::string& versions) {
+void Netplay::host(const std::string& relay_url, const std::string& key, const std::string& name, const GameInfo& game,
+                   int local_players, uint8_t rumble_mask, const std::string& versions) {
   game_ = game;
   versions_ = versions;
   my_local_players_ = std::clamp(local_players, 1, kPorts);
   my_rumble_ = rumble_mask;
-  open(relay_url + "/v1/host?v=" + std::to_string(kProtocol) + "&name=" + url_encode(name), name);
+  open(relay_url + "/v1/host?app=" + kApp + "&v=" + std::to_string(kRelayProtocol) + "&key=" + url_encode(key) +
+           "&name=" + url_encode(name),
+       name);
 }
 
-void Netplay::join(const std::string& relay_url, const std::string& code, const std::string& name, int local_players,
-                   uint8_t rumble_mask, const std::string& versions) {
+void Netplay::join(const std::string& relay_url, const std::string& key, const std::string& code, const std::string& name,
+                   int local_players, uint8_t rumble_mask, const std::string& versions) {
   game_ = {};
   versions_ = versions;
   my_local_players_ = std::clamp(local_players, 1, kPorts);
   my_rumble_ = rumble_mask;
-  open(relay_url + "/v1/rooms/" + code + "?v=" + std::to_string(kProtocol) + "&name=" + url_encode(name), name);
+  open(relay_url + "/v1/rooms/" + code + "?app=" + kApp + "&v=" + std::to_string(kRelayProtocol) + "&key=" + url_encode(key) +
+           "&name=" + url_encode(name),
+       name);
 }
 
 void Netplay::leave() {
@@ -262,17 +269,20 @@ void Netplay::on_text(const std::string& text) {
     p.name = v["name"].str();
     if (!player(p.id)) players_.push_back(p);
     if (is_host()) {
-      events_.push_back({Event::Message, p.name + " joined"});
       if (phase_ == Phase::Running || phase_ == Phase::Starting) {
-        // Too late to join this game: tell them.
+        // Too late to join this game (the relay normally stops them first): tell them.
         Writer w;
         w.u8(kReject).str("This game has already started");
         send(p.id, w.b);
+      } else {
+        events_.push_back({Event::Message, p.name + " joined"});
       }
     }
   } else if (t == "leave") {
     const int id = static_cast<int>(v["id"].num());
     const std::string name = player_name(id);
+    bool playing = false;  // drives a port in this game (not someone turned away for arriving late)
+    for (const Port& port : ports_) playing = playing || port.player == id;
     players_.erase(std::remove_if(players_.begin(), players_.end(), [&](const Player& p) { return p.id == id; }),
                    players_.end());
     if (!is_host()) return;
@@ -280,7 +290,7 @@ void Netplay::on_text(const std::string& text) {
       events_.push_back({Event::Message, name + " left"});
       assign_ports();
       broadcast_lobby();
-    } else if (phase_ == Phase::Running || phase_ == Phase::Starting) {
+    } else if ((phase_ == Phase::Running || phase_ == Phase::Starting) && playing) {
       // A player leaving mid-game: end it for the others, and carry on offline.
       Writer w;
       w.u8(kEnd).str(name + " left the game");
@@ -395,6 +405,7 @@ void Netplay::start(const std::vector<uint8_t>& save) {
   w.str(game_.id).str(game_.title).bytes(game_.sha.data(), 32);
   w.u32(static_cast<uint32_t>(save.size())).bytes(save.data(), save.size());
   send(kBroadcast, w.b);
+  ws_.send(std::string{static_cast<char>(kToRelay), 1});  // the relay turns away anyone who arrives now
   for (auto& p : players_) p.ready = p.id == 0;
   phase_ = Phase::Starting;
   status_ = "Starting...";

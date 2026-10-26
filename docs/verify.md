@@ -40,7 +40,8 @@ Checked so far on Linux with a software GPU (Mesa llvmpipe) and public-domain ho
 
 Checked with two copies of the app on one Linux machine through a local copy of the relay, and with a Windows copy (under Wine) joining a Linux host. Not yet over the internet or against a real Cloudflare account.
 
-- [ ] The in-app Cloudflare setup on a real account: the key page opening with both permissions filled in, creating the `workers.dev` address on a brand-new account, installing the relay, and how long a new address takes to answer. Checked only against a stand-in for Cloudflare's API built from wrangler's own requests.
+- [ ] The in-app Cloudflare setup on a real account: the key page opening with both permissions filled in, creating the `workers.dev` address on a brand-new account, installing the relay with its `GROUP_KEY` secret (a `secret_text` binding in the upload), and how long a new address takes to answer. Checked only against a stand-in for Cloudflare's API built from wrangler's own requests.
+- [ ] Double-clicking a `.prometheuskey` file on a real Windows PC adds the key (checked by passing the file on the command line, and under Wine).
 - [ ] Secure WebSockets (`wss://`) through Windows' own TLS (Schannel) on a real Windows PC. Checked: plain `ws://` under Wine.
 - [ ] A Mario Party session and a Smash 64 match between two homes (brief 14, Phase 4): input delay that feels right, how often "Waiting for…" appears on Wi-Fi.
 - [ ] Rumble Pak and Controller Pak choice online: each port gets a Rumble Pak when its player's controller can rumble. Games that store data on the Controller Pak would not see it for a rumbling player.
