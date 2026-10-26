@@ -38,4 +38,4 @@ The apps don't knowingly collect information from anyone, including children.
 
 ## Changes and contact
 
-If this policy changes, the new version will be posted here with a new date. Questions: **CONTACT EMAIL**.
+If this policy changes, the new version will be posted here with a new date. Questions: **[vlad.wolfsbane@outlook.com](mailto:vlad.wolfsbane@outlook.com)**.
