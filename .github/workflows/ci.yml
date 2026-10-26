@@ -76,13 +76,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
             libxss-dev libxfixes-dev libxkbcommon-dev libxtst-dev libxrender-dev libxinerama-dev \
-            libwayland-dev libegl-dev libgl-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+            libwayland-dev libegl-dev libgl-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
+            libssl-dev
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --parallel
       - name: Tests
         run: ctest --test-dir build --output-on-failure
+
+  # The online play relay (relay/), run locally by wrangler and checked from outside.
+  relay:
+    name: Online relay
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relay
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Test
+        run: |
+          npx wrangler dev --port 8787 > wrangler.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8787/ > /dev/null && break; sleep 1; done
+          npm test || { cat wrangler.log; exit 1; }
 
   # The download for players: one installer that holds the app, the core, fonts and licences.
   app-windows:
