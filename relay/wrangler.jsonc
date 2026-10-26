@@ -1,6 +1,6 @@
-// Cloudflare Worker for Prometheus 64 online play. Deploy: see README.md.
+// Cloudflare Worker for online play in Project Prometheus apps. Deploy: see README.md.
 {
-  "name": "prometheus64-relay",
+  "name": "prometheus-relay",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
   "durable_objects": {
