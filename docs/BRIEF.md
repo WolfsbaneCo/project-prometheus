@@ -246,6 +246,7 @@ Goal: a device can get the latest save from another device it can reach, which m
 - **Pairing:** devices pair once with a short code, so only the owner's devices can exchange saves.
 - Same rules as everything else: backup first, ask on conflict.
 - A device with no connection to anything cannot receive data; it uses its local saves.
+- **Cross-device resume uses in-game saves only, never save states.** Continuing on another device (another PC, or a future Android version through Google Drive) picks up from the game's own save. Save states stay with the device that made them, because they only load in the exact same emulator core version.
 
 ## 11. Online play (netplay), phase 4
 
