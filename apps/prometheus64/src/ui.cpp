@@ -148,6 +148,26 @@ bool Ui::bake(const std::filesystem::path& file, Font& font, int atlas_y, std::v
   return true;
 }
 
+// Loads a PNG into a mipmapped texture, so it stays smooth when drawn much smaller. 0 if missing.
+static GLuint load_image(const std::filesystem::path& file) {
+  GLuint tex = 0;
+  if (SDL_Surface* s = SDL_LoadPNG(file.string().c_str())) {
+    if (SDL_Surface* rgba = SDL_ConvertSurface(s, SDL_PIXELFORMAT_ABGR8888)) {
+      gl::glGenTextures(1, &tex);
+      gl::glBindTexture(GL_TEXTURE_2D, tex);
+      gl::glPixelStorei(GL_UNPACK_ROW_LENGTH, rgba->pitch / 4);
+      gl::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, rgba->w, rgba->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba->pixels);
+      gl::glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+      gl::glGenerateMipmap(GL_TEXTURE_2D);
+      gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+      gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      SDL_DestroySurface(rgba);
+    }
+    SDL_DestroySurface(s);
+  }
+  return tex;
+}
+
 bool Ui::init(const std::filesystem::path& assets, std::string& error) {
   std::vector<uint8_t> atlas(static_cast<std::size_t>(kAtlasW) * kAtlasH, 0);
   if (!bake(assets / "fonts" / "FiraSans-Regular.ttf", regular_, 0, atlas, error)) return false;
@@ -161,20 +181,8 @@ bool Ui::init(const std::filesystem::path& assets, std::string& error) {
   gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
   gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-  if (SDL_Surface* s = SDL_LoadPNG((assets / "icon.png").string().c_str())) {
-    if (SDL_Surface* rgba = SDL_ConvertSurface(s, SDL_PIXELFORMAT_ABGR8888)) {
-      gl::glGenTextures(1, &logo_tex_);
-      gl::glBindTexture(GL_TEXTURE_2D, logo_tex_);
-      gl::glPixelStorei(GL_UNPACK_ROW_LENGTH, rgba->pitch / 4);
-      gl::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, rgba->w, rgba->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba->pixels);
-      gl::glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-      gl::glGenerateMipmap(GL_TEXTURE_2D);
-      gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-      gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      SDL_DestroySurface(rgba);
-    }
-    SDL_DestroySurface(s);
-  }
+  logo_tex_ = load_image(assets / "icon.png");
+  logo_small_tex_ = load_image(assets / "icon-small.png");
 
   program_ = build_program(error);
   if (!error.empty()) return false;
@@ -202,10 +210,11 @@ bool Ui::init(const std::filesystem::path& assets, std::string& error) {
 void Ui::shutdown() {
   if (atlas_tex_) gl::glDeleteTextures(1, &atlas_tex_);
   if (logo_tex_) gl::glDeleteTextures(1, &logo_tex_);
+  if (logo_small_tex_) gl::glDeleteTextures(1, &logo_small_tex_);
   if (vbo_) gl::glDeleteBuffers(1, &vbo_);
   if (vao_) gl::glDeleteVertexArrays(1, &vao_);
   if (program_) gl::glDeleteProgram(program_);
-  atlas_tex_ = logo_tex_ = vbo_ = vao_ = program_ = 0;
+  atlas_tex_ = logo_tex_ = logo_small_tex_ = vbo_ = vao_ = program_ = 0;
 }
 
 void Ui::begin(int width, int height) {

@@ -51,5 +51,8 @@ add_custom_command(TARGET prometheus64 POST_BUILD
           "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/OFL.txt"
           "$<TARGET_FILE_DIR:prometheus64>/assets/fonts/"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          "${PROJECT_SOURCE_DIR}/assets/branding/prometheus64/png/prometheus64-icon-256.png"
-          "$<TARGET_FILE_DIR:prometheus64>/assets/icon.png")
+          "${PROJECT_SOURCE_DIR}/assets/branding/prometheus64/png/prometheus64-icon-512.png"
+          "$<TARGET_FILE_DIR:prometheus64>/assets/icon.png"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${PROJECT_SOURCE_DIR}/assets/branding/prometheus64/png/prometheus64-icon-small-256.png"
+          "$<TARGET_FILE_DIR:prometheus64>/assets/icon-small.png")

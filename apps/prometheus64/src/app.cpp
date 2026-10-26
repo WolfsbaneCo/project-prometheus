@@ -1080,7 +1080,7 @@ void App::draw_home() {
   const float margin = 72 * s;
   ui_.image(ui_.logo(), margin, 54 * s, 72 * s, 72 * s);
   ui_.text(margin + 92 * s, 52 * s, "Prometheus 64", 44 * s, kText, true);
-  ui_.text(margin + 94 * s, 106 * s, "Your 64 classics, kept alive", 21 * s, kDim);
+  ui_.text(margin + 94 * s, 106 * s, "Classics, rekindled", 21 * s, kDim);
 
   const float footer_h = 84 * s;
   ui_.rect(0, H - footer_h, W, footer_h, rgb(0x0C0C0D, 0.92f));
@@ -1091,7 +1091,7 @@ void App::draw_home() {
 
   if (games_.empty()) {
     const float cy = H * 0.42f;
-    ui_.image(ui_.logo(), W / 2 - 64 * s, cy - 150 * s, 128 * s, 128 * s, 0.9f);
+    ui_.image(ui_.logo(), W / 2 - 64 * s, cy - 150 * s, 128 * s, 128 * s);
     ui_.text(W / 2, cy, "Add your games", 40 * s, kText, true, Align::Center);
     ui_.text(W / 2, cy + 60 * s, "Press O (or Y on a controller) to choose the folder with your N64 game files.", 22 * s,
              kDim, false, Align::Center);
@@ -1119,7 +1119,7 @@ void App::draw_home() {
     } else {
       ui_.rect(x, y, tile_w, tile_h, kTile, 18 * s);
     }
-    ui_.image(ui_.logo(), x + tile_w - 50 * s, y + 18 * s, 32 * s, 32 * s, sel ? 0.9f : 0.35f);
+    ui_.image(ui_.logo_small(), x + tile_w - 50 * s, y + 18 * s, 32 * s, 32 * s, sel ? 1.0f : 0.35f);
     const auto lines = wrap(ui_, g.title, 26 * s, tile_w - 90 * s, true, 3);
     for (std::size_t l = 0; l < lines.size(); ++l) {
       ui_.text(x + 22 * s, y + 22 * s + l * 32 * s, lines[l], 26 * s, sel ? kText : kText.with_alpha(0.85f), true);
