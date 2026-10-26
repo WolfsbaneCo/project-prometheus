@@ -309,7 +309,7 @@ void Input::test_press(int player, const std::string& button, bool down) {
 
 int16_t Input::retro_state(unsigned port, unsigned device, unsigned index, unsigned id) const {
   if (port >= kPlayers) return 0;
-  const PadState& st = state_[port];
+  const PadState& st = overriding_ ? overrides_[port] : state_[port];
   if (device == RETRO_DEVICE_JOYPAD) {
     uint16_t mask = 0;
     for (int b = 0; b < kButtonCount; ++b) {

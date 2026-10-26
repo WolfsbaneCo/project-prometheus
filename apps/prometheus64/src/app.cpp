@@ -1,9 +1,11 @@
 #include "app.hpp"
+#include "app_shared.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -11,8 +13,10 @@
 #include <tuple>
 
 #include "archive.hpp"
+#include "net.hpp"
 #include "savekit/formats.hpp"
 #include "savekit/library.hpp"
+#include "savekit/sha256.hpp"
 
 namespace fs = std::filesystem;
 
@@ -22,27 +26,6 @@ namespace {
 constexpr std::size_t kSrmSize = 0x48800;  // Mupen64Plus-Next save memory layout
 constexpr const char* kOpt = "mupen64plus-";
 
-// Interface colours.
-const Color kBg0 = rgb(0x17100F), kBg1 = rgb(0x0A0A0B), kPanel = rgb(0x18181B), kTile = rgb(0x1D1D21),
-            kRed = rgb(0xE8262E), kText = rgb(0xF4F1EE), kDim = rgb(0xA59F9B), kFaint = rgb(0x6E6966);
-const Color kPlayerColors[4] = {rgb(0xE8262E), rgb(0x3D7BF0), rgb(0x2FB45A), rgb(0xF2C12E)};
-
-enum UiAction { kUp, kDown, kLeft, kRight, kAccept, kBack, kMenu, kPrevTab, kNextTab };
-enum DialogKind { kFolderChosen = 1, kSaveChosen = 2 };
-enum MenuId {
-  kResume, kSaveState, kLoadState, kSlot, kPicture, kTextures, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
-  kPlayers, kControlsItem, kReset, kQuit
-};
-// Clickable areas (App::Hit::kind).
-enum HitKind {
-  kHitPanel, kHitTile, kHitAddGames, kHitHint, kHitMenuRow, kHitMenuDec, kHitMenuInc, kHitMenuButton, kHitTab,
-  kHitEntry, kHitSeatingDone, kHitSeatRemove, kHitSeatingReset
-};
-// Footer shortcuts on the library screen (kHitHint arg).
-enum HintId { kHintPlay, kHintFolder, kHintImport, kHintControls, kHintPlayers, kHintFullscreen, kHintHelp };
-constexpr int kEntryReset = -1, kEntryDone = -2;
-constexpr int kResSuper = 9;  // "resolution" setting: 0 auto, 1-8 fixed factor, 9 supersampled
-constexpr uint64_t kMouseIdleNs = 2'500'000'000;  // in a game, the cursor hides after this
 
 struct PresetDef {
   const char* name;
@@ -70,45 +53,6 @@ const PresetDef kPresets[] = {
      kTexOriginal, 0.0f, 0.0f, false},
 };
 
-std::string utf8(const fs::path& p) {
-  const auto u = p.u8string();
-  return std::string(u.begin(), u.end());
-}
-
-fs::path from_utf8(const std::string& s) {
-  return fs::path(std::u8string(s.begin(), s.end()));
-}
-
-std::vector<std::string> wrap(const Ui& ui, const std::string& text, float size, float width, bool bold, int max_lines) {
-  std::vector<std::string> lines;
-  std::string line, word;
-  auto push_word = [&]() {
-    if (word.empty()) return;
-    const std::string trial = line.empty() ? word : line + " " + word;
-    if (ui.measure(trial, size, bold) <= width || line.empty()) {
-      line = trial;
-    } else {
-      lines.push_back(line);
-      line = word;
-    }
-    word.clear();
-  };
-  for (char c : text) {
-    if (c == ' ') {
-      push_word();
-    } else {
-      word += c;
-    }
-  }
-  push_word();
-  if (!line.empty()) lines.push_back(line);
-  if (static_cast<int>(lines.size()) > max_lines) {
-    lines.resize(max_lines);
-    lines.back() = ui.fit(lines.back() + " ...", size, width, bold);
-  }
-  for (auto& l : lines) l = ui.fit(l, size, width, bold);
-  return lines;
-}
 
 // A Controller Pak holds a game's data when its note table (pages 3-4) names a game.
 bool pak_has_notes(const savekit::Bytes& pak) {
@@ -269,6 +213,14 @@ bool App::init(std::string& error) {
     return input_.retro_state(port, dev, idx, id);
   };
   core_.hooks.rumble = [this](unsigned port, retro_rumble_effect effect, uint16_t strength) {
+    if (net_.running() && online_game_) {
+      // Online, a port belongs to one computer: rumble the controller of the local player on it.
+      if (port >= Netplay::kPorts) return false;
+      const Netplay::Port& p = net_.ports()[port];
+      const auto seats = local_seats();
+      if (p.player != net_.my_id() || p.local >= static_cast<int>(seats.size())) return false;
+      port = static_cast<unsigned>(seats[p.local]);
+    }
     return input_.rumble(port, effect == RETRO_RUMBLE_STRONG, strength);
   };
   core_.hooks.message = [this](const std::string& m) { toast(m); };
@@ -288,6 +240,7 @@ bool App::init(std::string& error) {
 
   input_.init();
   input_.load_bindings(settings_);
+  net::init();
   rescan();
   set_fullscreen(opt_.fullscreen || settings_.get_int("fullscreen", 0) == 1);
   if (!opt_.rom.empty()) {
@@ -297,15 +250,34 @@ bool App::init(std::string& error) {
       error = why.empty() ? "No N64 game found in " + utf8(opt_.rom) : "Could not read " + utf8(opt_.rom) + ": " + why;
       return false;
     }
-    if (!start_game(found.front())) {
+    if (opt_.online_host) {
+      hosted_game_ = found.front();  // test mode: host it online instead of playing it here
+      if (games_.empty()) games_ = found;
+      open_online();
+      host_online();
+    } else if (!start_game(found.front())) {
       error = "could not start " + utf8(opt_.rom);
       return false;
     }
+  }
+  if (!opt_.setup_token.empty()) {
+    open_online();
+    online_page_ = OnlinePage::Setup;
+    token_input_ = opt_.setup_token;
+    start_setup();
+  }
+  if (!opt_.online_join.empty()) {
+    open_online();
+    code_input_ = opt_.online_join;
+    join_online();
   }
   return true;
 }
 
 void App::shutdown() {
+  net_.leave();
+  if (setup_thread_.joinable()) setup_thread_.join();
+  net::shutdown();
   if (game_) stop_game();
   core_.close();
   settings_.save();
@@ -407,6 +379,17 @@ void App::apply_core_options(const Game& game) {
   const bool pack = fs::is_directory(core_.system_dir / "Mupen64plus" / "hires_texture" / game.internal_name, ec);
   set("txHiresEnable", pack ? "True" : "False");
   set("txHiresFullAlphaChannel", pack ? "True" : "False");
+  if (online_game_) {
+    // Online, every computer must compute exactly the same game: the same renderer, and nothing
+    // read back from the graphics card into the console's memory (it can differ between cards).
+    set("rdp-plugin", "gliden64");
+    set("rsp-plugin", "hle");
+    set("EnableCopyColorToRDRAM", "Off");
+    set("EnableCopyDepthToRDRAM", "Software");
+    for (int i = 0; i < Netplay::kPorts; ++i) {
+      set(("pak" + std::to_string(i + 1)).c_str(), net_.pak(i) == 2 ? "rumble" : "memory");
+    }
+  }
   // Test mode: "--option key=value" overrides, for comparing renderer settings.
   for (const auto& o : opt_.core_options) {
     const auto eq = o.find('=');
@@ -430,13 +413,22 @@ bool App::start_game(const Game& game) {
   video_.clear_frame();
   audio_.open(core_.av().timing.sample_rate > 0 ? core_.av().timing.sample_rate : 44100.0);
   audio_.set_volume(settings_.get_int("volume", 80) / 100.0f);
-  load_game_save();
+  if (guest_session_) {
+    // Online guest: play from the host's save, and never write it into this computer's library.
+    last_saved_ram_.clear();
+    pending_ram_.clear();
+    if (uint8_t* ram = core_.save_ram(); ram && guest_save_.size() == core_.save_ram_size()) {
+      std::memcpy(ram, guest_save_.data(), guest_save_.size());
+    }
+  } else {
+    load_game_save();
+  }
   screen_ = Screen::Playing;
   overlay_ = Overlay::None;
   acc_ns_ = 0;
   last_ns_ = SDL_GetTicksNS();
   settings_.set("last_game", utf8(game.path));
-  toast(game.title + "  -  Esc, right-click or Back on a controller opens the menu", 5);
+  if (!online_game_) toast(game.title + "  -  Esc, right-click or Back on a controller opens the menu", 5);
   if (input_.keyboard_shared()) toast("Two players share the keyboard: gamepads work better", 5);
   return true;
 }
@@ -444,6 +436,9 @@ bool App::start_game(const Game& game) {
 void App::stop_game() {
   if (!game_) return;
   sync_game_save(true);
+  guest_session_ = false;
+  online_game_ = false;
+  guest_save_.clear();
   core_.context_destroy();
   core_.close();
   if (const std::string err = core_.open(core_path_); !err.empty()) toast(err, 8);
@@ -531,6 +526,7 @@ void App::load_game_save() {
 }
 
 void App::sync_game_save(bool force) {
+  if (guest_session_) return;  // the host keeps the save of an online game
   uint8_t* ram = core_.save_ram();
   if (!game_ || !ram || core_.save_ram_size() != kSrmSize) return;
   std::vector<uint8_t> now(ram, ram + kSrmSize);
@@ -690,6 +686,14 @@ void App::run_frames() {
   const double fps = core_.av().timing.fps > 1 ? core_.av().timing.fps : 60.0;
   const uint64_t frame_ns = static_cast<uint64_t>(1e9 / fps);
   if (acc_ns_ > 4 * frame_ns) acc_ns_ = frame_ns;  // after a pause or a hitch, don't race to catch up
+  if (net_game_pending_ || (online_game_ && !net_.running())) {
+    acc_ns_ = 0;  // loaded, waiting for everyone else
+    return;
+  }
+  if (net_.running() && online_game_) {
+    run_online_frames(frame_ns);  // the host's menu pauses everyone, so it decides
+    return;
+  }
   if (screen_ != Screen::Playing || overlay_ != Overlay::None) {
     acc_ns_ = 0;
     return;
@@ -757,8 +761,9 @@ void App::loop() {
     const uint64_t t0 = SDL_GetTicksNS();
     input_.update(static_cast<float>(std::min<uint64_t>(t0 - last_ns_, 100'000'000)) / 1e9f);
     for (auto& n : input_.take_notices()) toast(n, 4);
+    process_net_events();
     if (game_) run_frames();
-    audio_.set_paused(!game_ || overlay_ != Overlay::None);
+    audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host())));
     draw();
     ++frames_drawn;
 
@@ -768,10 +773,15 @@ void App::loop() {
         std::memcpy(ram + 0x20800, "MORPEHTE", 8);  // word-swapped, so the canonical save reads "PROMETHE"
       }
     }
-    if (!opt_.screenshot.empty() && static_cast<int>(frames_drawn) >= opt_.frames) {
+    if (!opt_.screenshot.empty() && !opt_.online_exit_frame && static_cast<int>(frames_drawn) >= opt_.frames) {
       if (!opt_.dump_save.empty() && core_.save_ram()) {
         std::ofstream(opt_.dump_save, std::ios::binary)
             .write(reinterpret_cast<const char*>(core_.save_ram()), static_cast<std::streamsize>(core_.save_ram_size()));
+      }
+      if (opt_.ram_hash && core_.system_ram()) {
+        const savekit::Bytes ram(core_.system_ram(), core_.system_ram() + core_.system_ram_size());
+        std::printf("ram-sha256 %s\n", savekit::sha256_hex(ram).c_str());
+        std::fflush(stdout);
       }
       take_screenshot(opt_.screenshot);
       running_ = false;
@@ -826,13 +836,14 @@ void App::handle(const SDL_Event& e) {
     return;
   }
   if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST && game_ && overlay_ == Overlay::None && screen_ == Screen::Playing &&
-      opt_.screenshot.empty()) {
+      opt_.screenshot.empty() && !online_game_) {
     overlay_ = Overlay::Menu;  // pause when the window loses focus
     menu_index_ = 0;
   }
 
   // The Controls screen waiting for a key or button gets it before anything else can act on it.
   if (overlay_ == Overlay::Controls && controls_capture_ && handle_capture(e)) return;
+  if (handle_text(e)) return;
   if (e.type == SDL_EVENT_MOUSE_MOTION || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_WHEEL) {
     handle_mouse(e);
     return;
@@ -894,19 +905,21 @@ bool App::handle_hotkey(const SDL_Event& e) {
       menu_change(kFill, 1);
       return true;
     case SDL_SCANCODE_F3:
+      if (online_blocks(kPicture)) return true;
       menu_change(kPicture, 1);
       return true;
     case SDL_SCANCODE_F5:
-      save_state();
+      if (!online_blocks(kSaveState)) save_state();
       return true;
     case SDL_SCANCODE_F6:
       menu_change(kSlot, 1);
       return true;
     case SDL_SCANCODE_F7:
-      load_state();
+      if (!online_blocks(kLoadState)) load_state();
       return true;
     case SDL_SCANCODE_R:
       if (!ctrl) return false;
+      if (online_blocks(kReset)) return true;
       core_.reset();
       toast("Reset");
       return true;
@@ -927,6 +940,7 @@ void App::handle_home(const SDL_Event& e) {
       case SDL_SCANCODE_O: choose_games_folder(); break;
       case SDL_SCANCODE_I: choose_save_to_import(); break;
       case SDL_SCANCODE_C: open_controls(); break;
+      case SDL_SCANCODE_N: open_online(); break;
       default: break;
     }
   } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
@@ -937,6 +951,7 @@ void App::handle_home(const SDL_Event& e) {
       case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: ui_action(kRight); break;
       case SDL_GAMEPAD_BUTTON_SOUTH: case SDL_GAMEPAD_BUTTON_START: ui_action(kAccept); break;
       case SDL_GAMEPAD_BUTTON_NORTH: choose_games_folder(); break;
+      case SDL_GAMEPAD_BUTTON_WEST: open_online(); break;
       default: break;
     }
   }
@@ -976,6 +991,10 @@ void App::handle_menu(const SDL_Event& e) {
 void App::ui_action(int action) {
   if (overlay_ == Overlay::Controls) {
     controls_action(action);
+    return;
+  }
+  if (overlay_ == Overlay::Online) {
+    online_action(action);
     return;
   }
   if (overlay_ == Overlay::Seating || overlay_ == Overlay::Help) {
@@ -1035,10 +1054,11 @@ std::vector<App::MenuItem> App::menu_items() const {
                     : res_choice >= 1 && res_choice <= 8 ? std::to_string(res_choice) + "x"
                                                      : "Auto (" + std::to_string(rw) + "x" + std::to_string(rh) + ")";
   const bool gliden = std::string(kPresets[preset].rdp) == "gliden64";
+  const bool online = online_game_ && net_.active();
   return {
       {"Resume", "", kResume},
-      {"Save state", "slot " + std::to_string(slot_), kSaveState},
-      {"Load state", "slot " + std::to_string(slot_), kLoadState},
+      {"Save state", online ? "off online" : "slot " + std::to_string(slot_), kSaveState},
+      {"Load state", online ? "off online" : "slot " + std::to_string(slot_), kLoadState},
       {"State slot", std::to_string(slot_), kSlot},
       {"Picture", kPresets[preset].name, kPicture},
       {"Textures", gliden ? kTextureNames[texture_look(id)] : "Set by the picture style", kTextures},
@@ -1049,14 +1069,20 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Fullscreen", fullscreen_ ? "On" : "Off", kFullscreenItem},
       {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers},
       {"Controls", "", kControlsItem},
-      {"Reset game", "", kReset},
-      {"Quit to library", "", kQuit},
+      {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset},
+      {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
   };
 }
 
 void App::menu_change(int id, int dir) {
   const std::string gid = game_ ? game_->id : "";
   const int step = dir == 0 ? 1 : dir;
+  // Online, some actions would put the players out of sync (or need the host).
+  const bool acts = dir == 0 || id == kPicture || id == kTextures || id == kResolution;
+  if (acts && id != kResume && online_blocks(id)) {
+    settings_.save();
+    return;
+  }
   switch (id) {
     case kResume:
       if (dir == 0) overlay_ = Overlay::None;
@@ -1101,7 +1127,15 @@ void App::menu_change(int id, int dir) {
       toast(std::string("Fill mode: ") + fill_mode_name(static_cast<FillMode>(f)) +
             (static_cast<FillMode>(f) == FillMode::Widescreen ? "  (works with many games, not all)" : ""));
       const int ws = static_cast<int>(FillMode::Widescreen);
-      if ((before == ws) != (f == ws)) restart_game_keep_progress();
+      if ((before == ws) != (f == ws)) {
+        if (online_game_ && net_.active()) {
+          // Turning widescreen on or off restarts the game, which an online game can't do.
+          settings_.set_game_int(gid, "fill", before);
+          toast("Widescreen goes on or off before going online: it restarts the game", 4);
+          break;
+        }
+        restart_game_keep_progress();
+      }
       break;
     }
     case kResolution: {
@@ -1179,7 +1213,9 @@ void App::draw() {
   if (overlay_ == Overlay::Seating) draw_seating();
   if (overlay_ == Overlay::Help) draw_help();
   if (overlay_ == Overlay::Controls) draw_controls();
-  if (overlay_ == Overlay::None) draw_toasts();  // messages wait while a menu is open
+  if (overlay_ == Overlay::Online) draw_online();
+  draw_online_status();
+  if (overlay_ == Overlay::None || overlay_ == Overlay::Online) draw_toasts();  // messages wait while a menu is open
   ui_.end();
   if (!playing || mouse_recent()) {
     SDL_ShowCursor();
@@ -1224,6 +1260,7 @@ void App::draw_home() {
   if (!games_.empty()) chips.push_back({"Enter", "Play", kHintPlay});
   chips.push_back({"O", games_.empty() ? "Choose games folder" : "Games folder", kHintFolder});
   if (!games_.empty()) chips.push_back({"I", "Import a save", kHintImport});
+  chips.push_back({"N", net_.active() ? "Online game" : "Play online", kHintOnline});
   chips.push_back({"C", "Controls", kHintControls});
   chips.push_back({"F10", "Who's playing", kHintPlayers});
   chips.push_back({"F11", "Fullscreen", kHintFullscreen});
@@ -1306,7 +1343,8 @@ void App::draw_menu() {
   add_hit(px, py, pw, ph, kHitPanel);
   ui_.image(ui_.logo(), px + 30 * s, py + 30 * s, 48 * s, 48 * s);
   ui_.text(px + 94 * s, py + 30 * s, ui_.fit(game_ ? game_->title : "", 28 * s, pw - 130 * s, true), 28 * s, kText, true);
-  ui_.text(px + 94 * s, py + 66 * s, "Paused", 18 * s, kDim);
+  const std::string state = !online_game_ ? "Paused" : net_.is_host() ? "Online: paused for everyone" : "Online: the game keeps going";
+  ui_.text(px + 94 * s, py + 66 * s, state, 18 * s, kDim);
   float y = py + 120 * s;
   for (int i = 0; i < static_cast<int>(items.size()); ++i) {
     const bool sel = i == menu_index_;
@@ -1315,7 +1353,8 @@ void App::draw_menu() {
       ui_.rect(px + 18 * s, y + 10 * s, 4 * s, row - 26 * s, kRed, 2 * s);
     }
     add_hit(px + 18 * s, y, pw - 36 * s, row - 6 * s, kHitMenuRow, i);
-    ui_.text(px + 40 * s, y + 11 * s, items[i].label, 21 * s, sel ? kText : kText.with_alpha(0.82f), sel);
+    const bool off = items[i].value == "off online";  // brief 11.4: shown greyed out while online
+    ui_.text(px + 40 * s, y + 11 * s, items[i].label, 21 * s, off ? kFaint : sel ? kText : kText.with_alpha(0.82f), sel);
     if (!items[i].value.empty()) {
       const bool adjustable = items[i].id >= kSlot && items[i].id <= kVolume;
       if (adjustable && sel) {
@@ -1524,6 +1563,7 @@ void App::click(const Hit& h) {
         case kHintFolder: choose_games_folder(); break;
         case kHintImport: choose_save_to_import(); break;
         case kHintControls: open_controls(); break;
+        case kHintOnline: open_online(); break;
         case kHintPlayers:
           input_.start_seating();
           overlay_ = Overlay::Seating;
@@ -1546,7 +1586,11 @@ void App::click(const Hit& h) {
     case kHitSeatingDone: ui_action(kAccept); break;
     case kHitSeatRemove: input_.remove_seat(h.arg); break;
     case kHitSeatingReset: input_.clear_seats(); break;
-    default: break;  // kHitPanel: a click on a menu's background does nothing
+    case kHitOnline: online_click(h.arg); break;
+    case kHitField: focus_field(static_cast<TextField>(h.arg)); break;
+    default:
+      if (overlay_ == Overlay::Online) focus_field(TextField::None);  // a click elsewhere leaves the text field
+      break;  // kHitPanel: a click on a menu's background does nothing
   }
 }
 
@@ -1685,16 +1729,17 @@ bool App::handle_capture(const SDL_Event& e) {
 }
 
 float App::draw_button(float x, float y, const std::string& label, float s, bool primary, bool focused, int kind,
-                       int arg, bool right_aligned) {
+                       int arg, bool right_aligned, bool enabled) {
   const float fs = 22 * s, w = ui_.measure(label, fs, true) + 56 * s, h = 52 * s;
   if (right_aligned) x -= w;
-  const bool hot = mouse_over(x, y, w, h);
+  const bool hot = enabled && mouse_over(x, y, w, h);
   Color fill = primary ? kRed : rgb(0xFFFFFF, 0.08f);
   if (hot) fill = primary ? rgb(0xF2474E) : rgb(0xFFFFFF, 0.14f);
+  if (!enabled) fill = primary ? kRed.with_alpha(0.3f) : rgb(0xFFFFFF, 0.04f);
   ui_.rect(x, y, w, h, fill, 14 * s);
   if (focused) ui_.outline(x - 4 * s, y - 4 * s, w + 8 * s, h + 8 * s, kText.with_alpha(0.8f), 17 * s, 2 * s);
-  ui_.text(x + w / 2, y + 13 * s, label, fs, kText, true, Align::Center);
-  add_hit(x, y, w, h, kind, arg);
+  ui_.text(x + w / 2, y + 13 * s, label, fs, enabled ? kText : kText.with_alpha(0.4f), true, Align::Center);
+  if (enabled) add_hit(x, y, w, h, kind, arg);
   return w;
 }
 

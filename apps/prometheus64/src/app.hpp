@@ -2,17 +2,24 @@
 
 #include <SDL3/SDL.h>
 
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <deque>
+#include <map>
+#include <mutex>
+#include <thread>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "audio.hpp"
+#include "cloudflare.hpp"
 #include "core.hpp"
 #include "input.hpp"
 #include "library.hpp"
+#include "netplay.hpp"
 #include "settings.hpp"
 #include "ui.hpp"
 #include "video.hpp"
@@ -35,6 +42,12 @@ struct Options {
   std::vector<std::string> core_options;  // test mode: "key=value" core option overrides
   int poke_frame = 0;                // test mode: write a pattern into save memory at this frame
   std::filesystem::path dump_save;   // test mode: write the core's save memory here on exit
+  bool ram_hash = false;             // test mode: print a hash of the console's RAM on exit
+  bool online_host = false;          // test mode: host `rom` online at start (prints the invite code)
+  std::string online_join;           // test mode: join this invite code at start
+  bool online_start = false;         // test mode: the host starts as soon as everyone is ready
+  uint32_t online_exit_frame = 0;    // test mode: print the RAM hash at this online frame and quit
+  std::string setup_token;           // test mode: run the online setup with this key at start
 };
 
 class App {
@@ -44,7 +57,9 @@ class App {
 
  private:
   enum class Screen { Home, Playing };
-  enum class Overlay { None, Menu, Seating, Help, Controls };
+  enum class Overlay { None, Menu, Seating, Help, Controls, Online };
+  enum class OnlinePage { Main, Setup, Join, Lobby };
+  enum class TextField { None, Name, Token, Code };
   struct Toast {
     std::string text;
     uint64_t until_ns;
@@ -86,13 +101,40 @@ class App {
   void draw_seating();
   void draw_help();
   void draw_controls();
-  // A rounded button; returns its width. `primary` fills it red.
+  // A rounded button; returns its width. `primary` fills it red; a disabled one is dim and inert.
   float draw_button(float x, float y, const std::string& label, float s, bool primary, bool focused, int kind,
-                    int arg = 0, bool right_aligned = false);
+                    int arg = 0, bool right_aligned = false, bool enabled = true);
   void open_controls();
   void close_controls();
   void controls_action(int action);
   std::vector<ControlsEntry> controls_entries() const;
+
+  // Online play (app_online.cpp).
+  void open_online();
+  void draw_online();
+  void draw_online_status();  // in-game: waiting / paused notices
+  float online_button(float x, float y, const std::string& label, float s, bool primary, int id, bool right = false,
+                      bool enabled = true);
+  void draw_field(float x, float y, float w, float s, TextField field, const std::string& value,
+                  const std::string& placeholder, bool masked);
+  void online_click(int id);
+  void online_action(int action);
+  bool handle_text(const SDL_Event& e);  // a text field has the keyboard
+  void focus_field(TextField field);
+  void start_setup();
+  void finish_setup();
+  void host_online();
+  void join_online();
+  void start_online_game();
+  void end_online_game();  // host: end for everyone, keep playing; guest: leave
+  void process_net_events();
+  void run_online_frames(uint64_t frame_ns);
+  bool game_sha(const Game& game, std::array<uint8_t, 32>& out);
+  std::string versions() const;
+  std::string hosting_relay_url() const;
+  std::string invite_code() const;
+  std::vector<int> local_seats() const;
+  bool online_blocks(int menu_id);  // explains and returns true when a menu action is off online
   void draw_toasts();
   void draw_players_strip(float x, float y, float s);
 
@@ -149,6 +191,28 @@ class App {
   int controls_index_ = 0;
   bool controls_capture_ = false;
   Overlay controls_return_ = Overlay::None;
+
+  // Online play.
+  Netplay net_;
+  OnlinePage online_page_ = OnlinePage::Main;
+  TextField text_field_ = TextField::None;
+  std::string name_input_, token_input_, code_input_, online_note_;
+  std::vector<int> online_buttons_;  // buttons drawn on the current online page, for keyboard focus
+  int online_focus_ = 0;
+  std::thread setup_thread_;
+  std::mutex setup_mutex_;
+  std::string setup_progress_;
+  bool setup_finished_ = false;
+  cloudflare::Result setup_result_;
+  std::atomic<bool> setup_running_{false};
+  std::optional<Game> hosted_game_;
+  bool online_game_ = false;       // the running game is (or is about to be) an online one
+  bool guest_session_ = false;     // ...and this computer is a guest: the host's save, nothing written here
+  bool net_game_pending_ = false;  // loaded, waiting for everyone before frame 0
+  std::vector<uint8_t> guest_save_;
+  uint64_t stalled_since_ns_ = 0;
+  bool printed_invite_ = false;
+  std::map<std::string, std::array<uint8_t, 32>> sha_cache_;
   int slot_ = 1;
   bool running_ = true;
   bool fullscreen_ = false;

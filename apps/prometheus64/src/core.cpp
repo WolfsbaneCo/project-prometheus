@@ -230,6 +230,14 @@ std::size_t Core::save_ram_size() {
   return game_loaded_ ? api_->get_memory_size(RETRO_MEMORY_SAVE_RAM) : 0;
 }
 
+const uint8_t* Core::system_ram() {
+  return game_loaded_ ? static_cast<const uint8_t*>(api_->get_memory_data(RETRO_MEMORY_SYSTEM_RAM)) : nullptr;
+}
+
+std::size_t Core::system_ram_size() {
+  return game_loaded_ ? api_->get_memory_size(RETRO_MEMORY_SYSTEM_RAM) : 0;
+}
+
 void Core::set_option(const std::string& key, const std::string& value) {
   overrides_[key] = value;
   current_[key] = value;

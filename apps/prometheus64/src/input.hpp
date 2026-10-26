@@ -63,6 +63,11 @@ class Input {
   void update(float dt);
 
   int16_t retro_state(unsigned port, unsigned device, unsigned index, unsigned id) const;
+  // This computer's player `seat` as read from its device this frame.
+  const PadState& seat_state(int seat) const { return state_[seat]; }
+  // Online play: the emulator reads these instead of the local devices.
+  void set_overrides(bool on) { overriding_ = on; }
+  void set_override(int port, const PadState& pad) { overrides_[port] = pad; }
   bool rumble(unsigned port, bool strong, uint16_t strength);
 
   void start_seating();  // "Who's playing": seated players stay, free seats can be claimed
@@ -118,6 +123,8 @@ class Input {
   std::array<std::array<SDL_Scancode, kControlCount>, kKeyLayouts> keys_{};
   std::array<std::vector<PadInput>, kButtonCount> pad_{};
   bool seating_ = false;
+  bool overriding_ = false;
+  std::array<PadState, kPlayers> overrides_{};
   std::vector<std::string> notices_;
 };
 

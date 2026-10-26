@@ -12,10 +12,21 @@ FetchContent_Declare(SDL3
 FetchContent_MakeAvailable(SDL3)
 
 add_subdirectory(archives)
+add_subdirectory(net)
+
+# The relay's code, built into the app so it can install it on a player's Cloudflare account.
+file(READ "${PROJECT_SOURCE_DIR}/relay/src/index.js" P64_RELAY_JS)
+configure_file(src/relay_script.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/relay_script.hpp" @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/relay/src/index.js")
 
 add_executable(prometheus64 WIN32
   src/app.cpp
   src/archive.cpp
+  src/cloudflare.cpp
+  src/app_online.cpp
+  src/json.cpp
+  src/net.cpp
+  src/netplay.cpp
   src/audio.cpp
   src/core.cpp
   src/gl.cpp
@@ -27,8 +38,10 @@ add_executable(prometheus64 WIN32
   src/video.cpp
 )
 set_target_properties(prometheus64 PROPERTIES OUTPUT_NAME Prometheus64)
-target_include_directories(prometheus64 PRIVATE src third_party/libretro third_party/stb)
-target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_archive p64_warnings)
+target_compile_definitions(prometheus64 PRIVATE P64_VERSION="${PROJECT_VERSION}")
+target_include_directories(prometheus64 PRIVATE src third_party/libretro third_party/stb
+                           "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_archive p64_curl p64_warnings)
 
 if(WIN32)
   configure_file(windows/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/version.h" @ONLY)
