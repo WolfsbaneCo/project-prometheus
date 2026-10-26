@@ -114,7 +114,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Configure
-        run: cmake -S . -B build -A x64
+        # Google Drive backup needs the app's Google client ID: repository secrets, never in the repo.
+        # Without them the build works, with Drive backup switched off.
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        shell: pwsh
+        run: cmake -S . -B build -A x64 "-DP64_GOOGLE_CLIENT_ID=$env:GOOGLE_CLIENT_ID" "-DP64_GOOGLE_CLIENT_SECRET=$env:GOOGLE_CLIENT_SECRET"
       - name: Build
         run: cmake --build build --config Release --parallel --target prometheus64
       - uses: actions/download-artifact@v8

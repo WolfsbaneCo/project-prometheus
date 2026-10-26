@@ -230,6 +230,7 @@ bool App::init(std::string& error) {
   input_.init();
   input_.load_bindings(settings_);
   net::init();
+  init_backup();
   rescan();
   set_fullscreen(opt_.fullscreen || settings_.get_int("fullscreen", 0) == 1);
   if (opt_.rom.extension() == ".prometheuskey") {
@@ -272,8 +273,9 @@ bool App::init(std::string& error) {
 void App::shutdown() {
   net_.leave();
   if (setup_thread_.joinable()) setup_thread_.join();
-  net::shutdown();
   if (game_) stop_game();
+  backup_on_exit();
+  net::shutdown();
   core_.close();
   settings_.save();
   if (gl_) {
@@ -757,6 +759,7 @@ void App::loop() {
     input_.update(static_cast<float>(std::min<uint64_t>(t0 - last_ns_, 100'000'000)) / 1e9f);
     for (auto& n : input_.take_notices()) toast(n, 4);
     process_net_events();
+    process_backup();
     if (game_) run_frames();
     audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host())));
     draw();
@@ -765,7 +768,10 @@ void App::loop() {
     if (game_ && opt_.poke_frame > 0 && frames_drawn == static_cast<uint64_t>(opt_.poke_frame)) {
       // Test mode: the "game" writes to its SRAM (offset 0x20800 in the core's save layout).
       if (uint8_t* ram = core_.save_ram(); ram && core_.save_ram_size() == kSrmSize) {
-        std::memcpy(ram + 0x20800, "MORPEHTE", 8);  // word-swapped, so the canonical save reads "PROMETHE"
+        std::string text = opt_.poke_text.empty() ? std::string("PROMETHE") : opt_.poke_text;
+        text.resize(8, ' ');
+        for (int w = 0; w < 8; w += 4) std::reverse(text.begin() + w, text.begin() + w + 4);  // the core's word order
+        std::memcpy(ram + 0x20800, text.data(), 8);
       }
     }
     if (!opt_.screenshot.empty() && !opt_.online_exit_frame && static_cast<int>(frames_drawn) >= opt_.frames) {
@@ -944,6 +950,7 @@ void App::handle_home(const SDL_Event& e) {
       case SDL_SCANCODE_I: choose_save_to_import(); break;
       case SDL_SCANCODE_C: open_controls(); break;
       case SDL_SCANCODE_N: open_online(); break;
+      case SDL_SCANCODE_B: open_backup(); break;
       default: break;
     }
   } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
@@ -998,6 +1005,10 @@ void App::ui_action(int action) {
   }
   if (overlay_ == Overlay::Online) {
     online_action(action);
+    return;
+  }
+  if (overlay_ == Overlay::Backup) {
+    backup_action(action);
     return;
   }
   if (overlay_ == Overlay::Seating || overlay_ == Overlay::Help) {
@@ -1217,8 +1228,9 @@ void App::draw() {
   if (overlay_ == Overlay::Help) draw_help();
   if (overlay_ == Overlay::Controls) draw_controls();
   if (overlay_ == Overlay::Online) draw_online();
+  if (overlay_ == Overlay::Backup) draw_backup();
   draw_online_status();
-  if (overlay_ == Overlay::None || overlay_ == Overlay::Online) draw_toasts();  // messages wait while a menu is open
+  if (overlay_ == Overlay::None || overlay_ == Overlay::Online || overlay_ == Overlay::Backup) draw_toasts();  // messages wait while a menu is open
   ui_.end();
   if (!playing || mouse_recent()) {
     SDL_ShowCursor();
@@ -1264,6 +1276,7 @@ void App::draw_home() {
   chips.push_back({"O", games_.empty() ? "Choose games folder" : "Games folder", kHintFolder});
   if (!games_.empty()) chips.push_back({"I", "Import a save", kHintImport});
   chips.push_back({"N", net_.active() ? "Online game" : "Play online", kHintOnline});
+  chips.push_back({"B", "Back up", kHintBackup});
   chips.push_back({"C", "Controls", kHintControls});
   chips.push_back({"F10", "Who's playing", kHintPlayers});
   chips.push_back({"F11", "Fullscreen", kHintFullscreen});
@@ -1280,6 +1293,7 @@ void App::draw_home() {
     hx += w + 6 * s;
   }
   draw_players_strip(W - margin - (4 * 190 + 3 * 10) * s, 70 * s, s);
+  draw_backup_status(W - margin, 124 * s, s);
 
   if (games_.empty()) {
     const float cy = H * 0.42f;
@@ -1567,6 +1581,7 @@ void App::click(const Hit& h) {
         case kHintImport: choose_save_to_import(); break;
         case kHintControls: open_controls(); break;
         case kHintOnline: open_online(); break;
+        case kHintBackup: open_backup(); break;
         case kHintPlayers:
           input_.start_seating();
           overlay_ = Overlay::Seating;
@@ -1590,6 +1605,7 @@ void App::click(const Hit& h) {
     case kHitSeatRemove: input_.remove_seat(h.arg); break;
     case kHitSeatingReset: input_.clear_seats(); break;
     case kHitOnline: online_click(h.arg); break;
+    case kHitBackup: backup_click(h.arg); break;
     case kHitField: focus_field(static_cast<TextField>(h.arg)); break;
     default:
       if (overlay_ == Overlay::Online) focus_field(TextField::None);  // a click elsewhere leaves the text field
@@ -1835,7 +1851,7 @@ void App::draw_toasts() {
   while (!toasts_.empty() && toasts_.front().until_ns < now) toasts_.pop_front();
   const float s = out_h_ / 1080.0f;
   // Above the library's footer, or at the top over the online screen (its buttons are at the bottom).
-  const bool top = overlay_ == Overlay::Online;
+  const bool top = overlay_ == Overlay::Online || overlay_ == Overlay::Backup;
   float y = top ? 12 * s : out_h_ - (screen_ == Screen::Home ? 110 : 40) * s;
   for (auto it = toasts_.rbegin(); it != toasts_.rend(); ++it) {
     const float left_ms = static_cast<float>(it->until_ns - now) / 1e6f;

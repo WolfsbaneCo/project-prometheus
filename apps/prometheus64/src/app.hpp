@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "audio.hpp"
+#include "backup.hpp"
 #include "cloudflare.hpp"
 #include "core.hpp"
 #include "input.hpp"
@@ -41,6 +42,7 @@ struct Options {
   std::vector<std::string> clicks;   // test mode: "frame:x,y" left clicks, in pixels
   std::vector<std::string> core_options;  // test mode: "key=value" core option overrides
   int poke_frame = 0;                // test mode: write a pattern into save memory at this frame
+  std::string poke_text;             // test mode: that pattern, 8 characters (default "PROMETHE")
   std::filesystem::path dump_save;   // test mode: write the core's save memory here on exit
   bool ram_hash = false;             // test mode: print a hash of the console's RAM on exit
   bool online_host = false;          // test mode: host `rom` online at start (prints the invite code)
@@ -49,6 +51,8 @@ struct Options {
   uint32_t online_exit_frame = 0;    // test mode: print the RAM hash at this online frame and quit
   std::string setup_token;           // test mode: run the online setup with this key at start
   std::filesystem::path save_key;    // test mode: save the group's key file here at start
+  bool backup_connect = false;       // test mode: connect Google Drive at start (to a stand-in for Google)
+  bool backup_sync = false;          // test mode: back up once connected; the app waits for it on exit
 };
 
 class App {
@@ -58,7 +62,7 @@ class App {
 
  private:
   enum class Screen { Home, Playing };
-  enum class Overlay { None, Menu, Seating, Help, Controls, Online };
+  enum class Overlay { None, Menu, Seating, Help, Controls, Online, Backup };
   enum class OnlinePage { Main, Setup, Join, Lobby };
   enum class TextField { None, Name, Token, Code };
   struct Toast {
@@ -145,6 +149,18 @@ class App {
   void choose_key_save();
   std::vector<int> local_seats() const;
   bool online_blocks(int menu_id);  // explains and returns true when a menu action is off online
+  // Google Drive backup (app_backup.cpp).
+  void init_backup();
+  std::string game_title(const std::string& folder) const;
+  void open_backup();
+  void draw_backup();
+  void draw_backup_status(float right, float y, float s);  // library header: "Backed up 12 minutes ago"
+  void backup_click(int id);
+  void backup_action(int action);
+  void process_backup();
+  void backup_on_exit();
+  bool backup_auto() const;
+  bool backup_states() const;
   void draw_toasts();
   void draw_players_strip(float x, float y, float s);
 
@@ -225,6 +241,17 @@ class App {
   uint64_t stalled_since_ns_ = 0;
   bool printed_invite_ = false;
   std::map<std::string, std::array<uint8_t, 32>> sha_cache_;
+
+  // Google Drive backup.
+  Backup backup_;
+  std::vector<int> backup_buttons_;
+  int backup_focus_ = 0;
+  bool confirm_disconnect_ = false;
+  std::vector<Backup::Found> backup_found_;
+  uint64_t backup_found_ns_ = 0;
+  bool test_synced_ = false;
+  bool backup_was_working_ = false;
+  uint64_t next_backup_ns_ = 0;  // the hourly backup
   int slot_ = 1;
   bool running_ = true;
   bool fullscreen_ = false;

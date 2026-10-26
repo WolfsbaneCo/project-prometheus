@@ -35,7 +35,9 @@ int main(int argc, char** argv) {
     } else if (a == "--press") {
       o.keys.push_back(next());
     } else if (a == "--poke-save") {
-      o.poke_frame = std::atoi(next().c_str());
+      const std::string v = next();  // "<frame>" or "<frame>:<8 characters>"
+      o.poke_frame = std::atoi(v.c_str());
+      if (const auto colon = v.find(':'); colon != std::string::npos) o.poke_text = v.substr(colon + 1, 8);
     } else if (a == "--dump-save") {
       o.dump_save = next();
     } else if (a == "--ram-hash") {
@@ -48,6 +50,10 @@ int main(int argc, char** argv) {
       o.online_host = true;
     } else if (a == "--online-join") {
       o.online_join = next();
+    } else if (a == "--backup-connect") {
+      o.backup_connect = true;
+    } else if (a == "--backup-sync") {
+      o.backup_sync = true;
     } else if (a == "--save-key") {
       o.save_key = std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(next().c_str())));
     } else if (a == "--online-setup") {

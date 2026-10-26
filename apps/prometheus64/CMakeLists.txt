@@ -23,7 +23,10 @@ add_executable(prometheus64 WIN32
   src/app.cpp
   src/archive.cpp
   src/cloudflare.cpp
+  src/app_backup.cpp
   src/app_online.cpp
+  src/backup.cpp
+  src/google.cpp
   src/json.cpp
   src/net.cpp
   src/netplay.cpp
@@ -33,17 +36,25 @@ add_executable(prometheus64 WIN32
   src/input.cpp
   src/library.cpp
   src/main.cpp
+  src/secret_store.cpp
   src/settings.cpp
   src/ui.cpp
   src/video.cpp
 )
 set_target_properties(prometheus64 PROPERTIES OUTPUT_NAME Prometheus64)
 target_compile_definitions(prometheus64 PRIVATE P64_VERSION="${PROJECT_VERSION}")
+# Google Drive backup: the app's Google client ID (and the installed-app client "secret", which
+# Google doesn't treat as secret). Given by CI from repository secrets, never stored in the repo.
+set(P64_GOOGLE_CLIENT_ID "" CACHE STRING "Google OAuth client ID for Drive backup")
+set(P64_GOOGLE_CLIENT_SECRET "" CACHE STRING "Google OAuth client secret (installed app)")
+target_compile_definitions(prometheus64 PRIVATE P64_GOOGLE_CLIENT_ID="${P64_GOOGLE_CLIENT_ID}"
+                           P64_GOOGLE_CLIENT_SECRET="${P64_GOOGLE_CLIENT_SECRET}")
 target_include_directories(prometheus64 PRIVATE src third_party/libretro third_party/stb
                            "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_archive p64_curl p64_warnings)
 
 if(WIN32)
+  target_link_libraries(prometheus64 PRIVATE ws2_32 advapi32)  # the sign-in's loopback, Credential Manager
   configure_file(windows/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/version.h" @ONLY)
   target_sources(prometheus64 PRIVATE windows/app.rc)
   target_include_directories(prometheus64 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" windows)

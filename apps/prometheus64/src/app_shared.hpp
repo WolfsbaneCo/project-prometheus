@@ -26,10 +26,12 @@ enum MenuId {
 // Clickable areas (App::Hit::kind).
 enum HitKind {
   kHitPanel, kHitTile, kHitAddGames, kHitHint, kHitMenuRow, kHitMenuDec, kHitMenuInc, kHitMenuButton, kHitTab,
-  kHitEntry, kHitSeatingDone, kHitSeatRemove, kHitSeatingReset, kHitOnline, kHitField
+  kHitEntry, kHitSeatingDone, kHitSeatRemove, kHitSeatingReset, kHitOnline, kHitField, kHitBackup
 };
 // Footer shortcuts on the library screen (kHitHint arg).
-enum HintId { kHintPlay, kHintFolder, kHintImport, kHintOnline, kHintControls, kHintPlayers, kHintFullscreen, kHintHelp };
+enum HintId {
+  kHintPlay, kHintFolder, kHintImport, kHintOnline, kHintBackup, kHintControls, kHintPlayers, kHintFullscreen, kHintHelp
+};
 inline constexpr int kEntryReset = -1, kEntryDone = -2;
 inline constexpr int kResSuper = 9;  // "resolution" setting: 0 auto, 1-8 fixed factor, 9 supersampled
 inline constexpr uint64_t kMouseIdleNs = 2'500'000'000;  // in a game, the cursor hides after this
