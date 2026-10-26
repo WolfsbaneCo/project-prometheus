@@ -1084,8 +1084,8 @@ void App::draw_home() {
 
   const float footer_h = 84 * s;
   ui_.rect(0, H - footer_h, W, footer_h, rgb(0x0C0C0D, 0.92f));
-  const std::string hints = games_.empty() ? "O  Choose games folder      F10  Who's playing      F1  Help"
-                                           : "Enter / A  Play      O / Y  Games folder      I  Import a save      F10  Who's playing      F1  Help";
+  const std::string hints = games_.empty() ? "O  Choose games folder      F10  Who's playing      F11  Fullscreen      F1  Help"
+                                           : "Enter / A  Play      O / Y  Games folder      I  Import a save      F10  Who's playing      F11  Fullscreen      F1  Help";
   ui_.text(margin, H - footer_h + 30 * s, hints, 19 * s, kDim);
   draw_players_strip(W - margin - (4 * 190 + 3 * 10) * s, 70 * s, s);
 
