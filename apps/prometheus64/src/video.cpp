@@ -18,7 +18,8 @@ void main() {
 )";
 
 // One shader for the game picture and for the blurred "ambient" background behind it.
-// Downscaling uses the frame's mipmaps (trilinear), so a 5x render shrinks without shimmer.
+// The picture is resampled with a Catmull-Rom (bicubic) filter: exact at 1:1, sharper than
+// bilinear when it is scaled. Only a frame more than twice the output size uses the mipmaps.
 const char* kFragment = R"(#version 330 core
 uniform sampler2D u_tex;
 uniform vec4 u_src;      // texture rect mapped onto the quad: x0, y0 (bottom), x1, y1 (top)
@@ -30,15 +31,42 @@ uniform float u_sharpen;
 uniform float u_scan;    // scanline strength
 uniform float u_lines;   // source lines across the quad
 uniform float u_alpha;
+uniform float u_bicubic; // 1 = Catmull-Rom from the full-size frame
+uniform vec2 u_size;     // texture size in texels
 in vec2 v_uv;
 out vec4 o;
+
+// Catmull-Rom in 9 bilinear taps (weights folded into the sample positions).
+vec3 catmull_rom(vec2 uv) {
+  vec2 p = uv * u_size;
+  vec2 t1 = floor(p - 0.5) + 0.5;
+  vec2 f = p - t1;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  vec2 w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2;
+  vec2 t0 = (t1 - 1.0) / u_size, t3 = (t1 + 2.0) / u_size, t12 = (t1 + w2 / w12) / u_size;
+  vec3 c = vec3(0.0);
+  c += textureLod(u_tex, vec2(t0.x, t0.y), 0.0).rgb * w0.x * w0.y;
+  c += textureLod(u_tex, vec2(t12.x, t0.y), 0.0).rgb * w12.x * w0.y;
+  c += textureLod(u_tex, vec2(t3.x, t0.y), 0.0).rgb * w3.x * w0.y;
+  c += textureLod(u_tex, vec2(t0.x, t12.y), 0.0).rgb * w0.x * w12.y;
+  c += textureLod(u_tex, vec2(t12.x, t12.y), 0.0).rgb * w12.x * w12.y;
+  c += textureLod(u_tex, vec2(t3.x, t12.y), 0.0).rgb * w3.x * w12.y;
+  c += textureLod(u_tex, vec2(t0.x, t3.y), 0.0).rgb * w0.x * w3.y;
+  c += textureLod(u_tex, vec2(t12.x, t3.y), 0.0).rgb * w12.x * w3.y;
+  c += textureLod(u_tex, vec2(t3.x, t3.y), 0.0).rgb * w3.x * w3.y;
+  return clamp(c, 0.0, 1.0);
+}
+
 void main() {
   vec2 uv = mix(u_src.xy, u_src.zw, v_uv);
   if (u_mode > 0.5) {
     o = vec4(textureLod(u_tex, uv, u_lod).rgb * u_dim, 1.0);
     return;
   }
-  vec3 c = texture(u_tex, uv).rgb;
+  vec3 c = u_bicubic > 0.5 ? catmull_rom(uv) : texture(u_tex, uv).rgb;
   if (u_sharpen > 0.0) {
     vec3 n = texture(u_tex, uv + vec2(u_step.x, 0.0)).rgb + texture(u_tex, uv - vec2(u_step.x, 0.0)).rgb +
              texture(u_tex, uv + vec2(0.0, u_step.y)).rgb + texture(u_tex, uv - vec2(0.0, u_step.y)).rgb;
@@ -102,6 +130,8 @@ bool Video::init(std::string& error) {
   u_dst_ = gl::glGetUniformLocation(program_, "u_dst");
   u_mode_ = gl::glGetUniformLocation(program_, "u_mode");
   u_lod_ = gl::glGetUniformLocation(program_, "u_lod");
+  u_bicubic_ = gl::glGetUniformLocation(program_, "u_bicubic");
+  u_size_ = gl::glGetUniformLocation(program_, "u_size");
   u_dim_ = gl::glGetUniformLocation(program_, "u_dim");
   u_step_ = gl::glGetUniformLocation(program_, "u_step");
   u_sharpen_ = gl::glGetUniformLocation(program_, "u_sharpen");
@@ -225,6 +255,8 @@ void Video::draw_quad(const float src[4], const float dst[4], bool background, f
   gl::glUniform1f(u_sharpen_, background ? 0.0f : look.sharpen);
   gl::glUniform1f(u_scan_, background ? 0.0f : look.scanlines);
   gl::glUniform1f(u_alpha_, alpha);
+  gl::glUniform1f(u_bicubic_, background ? 0.0f : bicubic_);
+  gl::glUniform2f(u_size_, size_w_, size_h_);
   gl::glUniform1i(gl::glGetUniformLocation(program_, "u_tex"), 0);
   gl::glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
@@ -238,6 +270,8 @@ Rect Video::draw_game(int out_w, int out_h, const Look& look, float alpha) {
   const float th = static_cast<float>(frame_is_hw_ ? target_h_ : sw_h_);
   gl::glBindTexture(GL_TEXTURE_2D, tex);
   if (frame_is_hw_) gl::glGenerateMipmap(GL_TEXTURE_2D);
+  size_w_ = tw;
+  size_h_ = th;
   gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, look.smooth ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST);
   gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, look.smooth ? GL_LINEAR : GL_NEAREST);
 
@@ -313,6 +347,9 @@ Rect Video::draw_game(int out_w, int out_h, const Look& look, float alpha) {
   const float dst[4] = {2.0f * r.x / out_w - 1.0f, 1.0f - 2.0f * (r.y + r.h) / out_h, 2.0f * (r.x + r.w) / out_w - 1.0f,
                         1.0f - 2.0f * r.y / out_h};
   const float step_x = (sx1 - sx0) / std::max(1, r.w), step_y = (sy1 - sy0) / std::max(1, r.h);
+  // Bicubic unless the frame is more than twice the size it is shown at (then mipmaps avoid
+  // shimmer). The sharp-pixel look keeps nearest-neighbour sampling.
+  bicubic_ = look.smooth && static_cast<float>(r.h) >= 0.5f * (sy1 - sy0) * th ? 1.0f : 0.0f;
   gl::glUseProgram(program_);
   gl::glUniform1f(u_lines_, 240.0f * (sy1 - sy0) / v1);  // the N64's 240 lines, minus any crop
   if (alpha < 1.0f) {
@@ -320,6 +357,7 @@ Rect Video::draw_game(int out_w, int out_h, const Look& look, float alpha) {
     gl::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   }
   draw_quad(src, dst, false, 0, 1, look, step_x, step_y, alpha);
+  bicubic_ = 0.0f;
   gl::glDisable(GL_BLEND);
   return r;
 }
