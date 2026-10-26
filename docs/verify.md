@@ -14,7 +14,7 @@ Every **VERIFY** item from the brief, plus the ones the decision notes added. Br
 ## Added by the decision notes
 
 - [ ] Option B: how RMG and simple64 get the ParaLLEl-RDP frame onto their window, and whether our own shader passes could follow it without changing the plugin.
-- [ ] Lockstep determinism on the libretro core: synchronous RDP, no host timing leaks. Test in Phase 4 before committing to option A for netplay.
+- [x] Lockstep determinism on the libretro core: synchronous RDP, no host timing leaks. Test in Phase 4 before committing to option A for netplay. Holds with GLideN64 once nothing is copied back from the GPU (`EnableCopyColorToRDRAM` off, depth copy in software): identical console memory between different window sizes and graphics settings, between two computers' copies, and between the Linux and Windows builds. See [0005](decisions/0005-online-play.md).
 - [ ] Tauri: whether a web view can be composited cleanly over a Vulkan swapchain on Windows, in case the stack choice is revisited.
 - [ ] SDL3 multi-keyboard support on Windows (needed for press-to-join with two keyboards), and mappings for the owner's N64 controller adapter.
 - [ ] Project64 1.6's own Controller Pak file name (the importer currently expects `<name>_Cont_N.mpk`).
@@ -35,3 +35,13 @@ Checked so far on Linux with a software GPU (Mesa llvmpipe) and public-domain ho
 - [ ] Double-clicking a `.z64` after installing: whether Windows opens Prometheus 64 straight away or asks once (it asks when another program, such as an older emulator, was chosen before).
 - [ ] Installer on a clean Windows PC: install, Start menu shortcut, first launch, uninstall leaves `Documents\N64 Saves` alone.
 - [ ] Vulkan path for ParaLLEl-RDP: accurate rendering at high resolution, not wired yet.
+
+## Added by online play (Phase 4, see [0005](decisions/0005-online-play.md))
+
+Checked with two copies of the app on one Linux machine through a local copy of the relay, and with a Windows copy (under Wine) joining a Linux host. Not yet over the internet or against a real Cloudflare account.
+
+- [ ] The in-app Cloudflare setup on a real account: the key page opening with both permissions filled in, creating the `workers.dev` address on a brand-new account, installing the relay, and how long a new address takes to answer. Checked only against a stand-in for Cloudflare's API built from wrangler's own requests.
+- [ ] Secure WebSockets (`wss://`) through Windows' own TLS (Schannel) on a real Windows PC. Checked: plain `ws://` under Wine.
+- [ ] A Mario Party session and a Smash 64 match between two homes (brief 14, Phase 4): input delay that feels right, how often "Waiting for…" appears on Wi-Fi.
+- [ ] Rumble Pak and Controller Pak choice online: each port gets a Rumble Pak when its player's controller can rumble. Games that store data on the Controller Pak would not see it for a rumbling player.
+- [ ] Brief 11.6 (optional): give guests a copy of the finished save. Not built; guests' saves are simply left alone.

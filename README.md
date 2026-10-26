@@ -17,6 +17,7 @@ The **mouse** works everywhere: click a game to play it, click menu items (the â
 |---|---|
 | Esc, right-click, or Back/Guide on a controller | Quick menu: save states, picture, fill mode, resolution, volume, players, controls |
 | C (in the library) | Controls: change any key or controller button |
+| N (in the library) | Play online with friends anywhere |
 | F2 / F3 | Next fill mode / next picture preset |
 | F5 / F7 / F6 | Save state / load state / next state slot |
 | F10 | Who's playing: seat controllers and keyboards for up to 4 players |
@@ -28,6 +29,15 @@ The **mouse** works everywhere: click a game to play it, click menu items (the â
 **Changing the controls:** press **C** in the library (or Menu > Controls). Pick Keyboard, Left half, Right half or Controller, click a control and press the key or button you want. A key that is already in use swaps places, so nothing is left without a key. Changes save straight away; "Reset to defaults" undoes them.
 
 **Saves** go into `Documents\N64 Saves`, one folder per game, with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file. The emulator's original file is only read, never changed.
+
+### Playing online
+
+Press **N** in the library (or click **Play online**). Everyone needs Prometheus 64 and the same game file in their library; the app checks both and says what's missing.
+
+- **To host:** pick the game in the library, press N, then **Host**. The first time, the app walks you through a one-time setup (about 2 minutes): a free Cloudflare account and a key you copy and paste. The app then installs a small relay on *your* account; the key isn't kept. You get an invite code like `K7Q2M.alex` to send to your friends. When everyone shows up, choose the input delay (the suggested one covers the slowest connection) and press **Start**.
+- **To join:** press N, then **Join**, and type or paste the code. No account or setup needed.
+
+Each computer runs the game itself and only controller presses travel, so everyone keeps their own picture settings, and couch players can join too (two on one computer and two on another). The host's save is used and stays on the host's computer, backed up first; guests' own saves aren't touched. Save states are off while online, the host's menu pauses everyone, and only the host can reset. If someone drops out, the host keeps playing offline. Under about 40 ms of ping plays great, up to 80 ms is fine for most games; a wired connection plays smoother than Wi-Fi. Details: [`relay/README.md`](relay/README.md).
 
 ### Picture presets
 
@@ -52,6 +62,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0002 Licensing](docs/decisions/0002-licensing.md) (proposed)
   - [0003 Save formats and the canonical master copy](docs/decisions/0003-save-formats.md)
   - [0004 How the player is built](docs/decisions/0004-player-architecture.md)
+  - [0005 Online play](docs/decisions/0005-online-play.md)
 - **Waiting on the owner:** [`docs/open-questions.md`](docs/open-questions.md)
 - **Unverified assumptions:** [`docs/verify.md`](docs/verify.md)
 
@@ -59,10 +70,10 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 
 | Phase | State |
 |---|---|
-| 1: Player | **Playable.** Library, picture presets, fill modes, internal resolution, fullscreen, quick menu, save states, local multiplayer up to 4, rumble, Windows installer. Still to come: the Vulkan renderer (ParaLLEl-RDP), per-person profiles and button remapping |
+| 1: Player | **Playable.** Library (with zip, 7z and rar), picture presets, fill modes, resolution up to supersampling, HD textures, fullscreen, quick menu, mouse, save states, local multiplayer up to 4, rumble, button remapping, Windows installer. Still to come: the Vulkan renderer (ParaLLEl-RDP) and per-person profiles |
 | 2: Saves | **Working.** In-game saves stored in the library with history; imports from other emulators; `n64save` tool and converters |
 | 3: Google Drive sync | Not started |
-| 4: Netplay | Not started |
+| 4: Netplay | **Working.** Invite codes through a relay on the host's own free Cloudflare account (set up from inside the app), lockstep with game and version checks, adjustable input delay, the host's save. Checked between two copies on Linux and between Linux and Windows; not yet over the internet |
 | 5: Cartridge | Not started |
 
 ## Building from source
@@ -77,7 +88,7 @@ ctest --test-dir build -C Release --output-on-failure
 
 The emulator core is a separate download from its own project, built at a pinned commit by `tools/build-core-windows.sh` (MinGW-w64 on Linux). Put `mupen64plus_next_libretro.dll` in a `cores` folder next to `Prometheus64.exe`. CI does all of this and builds the installer with Inno Setup (`installer/prometheus64.iss`). Pushing a tag like `v0.1.0` publishes a release.
 
-On Linux, SDL needs the X11/Wayland, ALSA/PulseAudio and udev development packages (see `.github/workflows/ci.yml`).
+On Linux, SDL needs the X11/Wayland, ALSA/PulseAudio and udev development packages, and online play needs OpenSSL's (see `.github/workflows/ci.yml`). libcurl is downloaded and built automatically; on Windows it uses the system's own TLS. The online relay lives in [`relay/`](relay/README.md).
 
 ### `n64save`: save tools for the command line
 
