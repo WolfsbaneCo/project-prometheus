@@ -56,3 +56,12 @@ add_custom_command(TARGET prometheus64 POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           "${PROJECT_SOURCE_DIR}/assets/branding/prometheus64/png/prometheus64-icon-small-256.png"
           "$<TARGET_FILE_DIR:prometheus64>/assets/icon-small.png")
+
+# Binding logic of the Controls screen, tested without a window or devices.
+if(BUILD_TESTING)
+  add_executable(input_tests tests/input_tests.cpp src/input.cpp src/settings.cpp)
+  target_include_directories(input_tests PRIVATE src third_party/libretro)
+  target_link_libraries(input_tests PRIVATE SDL3::SDL3-static p64_warnings)
+  add_test(NAME controls_bindings COMMAND input_tests)
+  set_tests_properties(controls_bindings PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=dummy")
+endif()

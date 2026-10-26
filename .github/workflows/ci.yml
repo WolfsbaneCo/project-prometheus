@@ -81,6 +81,8 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --parallel
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
 
   # The download for players: one installer that holds the app, the core, fonts and licences.
   app-windows:

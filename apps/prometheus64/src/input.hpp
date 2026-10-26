@@ -4,6 +4,9 @@
 // gamepad is connected. "Who's playing" (F10) clears the seats and lets every device claim one:
 // gamepads with any button, the keyboard with Enter, or two keyboard players with F (left half)
 // and . (right half).
+//
+// Every binding can be changed on the Controls screen and is kept in the settings: one set of
+// keys for each keyboard layout, and one set of buttons shared by all gamepads.
 #pragma once
 
 #include <SDL3/SDL_events.h>
@@ -16,9 +19,14 @@
 
 namespace p64 {
 
+class Settings;
+
 enum N64Button : int {
   kA, kB, kZ, kStart, kL, kR, kCUp, kCDown, kCLeft, kCRight, kDUp, kDDown, kDLeft, kDRight, kButtonCount
 };
+// Everything a key can drive: the 14 buttons, then the control stick's four directions and the
+// walk modifier (keyboard only; a gamepad uses its left stick).
+enum Control : int { kStickUp = kButtonCount, kStickDown, kStickLeft, kStickRight, kWalk, kControlCount };
 
 struct PadState {
   uint32_t buttons = 0;  // bit per N64Button
@@ -27,11 +35,12 @@ struct PadState {
 
 enum class DeviceKind { None, Keyboard, Gamepad };
 
-// Which keys drive one keyboard player.
-struct KeyLayout {
-  const char* name;
-  SDL_Scancode up, down, left, right, walk;
-  std::array<SDL_Scancode, kButtonCount> buttons;
+// One gamepad input bound to an N64 button: a button, a trigger, or a right-stick direction.
+struct PadInput {
+  enum Kind : uint8_t { Button, Axis } kind = Button;
+  int code = 0;   // SDL_GamepadButton, or SDL_GamepadAxis
+  int sign = 1;   // axis direction
+  bool operator==(const PadInput&) const = default;
 };
 
 struct Seat {
@@ -45,6 +54,7 @@ struct Seat {
 class Input {
  public:
   static constexpr int kPlayers = 4;
+  static constexpr int kKeyLayouts = 3;  // whole keyboard, left half, right half
 
   ~Input();
   void init();
@@ -66,8 +76,22 @@ class Input {
   std::vector<std::string> take_notices();
   // Automated tests: hold an N64 button ("A", "START", "CU", "DU", ...) or the stick ("UP", ...).
   void test_press(int player, const std::string& button, bool down);
-  static const KeyLayout& layout(int index);
-  static int layout_count();
+
+  // Bindings.
+  static const char* control_name(int control);
+  static const char* layout_name(int layout);
+  SDL_Scancode key(int layout, int control) const { return keys_[layout][control]; }
+  std::string key_label(int layout, int control) const;
+  std::string pad_label(int button) const;
+  // Binds a key; a control that already used it takes this control's old key, so nothing is lost.
+  void bind_key(int layout, int control, SDL_Scancode key);
+  // Binds the gamepad input in `e` (a button press, a trigger pulled or the right stick pushed).
+  // Returns false when the event is not something that can be bound.
+  bool bind_pad(int button, const SDL_Event& e);
+  void reset_keys(int layout);
+  void reset_pad();
+  void load_bindings(const Settings& settings);
+  void save_bindings(Settings& settings) const;
 
  private:
   struct Pad {
@@ -80,6 +104,7 @@ class Input {
   int first_free() const;
   void seat_device(int player, Seat seat);
   void auto_seat_keyboard();
+  bool pad_input_held(SDL_Gamepad* g, const PadInput& in) const;
 
   std::vector<Pad> pads_;
   std::array<Seat, kPlayers> seats_{};
@@ -88,6 +113,8 @@ class Input {
   std::array<uint16_t, kPlayers> rumble_strong_{}, rumble_weak_{};
   std::array<uint32_t, kPlayers> test_buttons_{};
   std::array<float, kPlayers> test_x_{}, test_y_{};
+  std::array<std::array<SDL_Scancode, kControlCount>, kKeyLayouts> keys_{};
+  std::array<std::vector<PadInput>, kButtonCount> pad_{};
   bool seating_ = false;
   std::vector<std::string> notices_;
 };
