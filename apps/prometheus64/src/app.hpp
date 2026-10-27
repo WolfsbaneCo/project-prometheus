@@ -175,6 +175,8 @@ class App {
   bool supersampling(const std::string& game_id) const;
   int texture_look(const std::string& game_id) const;
   void run_frames();
+  int refreshes_per_frame(double fps) const;
+  void check_speed(double fps);
 
   void load_game_save();
   void sync_game_save(bool force);
@@ -258,6 +260,13 @@ class App {
   bool running_ = true;
   bool fullscreen_ = false;
   bool vsync_working_ = false;
+  // Frame pacing: the screen's refresh period as measured, and whether recent refreshes were missed.
+  double refresh_ns_ = 0;
+  uint64_t last_swap_ns_ = 0, refreshes_ = 0;
+  int unlocked_for_ = 0;  // refreshes left before pacing locks to the screen again after a slow patch
+  uint64_t speed_since_ns_ = 0, speed_frames_ = 0;  // keeping up: frames run since then
+  int slow_spans_ = 0;      // slow 5-second stretches in a row (one alone may be the game loading)
+  bool slow_told_ = false;  // said once this game that the computer can't keep up
   int out_w_ = 0, out_h_ = 0;
   uint64_t last_ns_ = 0, acc_ns_ = 0;
   uint64_t frame_count_ = 0;

@@ -188,15 +188,19 @@ bool App::init(std::string& error) {
     static const bool debug = SDL_getenv("P64_DEBUG") != nullptr;
     if (debug) {
       static uint64_t frames = 0, loud = 0, peak = 0;
+      static double low = 1e9, high = 0;
+      low = std::min(low, audio_.queued_seconds());
+      high = std::max(high, audio_.queued_seconds());
       for (std::size_t i = 0; i < n * 2; ++i) {
         const uint64_t a = static_cast<uint64_t>(std::abs(static_cast<int>(d[i])));
         peak = std::max(peak, a);
         loud += a > 512;
       }
       if (frames == 0 || (frames + n) / 44100 != frames / 44100) {
-        SDL_Log("audio: %llu frames so far, %llu loud samples, peak %llu, queued %.3fs",
-                static_cast<unsigned long long>(frames + n), static_cast<unsigned long long>(loud),
-                static_cast<unsigned long long>(peak), audio_.queued_seconds());
+        SDL_Log("audio: %llu frames so far, %llu loud samples, peak %llu, queued %.3f-%.3fs", static_cast<unsigned long long>(frames + n),
+                static_cast<unsigned long long>(loud), static_cast<unsigned long long>(peak), low, high);
+        low = 1e9;
+        high = 0;
       }
       frames += n;
     }
@@ -429,6 +433,9 @@ bool App::start_game(const Game& game) {
   overlay_ = Overlay::None;
   acc_ns_ = 0;
   last_ns_ = SDL_GetTicksNS();
+  speed_since_ns_ = 0;
+  slow_spans_ = 0;
+  slow_told_ = false;
   settings_.set("last_game", utf8(game.path));
   if (!online_game_) toast(game.title + "  -  Esc, right-click or Back on a controller opens the menu", 5);
   if (input_.keyboard_shared()) toast("Two players share the keyboard: gamepads work better", 5);
@@ -681,9 +688,22 @@ void App::take_screenshot(const fs::path& file) {
 // ---------------------------------------------------------------------------------------------
 // Main loop
 
+// How many screen refreshes make one game frame when the two line up (a 60 Hz screen: 1, 120 Hz:
+// 2), or 0 when they don't (75 Hz, 144 Hz) or the screen isn't keeping up.
+int App::refreshes_per_frame(double fps) const {
+  if (!vsync_working_ || refresh_ns_ <= 0 || unlocked_for_ > 0) return 0;
+  const double per = 1e9 / fps / refresh_ns_;
+  const int n = static_cast<int>(std::lround(per));
+  return n >= 1 && n <= 4 && std::abs(per / n - 1.0) < 0.02 ? n : 0;
+}
+
 void App::run_frames() {
   const uint64_t now = SDL_GetTicksNS();
-  acc_ns_ += now - last_ns_;
+  uint64_t elapsed = now - last_ns_;
+  // With vsync, count whole refreshes rather than the clock's jitter, so frames come at an even
+  // rhythm (on a 144 Hz screen: the same pattern of 2 and 3 refreshes per frame, always).
+  if (vsync_working_ && refresh_ns_ > 0 && elapsed < refresh_ns_ * 1.5) elapsed = static_cast<uint64_t>(refresh_ns_);
+  acc_ns_ += elapsed;
   last_ns_ = now;
   const double fps = core_.av().timing.fps > 1 ? core_.av().timing.fps : 60.0;
   const uint64_t frame_ns = static_cast<uint64_t>(1e9 / fps);
@@ -693,20 +713,67 @@ void App::run_frames() {
     return;
   }
   if (net_.running() && online_game_) {
+    audio_.set_speed(1.0);  // online games keep the N64's own clock, the same on every computer
     run_online_frames(frame_ns);  // the host's menu pauses everyone, so it decides
     return;
   }
   if (screen_ != Screen::Playing || overlay_ != Overlay::None) {
     acc_ns_ = 0;
+    speed_since_ns_ = 0;
     return;
   }
   if (!opt_.screenshot.empty()) acc_ns_ = frame_ns;  // test mode: one game frame per drawn frame, so runs repeat exactly
+  // When the screen's refresh lines up with the game (it nearly always does: 60 Hz), run exactly
+  // one frame every n refreshes. Going by the clock instead, the two drift across each other and
+  // the game now and then shows a frame twice and then skips one: a small, regular stutter. The
+  // game then runs at the screen's speed (60 Hz against the N64's 59.94: 0.1% faster), and the
+  // sound follows along.
+  if (const int n = opt_.screenshot.empty() ? refreshes_per_frame(fps) : 0) {
+    acc_ns_ = 0;
+    audio_.set_speed(1e9 / (refresh_ns_ * n) / fps);
+    if (++refreshes_ % static_cast<uint64_t>(n) == 0) {
+      core_.run();
+      ++frame_count_;
+      if (frame_count_ % 30 == 0) sync_game_save(false);
+    }
+    check_speed(fps);
+    return;
+  }
+  audio_.set_speed(1.0);
   for (int runs = 0; acc_ns_ >= frame_ns && runs < 3; ++runs) {
     core_.run();
     acc_ns_ -= frame_ns;
     ++frame_count_;
     if (frame_count_ % 30 == 0) sync_game_save(false);
   }
+  check_speed(fps);
+}
+
+// Whether this computer keeps the game at full speed: game frames are counted over 5-second
+// stretches of play, and if clearly fewer ran than the game's speed, the player hears once (per
+// game) which settings are lighter. Slow settings are the usual cause of a game that drags.
+void App::check_speed(double fps) {
+  if (!opt_.screenshot.empty() || slow_told_) return;
+  const uint64_t now = SDL_GetTicksNS();
+  if (!speed_since_ns_) {
+    speed_since_ns_ = now;
+    speed_frames_ = frame_count_;
+    return;
+  }
+  const uint64_t span = now - speed_since_ns_;
+  if (span < 5'000'000'000ULL) return;
+  const double expected = fps * static_cast<double>(span) / 1e9;
+  slow_spans_ = static_cast<double>(frame_count_ - speed_frames_) < expected * 0.95 ? slow_spans_ + 1 : 0;
+  if (slow_spans_ >= 2) {
+    slow_told_ = true;
+    SDL_Log("speed: %llu frames in %.1f s, expected %.0f", static_cast<unsigned long long>(frame_count_ - speed_frames_),
+            static_cast<double>(span) / 1e9, expected);
+    toast("This computer can't keep the game at full speed with these settings. Menu > Picture: Retro, or "
+          "Textures: Original, is lighter",
+          9);
+  }
+  speed_since_ns_ = now;
+  speed_frames_ = frame_count_;
 }
 
 void App::loop() {
@@ -798,6 +865,28 @@ void App::loop() {
     swap_ns_total += SDL_GetTicksNS() - t1;
     // With working vsync the swap paces the loop; otherwise sleep until the next frame is due.
     if (frames_drawn == 30) vsync_working_ = swap_ns_total / 30 > 3'000'000;
+    if (vsync_working_) {
+      // Wait for the picture to be on screen. Otherwise the driver can queue up to 3 frames ahead,
+      // and every one of them is a frame between pressing a button and seeing it happen.
+      gl::glFinish();
+      // Measure the refresh period (a missed refresh, from a slow frame, doesn't count; it
+      // unlocks the pacing for a while instead, so a slow PC keeps the game at full speed).
+      const uint64_t now = SDL_GetTicksNS();
+      const double dt = last_swap_ns_ ? static_cast<double>(now - last_swap_ns_) : 0;
+      last_swap_ns_ = now;
+      if (dt > 0 && refresh_ns_ <= 0) {
+        if (const SDL_DisplayMode* m = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_)); m && m->refresh_rate > 1) {
+          refresh_ns_ = 1e9 / m->refresh_rate;
+        } else {
+          refresh_ns_ = dt;
+        }
+      } else if (dt > 0 && dt < refresh_ns_ * 1.5 && dt > refresh_ns_ * 0.5) {
+        refresh_ns_ += (dt - refresh_ns_) * 0.02;
+        if (unlocked_for_ > 0) --unlocked_for_;
+      } else if (dt >= refresh_ns_ * 1.5) {
+        unlocked_for_ = 120;
+      }
+    }
     if (!vsync_working_) {
       const double fps = game_ && core_.av().timing.fps > 1 ? core_.av().timing.fps : 60.0;
       const uint64_t frame_ns = static_cast<uint64_t>(1e9 / fps);
