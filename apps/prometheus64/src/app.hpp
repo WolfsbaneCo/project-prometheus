@@ -94,7 +94,7 @@ class App {
   void handle_mouse(const SDL_Event& e);
   bool handle_capture(const SDL_Event& e);  // Controls screen waiting for a key or button
   void hover(const Hit& h);
-  void click(const Hit& h);
+  void click(const Hit& h, int clicks = 1);
   const Hit* hit_at(float x, float y) const;
   void add_hit(float x, float y, float w, float h, int kind, int arg = 0);
   bool mouse_over(float x, float y, float w, float h) const;

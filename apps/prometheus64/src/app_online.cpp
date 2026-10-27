@@ -687,19 +687,23 @@ void App::draw_online() {
     ui_.text(x, y + 14 * s, "Your name", 20 * s, kDim);
     draw_field(x + 160 * s, y, 380 * s, s, TextField::Name, name_input_, "Your name", false);
     y += 96 * s;
-    auto card = [&](const std::string& head, const std::string& body, const std::string& button, int id, bool enabled) {
+    auto card = [&](const std::string& head, const std::string& body, const std::string& button, int id, bool enabled,
+                    const std::string& more = {}) {
       ui_.rect(x, y, inner, 150 * s, kTile, 18 * s);
       ui_.text(x + 28 * s, y + 26 * s, head, 26 * s, kText, true);
       ui_.text(x + 28 * s, y + 66 * s, ui_.fit(body, 19 * s, inner - 340 * s), 19 * s, kDim);
+      if (!more.empty()) ui_.text(x + 28 * s, y + 98 * s, ui_.fit(more, 18 * s, inner - 340 * s), 18 * s, kFaint);
       online_button(x + inner - 28 * s, y + 49 * s, button, s, true, id, true, enabled);
       y += 172 * s;
     };
     if (keyed) {
       const std::string game = games_.empty() ? std::string()
                                               : games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)].title;
+      // The game hosted is the one picked in the library (one click on its tile, or the arrow keys).
       card("Host a game", games_.empty() ? "Add your games first (Choose games folder on the library screen)"
                                          : "Opens " + game + " and gives you a code to send to your friends",
-           "Host this game", kObHost, !games_.empty());
+           "Host this game", kObHost, !games_.empty(),
+           games_.empty() ? std::string() : "Another game? Close, click it once in your library, then press N");
       card("Join a game", "Type the code the host sent you", "Join", kObJoin, true);
     } else {
       card("I have a key file", "Got a key file from a friend? Add it, then join or host", "Add key file", kObAddKey, true);

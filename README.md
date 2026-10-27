@@ -11,7 +11,7 @@ The app plays games the user already owns and adds themselves. It never download
 3. Press **O** (or **Y** on a controller) and choose the folder that holds your games: `.z64`, `.n64` and `.v64` files, or the same packed in `.zip`, `.7z` or `.rar` archives (no need to unpack them; an archive with several games shows each one). You can also drop a game onto the window, or double-click a game file if you ticked that option in the installer.
 4. Pick a game and press **Enter** (or **A**). To have a friend join, they press **Start** on another controller. Press **F1** for every key.
 
-The **mouse** works everywhere: click a game to play it, click menu items (the ‹ › arrows change a value), click the shortcuts along the bottom of the library, and right-click during a game for the menu. Menus also move with W/A/S/D or the number pad, for keyboards without working arrow keys.
+The **mouse** works everywhere: click a game to pick it and double-click to play it, click menu items (the ‹ › arrows change a value), click the shortcuts along the bottom of the library, and right-click during a game for the menu. Menus also move with W/A/S/D or the number pad, for keyboards without working arrow keys.
 
 | Key | What it does |
 |---|---|
@@ -36,7 +36,7 @@ Online games happen in a private **group**. One person sets the group up once, a
 
 - **Starting a group (one person, once, about 2 minutes):** press **N** in the library (or click **Play online**), then **Set up**. The app walks you through a free Cloudflare account and a Cloudflare key you copy and paste; it installs a small relay on *your* account and doesn't keep that Cloudflare key. It then gives you the group's key file: click **Save key file** and send the `.prometheuskey` file to your friends.
 - **Joining a group:** double-click the key file, drop it onto the window, or press N and click **Add key file**. The installer never contains a key.
-- **Hosting a game:** anyone in the group can. Pick the game, press N, then **Host this game**. You get a five-character game code like `K7Q2M`; send it to your friends. When everyone shows up, choose the input delay (the suggested one covers the slowest connection) and press **Start**.
+- **Hosting a game:** anyone in the group can. In the library, click the game once (or move to it with the arrow keys) so it has the red border, press N, then **Host this game**; the card names the game it will open. To host a different game, close Play online, pick that one and press N again (once hosting, **Stop hosting** first). You get a five-character game code like `K7Q2M`; send it to your friends. When everyone shows up, choose the input delay (the suggested one covers the slowest connection) and press **Start**.
 - **Joining a game:** press N, then **Join**, and type or paste the host's code. Everyone needs the same version of Prometheus 64 and their own copy of the same game. Any file of it works (`.z64`, `.v64` or `.n64`, zipped or not, any name), but it has to be the same release: the same region and revision, unmodified. The app checks and says what's different.
 - The key file is for all of Project Prometheus, not only this app: future Project Prometheus apps with online features (trading in a GBA app, say) use the same key and the same relay. It's kept once per computer, so they find it without adding it again. Setting the group up again makes a new key, and old copies stop working. **Remove key** forgets it on this computer.
 

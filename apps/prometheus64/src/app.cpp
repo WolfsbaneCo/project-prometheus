@@ -90,7 +90,7 @@ int App::run() {
 }
 
 bool App::init(std::string& error) {
-  SDL_SetAppMetadata("Prometheus 64", "0.1.0", "org.projectprometheus.prometheus64");
+  SDL_SetAppMetadata("Prometheus 64", "0.1.1", "org.projectprometheus.prometheus64");
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
     error = SDL_GetError();
     return false;
@@ -731,9 +731,9 @@ void App::loop() {
       ++next_key;
     }
 
-    // Test mode: left clicks ("frame:x,y" in pixels), sent like real mouse events.
+    // Test mode: left clicks ("frame:x,y" in pixels, ",2" for a double click), sent like real mouse events.
     for (const auto& c : opt_.clicks) {
-      const auto colon = c.find(':'), comma = c.find(',');
+      const auto colon = c.find(':'), comma = c.find(','), comma2 = c.find(',', comma + 1);
       if (std::stoull(c.substr(0, colon)) != frames_drawn) continue;
       const float d = SDL_GetWindowPixelDensity(window_) > 0 ? SDL_GetWindowPixelDensity(window_) : 1.0f;
       const float x = std::stof(c.substr(colon + 1, comma - colon - 1)) / d, y = std::stof(c.substr(comma + 1)) / d;
@@ -748,6 +748,7 @@ void App::loop() {
       m.button.x = x;
       m.button.y = y;
       m.button.down = true;
+      m.button.clicks = comma2 == std::string::npos ? 1 : static_cast<Uint8>(std::stoi(c.substr(comma2 + 1)));
       handle(m);
     }
 
@@ -1337,6 +1338,7 @@ void App::draw_home() {
       ui_.outline(x, y, tile_w, tile_h, kRed, 18 * s, 3 * s);
     } else {
       ui_.rect(x, y, tile_w, tile_h, kTile, 18 * s);
+      if (mouse_over(x, y, tile_w, tile_h)) ui_.rect(x, y, tile_w, tile_h, rgb(0xFFFFFF, 0.05f), 18 * s);
     }
     ui_.image(ui_.logo_small(), x + tile_w - 50 * s, y + 18 * s, 32 * s, 32 * s, sel ? 1.0f : 0.35f);
     const auto lines = wrap(ui_, g.title, 26 * s, tile_w - 90 * s, true, 3);
@@ -1489,7 +1491,7 @@ void App::draw_help() {
   ui_.text(px + 40 * s, py + ph - 122 * s,
            "Change any key or button on the Controls screen: press C in the library, or Menu > Controls.", 18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 90 * s,
-           "The mouse works everywhere: click a game to play, click menu items, right-click during a game for the menu.",
+           "Mouse: click a game to pick it, double-click to play. Click menu items; right-click during a game for the menu.",
            18 * s, kDim);
   // Where saves go, with the Documents folder named as people know it.
   std::string where = utf8(library_dir_.lexically_normal());
@@ -1565,7 +1567,7 @@ void App::handle_mouse(const SDL_Event& e) {
   if (e.button.button != SDL_BUTTON_LEFT) return;
   if (const Hit* h = hit_at(mouse_x_, mouse_y_)) {
     const Hit hit = *h;  // a copy: hits_ is rebuilt whenever the screen is drawn again
-    click(hit);
+    click(hit, e.button.clicks);
   } else if (overlay_ != Overlay::None) {
     ui_action(kBack);  // a click outside an open menu closes it
   }
@@ -1573,18 +1575,18 @@ void App::handle_mouse(const SDL_Event& e) {
 
 void App::hover(const Hit& h) {
   switch (h.kind) {
-    case kHitTile: selected_ = h.arg; break;
     case kHitMenuRow: case kHitMenuDec: case kHitMenuInc: menu_index_ = h.arg; break;
     case kHitEntry: if (!controls_capture_) controls_index_ = h.arg; break;
     default: break;
   }
 }
 
-void App::click(const Hit& h) {
+void App::click(const Hit& h, int clicks) {
   switch (h.kind) {
     case kHitTile:
+      // One click picks the game (the one Enter plays and Play online hosts), a double click plays it.
       selected_ = h.arg;
-      start_game(games_[h.arg]);
+      if (clicks >= 2) start_game(games_[h.arg]);
       break;
     case kHitAddGames: choose_games_folder(); break;
     case kHitHint:
