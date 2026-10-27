@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(prometheus64 VERSION 0.1.0 LANGUAGES C CXX)
+project(prometheus64 VERSION 0.1.1 LANGUAGES C CXX)
 if(WIN32)
   enable_language(RC)
 endif()

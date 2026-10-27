@@ -90,7 +90,7 @@ int App::run() {
 }
 
 bool App::init(std::string& error) {
-  SDL_SetAppMetadata("Prometheus 64", "0.1.0", "org.projectprometheus.prometheus64");
+  SDL_SetAppMetadata("Prometheus 64", "0.1.1", "org.projectprometheus.prometheus64");
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
     error = SDL_GetError();
     return false;
