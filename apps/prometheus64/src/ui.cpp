@@ -15,6 +15,10 @@ namespace {
 
 constexpr int kAtlasW = 2048, kAtlasH = 2048;  // two fonts, one half each
 constexpr float kBakePx = 48.0f;  // rasterised large and scaled down, with 2x oversampling
+// Space around each glyph in the atlas. Small text is drawn from the atlas's shrunken copies
+// (mipmaps), where a 1-pixel gap vanishes and neighbouring glyphs bleed in as faint ghost letters;
+// 8 pixels stays clear down to the 1/8 copy, the smallest that kMaxMip lets text use.
+constexpr int kGlyphPadding = 8, kMaxMip = 3;
 
 const char* kVertex = R"(#version 330 core
 layout(location = 0) in vec2 a_pos;
@@ -119,7 +123,7 @@ bool Ui::bake(const std::filesystem::path& file, Font& font, int atlas_y, std::v
     return false;
   }
   stbtt_pack_context pc;
-  if (!stbtt_PackBegin(&pc, atlas.data() + static_cast<std::size_t>(atlas_y) * kAtlasW, kAtlasW, kAtlasH / 2, kAtlasW, 1,
+  if (!stbtt_PackBegin(&pc, atlas.data() + static_cast<std::size_t>(atlas_y) * kAtlasW, kAtlasW, kAtlasH / 2, kAtlasW, kGlyphPadding,
                        nullptr)) {
     error = "font atlas";
     return false;
@@ -177,6 +181,7 @@ bool Ui::init(const std::filesystem::path& assets, std::string& error) {
   gl::glBindTexture(GL_TEXTURE_2D, atlas_tex_);
   gl::glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   gl::glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kAtlasW, kAtlasH, 0, GL_RED, GL_UNSIGNED_BYTE, atlas.data());
+  gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, kMaxMip);
   gl::glGenerateMipmap(GL_TEXTURE_2D);
   gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
   gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
