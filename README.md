@@ -102,7 +102,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The emulator core is a separate download from its own project, built at a pinned commit by `tools/build-core-windows.sh` (MinGW-w64 on Linux). Put `mupen64plus_next_libretro.dll` in a `cores` folder next to `Prometheus64.exe`. CI does all of this and builds the installer with Inno Setup (`installer/prometheus64.iss`). Pushing a tag like `v0.1.0` publishes a release.
+The emulator core is a separate download from its own project, built at a pinned commit by `tools/build-core-windows.sh` (MinGW-w64 on Linux). Put `mupen64plus_next_libretro.dll` in a `cores` folder next to `Prometheus64.exe`. CI does all of this and builds the installer with Inno Setup (`installer/prometheus64.iss`). To publish a release, push a tag like `v0.1.0`, or run the CI workflow by hand on `main` (Actions > CI > Run workflow): it tags `main` with the version in `CMakeLists.txt` and attaches the installer.
 
 On Linux, SDL needs the X11/Wayland, ALSA/PulseAudio and udev development packages, and online play needs OpenSSL's (see `.github/workflows/ci.yml`). libcurl is downloaded and built automatically; on Windows it uses the system's own TLS. The online relay lives in [`relay/`](relay/README.md).
 
