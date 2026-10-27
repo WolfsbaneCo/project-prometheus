@@ -13,10 +13,11 @@ BEGIN
   BEGIN
     BLOCK "040904b0"
     BEGIN
-      VALUE "CompanyName", "Project Prometheus"
+      VALUE "CompanyName", "Wolfsbane Co."
       VALUE "FileDescription", "Prometheus 64"
       VALUE "FileVersion", APP_VERSION_STRING
       VALUE "InternalName", "prometheus64"
+      VALUE "LegalCopyright", "Copyright (C) 2026 Wolfsbane Co."
       VALUE "OriginalFilename", "Prometheus64.exe"
       VALUE "ProductName", "Prometheus 64"
       VALUE "ProductVersion", APP_VERSION_STRING
