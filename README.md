@@ -49,6 +49,7 @@ Press **B** in the library (or click **Back up**), then **Connect Google Drive**
 - **Carry on on another computer:** connect the same Google account there, and your in-game saves come down by themselves. Save states are backed up too, but they stay with the computer that made them.
 - **Saved on two computers in between?** The Backup screen asks which one to keep, and the other stays in history. Nothing is ever overwritten without asking.
 - **Offline?** Saves stay on the computer and go up when the connection returns.
+- **Move or rename the folder** in Drive if you like: backups keep going to it, and other computers find it too. Only if it's deleted does the app start a new "N64 Saves".
 - The library shows when the last backup ran. **Back up now** runs one straight away, **Disconnect** signs out and leaves the files in Drive, and both automatic backups and save states can be switched off.
 
 ### Picture presets

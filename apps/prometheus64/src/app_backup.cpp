@@ -246,7 +246,7 @@ void App::draw_backup() {
   const std::string account = backup_.account();
   ui_.text(x, y, account.empty() ? "Connected to Google Drive" : "Connected as " + account, 22 * s, kText, true);
   y += 38 * s;
-  ui_.text(x, y, "Your saves are in My Drive > N64 Saves", 19 * s, kDim);
+  ui_.text(x, y, "Your saves are in the N64 Saves folder in your Drive (you can move or rename it)", 19 * s, kDim);
   if (!backup_.root_id().empty()) button(x + inner, y - 12 * s, "Open in Drive", false, kBbOpenDrive, true);
   y += 56 * s;
 

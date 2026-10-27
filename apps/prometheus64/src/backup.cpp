@@ -24,6 +24,7 @@ namespace {
 
 constexpr const char* kSecretName = "Prometheus 64/Google Drive";
 constexpr const char* kRootName = "N64 Saves";
+constexpr const char* kRootTag = "saves";  // the hidden property marking the folder (key "prometheus")
 constexpr std::size_t kHistoryLimit = 10;  // brief 9.2: the last 10 in-game saves per game
 
 std::string read_file(const fs::path& p) {
@@ -358,14 +359,15 @@ void Backup::run_sync(bool include_states) {
     busy_ = false;
   };
 
-  // The "N64 Saves" folder: the one this app made (another install's counts too: same app).
-  std::vector<Drive::File> top;
-  if (!d.list("root", top)) return finish(false);
-  if (const auto* f = find(top, kRootName); f && f->folder) {
-    root = f->id;
-  } else if (!d.create_folder("root", kRootName, root)) {
-    return finish(false);
+  // The app's saves folder, wherever the player has moved it and whatever they renamed it: the one
+  // this computer used before, else the one carrying the app's tag (made by another computer, perhaps),
+  // else a new "N64 Saves" in My Drive. Only a folder in the bin or deleted is replaced.
+  if (!root.empty() && !d.alive(root)) {
+    if (d.problem() != Drive::Problem::None) return finish(false);
+    root.clear();
   }
+  if (root.empty() && !d.find_folder(kRootTag, kRootName, root)) return finish(false);
+  if (root.empty() && !d.create_folder("root", kRootName, root, kRootTag)) return finish(false);
   std::vector<Drive::File> remote_games;
   if (!d.list(root, remote_games)) return finish(false);
 
