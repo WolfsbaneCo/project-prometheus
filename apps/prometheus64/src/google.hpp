@@ -49,12 +49,21 @@ class Drive {
   bool account(std::string& email);
   // Folders and files made by this app, inside `parent` ("root" is My Drive).
   bool list(const std::string& parent, std::vector<File>& out);
-  bool create_folder(const std::string& parent, const std::string& name, std::string& id);
+  // `tag` (optional) is stored on the folder as a hidden property, so it can be found again after the
+  // player moves or renames it.
+  bool create_folder(const std::string& parent, const std::string& name, std::string& id, const std::string& tag = {});
+  // The app's folder carrying `tag`, anywhere in the Drive; or else, a folder of this app named `name`.
+  // `id` is empty when there is none.
+  bool find_folder(const std::string& tag, const std::string& name, std::string& id);
+  // Whether a file or folder still exists and isn't in the bin. False with no problem() when it's gone.
+  bool alive(const std::string& id);
   bool upload(const std::string& parent, const std::string& name, const std::string& data, std::string& id);
   bool update(const std::string& id, const std::string& data);
   bool download(const std::string& id, std::string& data);
   bool remove(const std::string& id);
   bool rename(const std::string& id, const std::string& name);
+  // Moves a folder of this app into `parent`, giving it a new name and tag (contents untouched).
+  bool move_into(const std::string& id, const std::string& parent, const std::string& name, const std::string& tag);
 
   Problem problem() const { return problem_; }
   const std::string& error() const { return error_; }  // plain language

@@ -372,9 +372,11 @@ bool Drive::list(const std::string& parent, std::vector<File>& out) {
   return true;
 }
 
-bool Drive::create_folder(const std::string& parent, const std::string& name, std::string& id) {
-  const std::string meta = "{\"name\":" + json::quote(name) + ",\"mimeType\":\"" + kFolderType + "\",\"parents\":[" +
-                           json::quote(parent) + "]}";
+bool Drive::create_folder(const std::string& parent, const std::string& name, std::string& id, const std::string& tag) {
+  std::string meta = "{\"name\":" + json::quote(name) + ",\"mimeType\":\"" + kFolderType + "\",\"parents\":[" +
+                     json::quote(parent) + "]";
+  if (!tag.empty()) meta += ",\"appProperties\":{\"prometheus\":" + json::quote(tag) + "}";
+  meta += "}";
   const net::Response r = call("POST", api_url() + "/files?fields=id", {"Content-Type: application/json"}, meta);
   if (r.status != 200) return fail(r);
   json::Value v;
@@ -422,6 +424,47 @@ bool Drive::download(const std::string& id, std::string& data) {
   if (r.status != 200) return fail(r);
   data = r.body;
   return true;
+}
+
+bool Drive::find_folder(const std::string& tag, const std::string& name, std::string& id) {
+  id.clear();
+  // Only this app's files are visible (drive.file), so these searches never see anything else.
+  const std::string by_tag = "appProperties has { key='prometheus' and value='" + tag + "' } and mimeType = '" +
+                             kFolderType + "' and trashed = false";
+  const std::string by_name = "name = '" + name + "' and mimeType = '" + kFolderType + "' and trashed = false";
+  for (const std::string& q : {by_tag, by_name}) {
+    const net::Response r = call("GET", api_url() + "/files?pageSize=10&orderBy=createdTime&fields=" +
+                                            encode("files(id)") + "&q=" + encode(q), {});
+    if (r.status != 200) return fail(r);
+    json::Value v;
+    json::parse(r.body, v);
+    id = v["files"][0]["id"].str();  // the oldest one, if several
+    if (!id.empty()) return true;
+  }
+  return true;
+}
+
+bool Drive::move_into(const std::string& id, const std::string& parent, const std::string& name, const std::string& tag) {
+  const net::Response got = call("GET", api_url() + "/files/" + id + "?fields=parents", {});
+  if (got.status != 200) return fail(got);
+  json::Value v;
+  json::parse(got.body, v);
+  std::string old;
+  for (const auto& p : v["parents"].array) old += (old.empty() ? "" : ",") + p.str();
+  const std::string meta = "{\"name\":" + json::quote(name) + ",\"appProperties\":{\"prometheus\":" + json::quote(tag) + "}}";
+  const net::Response r = call("PATCH", api_url() + "/files/" + id + "?fields=id&addParents=" + encode(parent) +
+                                            (old.empty() ? "" : "&removeParents=" + encode(old)),
+                               {"Content-Type: application/json"}, meta);
+  return r.status == 200 || fail(r);
+}
+
+bool Drive::alive(const std::string& id) {
+  const net::Response r = call("GET", api_url() + "/files/" + id + "?fields=id,trashed", {});
+  if (r.status == 404) return false;
+  if (r.status != 200) return fail(r);
+  json::Value v;
+  json::parse(r.body, v);
+  return !v["trashed"].truthy();
 }
 
 bool Drive::rename(const std::string& id, const std::string& name) {

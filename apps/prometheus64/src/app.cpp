@@ -104,8 +104,13 @@ bool App::init(std::string& error) {
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
   load_group_key();
+  // Saves for every console share one folder: Memories\N64 now, Memories\GBA later.
+  // Earlier versions used Documents\N64 Saves; a computer that has it keeps using it (nothing moves).
   const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
-  const fs::path default_library = (docs ? from_utf8(docs) : pref_dir_) / "N64 Saves";
+  const fs::path docs_dir = docs ? from_utf8(docs) : pref_dir_;
+  std::error_code lib_ec;
+  const fs::path default_library = fs::is_directory(docs_dir / "N64 Saves", lib_ec) ? docs_dir / "N64 Saves"
+                                                                                     : docs_dir / "Memories" / "N64";
   library_dir_ = from_utf8(settings_.get("library", utf8(default_library)));
   slot_ = std::clamp(settings_.get_int("state_slot", 1), 1, 10);
 
@@ -1486,7 +1491,15 @@ void App::draw_help() {
   ui_.text(px + 40 * s, py + ph - 90 * s,
            "The mouse works everywhere: click a game to play, click menu items, right-click during a game for the menu.",
            18 * s, kDim);
-  ui_.text(px + 40 * s, py + ph - 58 * s, "Your games save automatically into Documents\\N64 Saves, with the last 10 versions kept.",
+  // Where saves go, with the Documents folder named as people know it.
+  std::string where = utf8(library_dir_.lexically_normal());
+  if (const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS)) {
+    const std::string d = utf8(from_utf8(docs).lexically_normal());
+    const std::string base = d.size() > 1 && (d.back() == '/' || d.back() == '\\') ? d.substr(0, d.size() - 1) : d;
+    if (where.rfind(base, 0) == 0) where = "Documents" + where.substr(base.size());
+  }
+  ui_.text(px + 40 * s, py + ph - 58 * s,
+           ui_.fit("Your games save automatically into " + where + ", with the last 10 versions kept.", 18 * s, pw - 80 * s),
            18 * s, kDim);
 }
 

@@ -33,7 +33,7 @@ Checked so far on Linux with a software GPU (Mesa llvmpipe) and public-domain ho
 - [ ] Windows folder and file pickers (O and I on the library screen) and dropping a game file onto the window.
 - [ ] Archives from the owner's own collection open (zip, 7z and RAR5 were checked with a real game; RAR4 only with libarchive's own sample file, because current RAR versions can no longer create RAR4 archives).
 - [ ] Double-clicking a `.z64` after installing: whether Windows opens Prometheus 64 straight away or asks once (it asks when another program, such as an older emulator, was chosen before).
-- [ ] Installer on a clean Windows PC: install, Start menu shortcut, first launch, uninstall leaves `Documents\N64 Saves` alone.
+- [ ] Installer on a clean Windows PC: install, Start menu shortcut, first launch, uninstall leaves `Documents\Memories` alone.
 - [ ] Vulkan path for ParaLLEl-RDP: accurate rendering at high resolution, not wired yet.
 
 ## Added by online play (Phase 4, see [0005](decisions/0005-online-play.md))

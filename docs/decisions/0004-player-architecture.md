@@ -39,7 +39,7 @@ Prometheus 64 is its own program: a C++20 app on SDL3 (window, audio, gamepads, 
 | What | Where on Windows |
 |---|---|
 | Program, core and fonts | `%LOCALAPPDATA%\Programs\Prometheus 64` (per-user install) |
-| Save library | `Documents\N64 Saves` (the same library as the `n64save` tool) |
+| Save library | `Documents\Memories\N64`, or `Documents\N64 Saves` where an earlier version made it (the same library as the `n64save` tool) |
 | Settings | `%APPDATA%\Project Prometheus\Prometheus 64\settings.txt` |
 | Texture packs | `%APPDATA%\Project Prometheus\Prometheus 64\system\Mupen64plus\hires_texture\<game's internal name>` |
 

@@ -28,7 +28,7 @@ The **mouse** works everywhere: click a game to play it, click menu items (the �
 
 **Changing the controls:** press **C** in the library (or Menu > Controls). Pick Keyboard, Left half, Right half or Controller, click a control and press the key or button you want. A key that is already in use swaps places, so nothing is left without a key. Changes save straight away; "Reset to defaults" undoes them.
 
-**Saves** go into `Documents\N64 Saves`, one folder per game, with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file. The emulator's original file is only read, never changed.
+**Saves** go into `Documents\Memories\N64`, one folder per game (a computer that already had `Documents\N64 Saves` from an earlier version keeps using it), with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file. The emulator's original file is only read, never changed.
 
 ### Playing online
 
@@ -44,11 +44,12 @@ Each computer runs the game itself and only controller presses travel, so everyo
 
 ### Backing up to Google Drive
 
-Press **B** in the library (or click **Back up**), then **Connect Google Drive** and sign in in your browser. Your saves go into a folder called **N64 Saves** in your Google Drive, quietly, when you close Prometheus 64 and every hour while it's open. Only saves go up, never games. Prometheus 64 can only see that folder, nothing else in your Drive.
+Press **B** in the library (or click **Back up**), then **Connect Google Drive** and sign in in your browser. Your saves go into **Memories › N64** in your Google Drive, quietly, when you close Prometheus 64 and every hour while it's open. Only saves go up, never games. Prometheus 64 can only see that folder, nothing else in your Drive.
 
 - **Carry on on another computer:** connect the same Google account there, and your in-game saves come down by themselves. Save states are backed up too, but they stay with the computer that made them.
 - **Saved on two computers in between?** The Backup screen asks which one to keep, and the other stays in history. Nothing is ever overwritten without asking.
 - **Offline?** Saves stay on the computer and go up when the connection returns.
+- **Move or rename the folders** in Drive if you like: backups keep going to them, and other computers find them too. Only if they're deleted does the app start new ones. An "N64 Saves" folder from an earlier version is moved into place as Memories › N64, history included.
 - The library shows when the last backup ran. **Back up now** runs one straight away, **Disconnect** signs out and leaves the files in Drive, and both automatic backups and save states can be switched off.
 
 ### Picture presets

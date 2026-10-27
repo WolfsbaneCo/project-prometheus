@@ -17,9 +17,9 @@
 In Drive, the app's own folder mirrors the library:
 
 ```
-N64 Saves/<GAME>/history/<time>__<id>/...   each in-game save, exactly as the library keeps it
-N64 Saves/<GAME>/current.json               the newest save: its id, when, which device, which saves that device had
-N64 Saves/<GAME>/states/<device>/...        that device's save states
+Memories/N64/<GAME>/history/<time>__<id>/...   each in-game save, exactly as the library keeps it
+Memories/N64/<GAME>/current.json               the newest save: its id, when, which device, which saves that device had
+Memories/N64/<GAME>/states/<device>/...        that device's save states
 ```
 
 ## Choices and why
@@ -34,7 +34,9 @@ N64 Saves/<GAME>/states/<device>/...        that device's save states
 - **In-game saves only, across devices** (owner's choice). Save states are backed up into the device's own folder and never fetched by another device, because a state only loads in the exact same emulator core.
 - **When.** Brief 9.2 asks for a backup when the app closes and every hour. The app also checks at start, so another computer's progress is there before you play. After a failure (offline, say) it retries every 5 minutes. A save fetched for a game that is running waits until the game is closed.
 - **The worker never writes the library.** Saves fetched from Drive are unpacked to a separate folder; the main thread puts them in the library through the same `store_current` the game uses. A history entry is written under a temporary name and renamed, so the worker never reads a half-written one.
-- **`drive.file` only** (brief 9.4). The app sees only what it made. "N64 Saves" made by one computer is found by the others because it is the same app; an Android client created in the same Google Cloud project is the same app too ([setup](../google-drive-setup.md)).
+- **One folder for every console** (owner's choice): "Memories" holds "N64" now and "GBA" when the app plays GBA games, in Drive as on the computer.
+- **The folders are found by identity, not by place.** Each computer remembers the N64 folder's Drive id and keeps using it wherever the player moves it and whatever they rename it. A computer that doesn't know it yet, such as a new one, searches for the hidden properties set when the folders were made, anywhere in the Drive: `prometheus=n64` on N64, `prometheus=library` on Memories. Only a folder in the bin or deleted is replaced. An earlier version's single "N64 Saves" folder (`prometheus=saves`) is moved into Memories and renamed N64, with its history.
+- **`drive.file` only** (brief 9.4). The app sees only what it made. The folders made by one computer are found by the others because it is the same app; an Android client created in the same Google Cloud project is the same app too ([setup](../google-drive-setup.md)).
 - **External, published app.** It is open to anyone with a Google account, not only one Workspace, and published, so sign-ins don't expire after 7 days. The client ID comes from CI secrets, never from the repository. A build without it simply has backup switched off.
 - **Account choice** (brief 9.4). The screen suggests a personal Google account for game saves. The app works with any account.
 

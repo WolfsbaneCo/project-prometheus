@@ -1,10 +1,11 @@
 // Google Drive backup of the save library (brief section 9).
 //
-// Drive holds a folder "N64 Saves" made by the app, laid out like the library:
+// Drive holds a folder "Memories" made by the app, with one folder per console, laid out like
+// the library:
 //
-//   N64 Saves/<GAME>/history/<time>__<id>/...   each in-game save, as the library keeps it (never changed)
-//   N64 Saves/<GAME>/current.json               which save is the newest, from which device
-//   N64 Saves/<GAME>/states/<device>/...        that device's save states (backup only)
+//   Memories/N64/<GAME>/history/<time>__<id>/...   each in-game save, as the library keeps it
+//   Memories/N64/<GAME>/current.json               which save is the newest, from which device
+//   Memories/N64/<GAME>/states/<device>/...        that device's save states (backup only)
 //
 // Saves are identified by their content (the library's ids), so devices agree on what is the same
 // save. Each device remembers the last save it agreed with Drive on, per game. When only this
