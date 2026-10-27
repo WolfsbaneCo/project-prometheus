@@ -152,30 +152,46 @@ void WebSocket::push(Event::Kind kind, std::string data) {
 }
 
 void WebSocket::run(std::string url) {
-  CURL* c = curl_easy_init();
-  if (!c) {
-    push(Event::Closed, "out of memory");
-    finished_ = true;
-    return;
-  }
-  curl_easy_setopt(c, CURLOPT_URL, url.c_str());
-  curl_easy_setopt(c, CURLOPT_CONNECT_ONLY, 2L);  // 2: WebSocket upgrade, then hand the stream to us
-  curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
-  curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
-  curl_easy_setopt(c, CURLOPT_NOPROXY, "localhost,127.0.0.1");
-  curl_easy_setopt(c, CURLOPT_TCP_NODELAY, 1L);
-  curl_easy_setopt(c, CURLOPT_TCP_KEEPALIVE, 1L);
-  secure_defaults(c);
-  char detail[CURL_ERROR_SIZE] = {};
-  curl_easy_setopt(c, CURLOPT_ERRORBUFFER, detail);
-  const CURLcode res = curl_easy_perform(c);
+  // Some internet providers block workers.dev addresses by answering the name lookup with another
+  // server (a block page), so the relay's certificate check fails or the name doesn't resolve.
+  // Then the relay is looked up again over DNS-over-HTTPS, which such blocks don't reach.
+  static const char* const kLookups[] = {nullptr, "https://cloudflare-dns.com/dns-query", "https://dns.google/dns-query"};
+  CURL* c = nullptr;
+  CURLcode res = CURLE_OK;
   long status = 0;
-  curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
-  if (res != CURLE_OK && status == 0) {
-    // No answer from the relay at all: say what went wrong (name lookup, connection, secure
+  std::string why;
+  char detail[CURL_ERROR_SIZE] = {};  // curl's own words for a failure; the handle keeps writing here
+  for (const char* doh : kLookups) {
+    if (c) curl_easy_cleanup(c);
+    c = curl_easy_init();
+    if (!c) {
+      push(Event::Closed, "out of memory");
+      finished_ = true;
+      return;
+    }
+    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(c, CURLOPT_CONNECT_ONLY, 2L);  // 2: WebSocket upgrade, then hand the stream to us
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
+    curl_easy_setopt(c, CURLOPT_NOPROXY, "localhost,127.0.0.1");
+    curl_easy_setopt(c, CURLOPT_TCP_NODELAY, 1L);
+    curl_easy_setopt(c, CURLOPT_TCP_KEEPALIVE, 1L);
+    if (doh) curl_easy_setopt(c, CURLOPT_DOH_URL, doh);
+    secure_defaults(c);
+    detail[0] = '\0';
+    curl_easy_setopt(c, CURLOPT_ERRORBUFFER, detail);
+    res = curl_easy_perform(c);
+    status = 0;
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
+    if (res == CURLE_OK || status != 0) break;
+    // No answer from the relay at all: keep what went wrong (name lookup, connection, secure
     // connection), which tells a blocked address apart from an antivirus or firewall.
-    const std::string why = detail[0] ? detail : curl_easy_strerror(res);
-    SDL_Log("relay connection failed: %s", why.c_str());
+    if (!doh) why = detail[0] ? detail : curl_easy_strerror(res);
+    SDL_Log("relay connection failed%s: %s", doh ? " (looked up over DNS-over-HTTPS)" : "",
+            detail[0] ? detail : curl_easy_strerror(res));
+    if (res != CURLE_PEER_FAILED_VERIFICATION && res != CURLE_COULDNT_RESOLVE_HOST && res != CURLE_SSL_CONNECT_ERROR) break;
+  }
+  if (res != CURLE_OK && status == 0) {
     push(Event::Closed, "Could not reach the relay (" + why + "). Check your internet connection");
     curl_easy_cleanup(c);
     finished_ = true;
