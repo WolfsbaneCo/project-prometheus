@@ -444,6 +444,20 @@ bool Drive::find_folder(const std::string& tag, const std::string& name, std::st
   return true;
 }
 
+bool Drive::move_into(const std::string& id, const std::string& parent, const std::string& name, const std::string& tag) {
+  const net::Response got = call("GET", api_url() + "/files/" + id + "?fields=parents", {});
+  if (got.status != 200) return fail(got);
+  json::Value v;
+  json::parse(got.body, v);
+  std::string old;
+  for (const auto& p : v["parents"].array) old += (old.empty() ? "" : ",") + p.str();
+  const std::string meta = "{\"name\":" + json::quote(name) + ",\"appProperties\":{\"prometheus\":" + json::quote(tag) + "}}";
+  const net::Response r = call("PATCH", api_url() + "/files/" + id + "?fields=id&addParents=" + encode(parent) +
+                                            (old.empty() ? "" : "&removeParents=" + encode(old)),
+                               {"Content-Type: application/json"}, meta);
+  return r.status == 200 || fail(r);
+}
+
 bool Drive::alive(const std::string& id) {
   const net::Response r = call("GET", api_url() + "/files/" + id + "?fields=id,trashed", {});
   if (r.status == 404) return false;

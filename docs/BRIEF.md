@@ -161,12 +161,13 @@ Where the multiple is exact, scale cleanly. Where it is not, render one step hig
 One clear, visible library folder, organised by game and not by emulator:
 
 ```
-N64 Saves/
-  <Game name>/
-    current/            latest master copy, in raw form plus canonical form
-    history/            last 10 in-game saves, timestamped, never overwritten
-    states/             last 10 save states, tagged with core and version
-    info.json           game ID, save type(s), checksums, last played, device
+Prometheus Saves/
+  N64/                  one folder per console (GBA/ later); the same layout in Google Drive
+    <Game name>/
+      current/          latest master copy, in raw form plus canonical form
+      history/          last 10 in-game saves, timestamped, never overwritten
+      states/           last 10 save states, tagged with core and version
+      info.json         game ID, save type(s), checksums, last played, device
 ```
 
 - Identify games by the ROM header ID and checksum, never by file name.
@@ -218,7 +219,7 @@ Task: write a **read-only inspector** that identifies the real save type and siz
 
 1. A card says "Back up your saves to Google Drive" with one **Connect** button.
 2. The browser opens Google's sign-in. The user approves; the app is reconnected automatically.
-3. The app creates a folder called "N64 Saves" in Drive and shows its location.
+3. The app creates the folder "Prometheus Saves", holding "N64", in Drive and shows its location.
 4. It lists what it found (for example "Harvest Moon 64: 1 save, 10 save states") with an **Upload now** button.
 
 Always visible: a status indicator ("Synced 12 minutes ago") and a **Sync now** button. Settings: auto-sync on or off, what to include, number of versions (default 10).

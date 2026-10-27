@@ -15,7 +15,7 @@ namespace savekit {
 struct ImportOptions {
   // A Project64 folder, its Save folder, or a single save file. Only ever read.
   std::filesystem::path source;
-  // The library root ("N64 Saves").
+  // The library root (Prometheus 64 uses "Prometheus Saves/N64"; earlier versions "N64 Saves").
   std::filesystem::path library;
   bool dry_run = false;
   // Make the newest imported save current even when the library already holds a different

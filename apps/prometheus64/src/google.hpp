@@ -62,6 +62,8 @@ class Drive {
   bool download(const std::string& id, std::string& data);
   bool remove(const std::string& id);
   bool rename(const std::string& id, const std::string& name);
+  // Moves a folder of this app into `parent`, giving it a new name and tag (contents untouched).
+  bool move_into(const std::string& id, const std::string& parent, const std::string& name, const std::string& tag);
 
   Problem problem() const { return problem_; }
   const std::string& error() const { return error_; }  // plain language
