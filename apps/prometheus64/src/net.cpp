@@ -1,5 +1,6 @@
 #include "net.hpp"
 
+#include <SDL3/SDL_log.h>
 #include <curl/curl.h>
 
 #ifdef _WIN32
@@ -39,9 +40,29 @@ std::string refusal(long status) {
     case 404: return "No game is open with this code. Check the code with the host";
     case 423: return "This game has already started. Ask the host to open a new one";
     case 503: return "The group's relay isn't set up properly. Whoever set it up can do it again";
-    case 0: return "Could not reach the relay. Check your internet connection";
     default: return "The relay refused the connection (HTTP " + std::to_string(status) + ")";
   }
+}
+
+// Settings for Windows' own TLS (Schannel); other systems' TLS ignores them.
+// "Connection lost", with what went wrong, so a problem on one computer can be told apart.
+std::string lost(CURLcode r, const char* detail) {
+  const std::string why = detail && detail[0] ? detail : curl_easy_strerror(r);
+  SDL_Log("relay connection lost: %s", why.c_str());
+  return "Connection lost (" + why + ")";
+}
+
+void secure_defaults(CURL* c) {
+  // Windows checks whether a certificate was revoked by asking its issuer. When that can't be
+  // answered (an antivirus that scans secure connections, a network that blocks the issuer's
+  // server), the connection fails although the certificate is fine. Best effort still refuses
+  // certificates known to be revoked.
+  curl_easy_setopt(c, CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_REVOKE_BEST_EFFORT));
+#ifdef _WIN32
+  // TLS 1.2: connections to the relay failed on Windows 11, the only Windows with TLS 1.3, which
+  // curl's Schannel support handles less well; 1.2 is what every Windows version does reliably.
+  curl_easy_setopt(c, CURLOPT_SSLVERSION, static_cast<long>(CURL_SSLVERSION_TLSv1_2 | CURL_SSLVERSION_MAX_TLSv1_2));
+#endif
 }
 
 }  // namespace
@@ -69,6 +90,7 @@ Response request(const std::string& method, const std::string& url, const std::v
   curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 20L);
   curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
   curl_easy_setopt(c, CURLOPT_NOPROXY, "localhost,127.0.0.1");
+  secure_defaults(c);
   curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, collect);
   curl_easy_setopt(c, CURLOPT_WRITEDATA, &r.body);
   if (!parts.empty()) {
@@ -143,11 +165,24 @@ void WebSocket::run(std::string url) {
   curl_easy_setopt(c, CURLOPT_NOPROXY, "localhost,127.0.0.1");
   curl_easy_setopt(c, CURLOPT_TCP_NODELAY, 1L);
   curl_easy_setopt(c, CURLOPT_TCP_KEEPALIVE, 1L);
+  secure_defaults(c);
+  char detail[CURL_ERROR_SIZE] = {};
+  curl_easy_setopt(c, CURLOPT_ERRORBUFFER, detail);
   const CURLcode res = curl_easy_perform(c);
   long status = 0;
   curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
+  if (res != CURLE_OK && status == 0) {
+    // No answer from the relay at all: say what went wrong (name lookup, connection, secure
+    // connection), which tells a blocked address apart from an antivirus or firewall.
+    const std::string why = detail[0] ? detail : curl_easy_strerror(res);
+    SDL_Log("relay connection failed: %s", why.c_str());
+    push(Event::Closed, "Could not reach the relay (" + why + "). Check your internet connection");
+    curl_easy_cleanup(c);
+    finished_ = true;
+    return;
+  }
   if (res != CURLE_OK || (status != 0 && status != 101)) {
-    push(Event::Closed, res == CURLE_OK || status ? refusal(status) : refusal(0));
+    push(Event::Closed, refusal(status));
     curl_easy_cleanup(c);
     finished_ = true;
     return;
@@ -177,7 +212,7 @@ void WebSocket::run(std::string url) {
         if (r == CURLE_AGAIN) {
           wait_socket(sock, true, 50);
         } else if (r != CURLE_OK) {
-          reason = "Connection lost";
+          reason = lost(r, detail);
           open = false;
         }
         done += sent;
@@ -193,7 +228,7 @@ void WebSocket::run(std::string url) {
       const CURLcode r = curl_ws_recv(c, buffer, sizeof buffer, &got, &meta);
       if (r == CURLE_AGAIN) break;
       if (r != CURLE_OK) {
-        reason = r == CURLE_GOT_NOTHING ? "The relay closed the connection" : "Connection lost";
+        reason = r == CURLE_GOT_NOTHING ? "The relay closed the connection" : lost(r, detail);
         open = false;
         break;
       }
