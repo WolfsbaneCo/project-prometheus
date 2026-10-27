@@ -18,7 +18,13 @@ Open **Google Auth Platform** (in the menu, or search for "OAuth consent screen"
    - App name: **Project Prometheus**.
    - User support email: an address of yours.
    - Developer contact: the same.
-   - Leave the logo empty. A logo makes Google review the app first.
+   - Application home page: `https://wolfsbanecompany.com/apps/prometheus/`.
+   - Privacy policy: `https://wolfsbanecompany.com/apps/privacy/`.
+   - Terms of service: `https://wolfsbanecompany.com/apps/terms/`.
+   - Authorized domain: `wolfsbanecompany.com`, verified in Google Search Console.
+   - The logo is optional. A logo makes Google review the branding before publishing.
+
+   These pages live in the website repository, [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company). It has one privacy policy and one set of terms for every Wolfsbane app, with a section per app. Keep Prometheus 64's sections up to date when the app's data handling changes.
 2. **Audience:** choose **External**, so anyone with a Google account can connect, not only your own Workspace users.
 3. **Data access:** click **Add or remove scopes**, tick `.../auth/drive.file` ("See, edit, create and delete only the specific Google Drive files you use with this app") and save. Don't add anything else.
 4. **Audience → Publish app → Confirm.** The status must say **In production**.
