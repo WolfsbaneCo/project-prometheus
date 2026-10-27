@@ -18,6 +18,7 @@ constexpr const char* kApp = "prometheus64";  // this app's rooms on the group's
 constexpr int kBatch = 2;               // frames of input per message: halves the relay's message count
 constexpr uint32_t kHashEvery = 300;    // compare memory fingerprints every 5 seconds
 constexpr uint64_t kPingEveryNs = 1'000'000'000;
+constexpr std::size_t kPingsBeforeStart = 3;  // about 3 seconds after someone joins
 
 std::string url_encode(const std::string& s) {
   std::string out;
@@ -138,6 +139,7 @@ void Netplay::open(const std::string& url, const std::string& name) {
   status_ = "Connecting...";
   my_name_ = name;
   players_.clear();
+  recent_pings_.clear();
   ports_ = {};
   paks_ = {1, 1, 1, 1};
   code_.clear();
@@ -180,6 +182,7 @@ void Netplay::leave() {
   }
   ws_.close();
   phase_ = Phase::Off;
+  begin_at_ns_ = 0;
   me_ = -1;
   status_.clear();
 }
@@ -222,8 +225,12 @@ void Netplay::update() {
     }
     if (phase_ == Phase::Off) return;
   }
-  // Ping everyone once a second: through the relay, so it measures the real path.
   const uint64_t now = SDL_GetTicksNS();
+  if (begin_at_ns_ && now >= begin_at_ns_ && phase_ == Phase::Starting) {
+    begin_at_ns_ = 0;
+    begin();
+  }
+  // Ping everyone once a second: through the relay, so it measures the real path.
   if (phase_ != Phase::Connecting && now - last_ping_ns_ > kPingEveryNs) {
     last_ping_ns_ = now;
     Writer w;
@@ -285,6 +292,7 @@ void Netplay::on_text(const std::string& text) {
     for (const Port& port : ports_) playing = playing || port.player == id;
     players_.erase(std::remove_if(players_.begin(), players_.end(), [&](const Player& p) { return p.id == id; }),
                    players_.end());
+    recent_pings_.erase(id);
     if (!is_host()) return;
     if (phase_ == Phase::Lobby) {
       events_.push_back({Event::Message, name + " left"});
@@ -316,6 +324,7 @@ void Netplay::end(const std::string& reason, bool keep_playing) {
   events_.push_back(e);
   ws_.close();
   phase_ = Phase::Off;
+  begin_at_ns_ = 0;
   me_ = -1;
   status_.clear();
 }
@@ -338,10 +347,16 @@ void Netplay::assign_ports() {
 }
 
 int Netplay::suggested_delay() const {
-  // Enough frames to cover the slowest one-way trip, plus one for jitter.
+  // Enough frames to cover the slowest one-way trip, taken from the worst of the last few pings
+  // (a connection's ping wanders, and every late input pauses the game), plus 3: one because
+  // inputs travel two frames at a time, one because they are picked up once per frame, and one to
+  // spare. Too little delay pauses the game often; a frame too many is hardly felt.
   int worst = 0;
   for (const auto& p : players_) worst = std::max(worst, p.ping_ms);
-  const int frames = static_cast<int>(std::ceil(worst / 2.0 / (1000.0 / 60.0))) + 1;
+  for (const auto& [id, pings] : recent_pings_) {
+    for (int ms : pings) worst = std::max(worst, ms);
+  }
+  const int frames = static_cast<int>(std::ceil(worst / 2.0 / (1000.0 / 60.0))) + 3;
   return std::clamp(frames, kMinDelay, kMaxDelay);
 }
 
@@ -381,6 +396,13 @@ bool Netplay::can_start(std::string& why) const {
     }
     if (!p.problem.empty()) {
       why = p.name + ": " + p.problem;
+      return false;
+    }
+    // The suggested delay comes from the pings: starting before a few have come back would play
+    // with too little delay, and the game would keep pausing.
+    const auto pings = recent_pings_.find(p.id);
+    if (!delay_chosen_ && (pings == recent_pings_.end() || pings->second.size() < kPingsBeforeStart)) {
+      why = "Measuring the connection to " + p.name + "...";
       return false;
     }
   }
@@ -573,7 +595,16 @@ void Netplay::on_binary(const std::string& data) {
         Writer w;
         w.u8(kGo).u32(session_);
         send(kBroadcast, w.b);
-        begin();
+        // Start when the message reaches the farthest guest (half its usual ping), so everyone
+        // begins together instead of the host running ahead and then waiting for them.
+        int one_way = 0;
+        for (const auto& [id, pings] : recent_pings_) {
+          if (pings.empty()) continue;
+          int sum = 0;
+          for (int ms : pings) sum += ms;
+          one_way = std::max(one_way, sum / static_cast<int>(pings.size()) / 2);
+        }
+        begin_at_ns_ = SDL_GetTicksNS() + static_cast<uint64_t>(std::min(one_way, 500)) * 1'000'000;
       }
       return;
     }
@@ -625,6 +656,9 @@ void Netplay::on_binary(const std::string& data) {
       const uint64_t sent = r.u64();
       if (Player* p = player(from); p && r.ok) {
         p->ping_ms = static_cast<int>((SDL_GetTicksNS() - sent) / 1'000'000);
+        auto& pings = recent_pings_[from];
+        pings.push_back(p->ping_ms);
+        if (pings.size() > 10) pings.erase(pings.begin());
         if (is_host() && phase_ == Phase::Lobby) broadcast_lobby();
       }
       return;

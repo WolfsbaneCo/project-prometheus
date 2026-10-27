@@ -239,6 +239,8 @@ class App {
   bool net_game_pending_ = false;  // loaded, waiting for everyone before frame 0
   std::vector<uint8_t> guest_save_;
   uint64_t stalled_since_ns_ = 0;
+  uint64_t stalled_ns_ = 0;  // time spent waiting for others' inputs, logged every 10 seconds of play
+  int stalls_ = 0;
   bool printed_invite_ = false;
   std::map<std::string, std::array<uint8_t, 32>> sha_cache_;
 

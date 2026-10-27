@@ -596,7 +596,17 @@ void App::run_online_frames(uint64_t frame_ns) {
       acc_ns_ = std::min(acc_ns_, frame_ns);
       return;
     }
+    if (stalled_since_ns_) {
+      stalled_ns_ += SDL_GetTicksNS() - stalled_since_ns_;
+      ++stalls_;
+    }
     stalled_since_ns_ = 0;
+    if (net_.frame() % 600 == 0 && net_.frame()) {
+      SDL_Log("online: frame %u, %d pauses, %llu ms waiting in the last 10 s (delay %d)", net_.frame(), stalls_,
+              static_cast<unsigned long long>(stalled_ns_ / 1'000'000), net_.delay());
+      stalls_ = 0;
+      stalled_ns_ = 0;
+    }
     for (int p = 0; p < Netplay::kPorts; ++p) input_.set_override(p, net_.input(p));
     if (net_.reset_due()) core_.reset();
     core_.run();
@@ -853,8 +863,9 @@ void App::draw_online() {
   }
   y += 66 * s;
   for (const auto& line : wrap(ui_,
-                               "More delay copes with a slower connection but buttons react later. The suggested value "
-                               "covers the slowest ping. Tip: a wired connection plays smoother than Wi-Fi.",
+                               "More delay copes with a slower or farther connection but buttons react later. The "
+                               "suggested value covers the slowest recent ping. If the game keeps pausing, stop and "
+                               "host again with more. Tip: a wired connection plays smoother than Wi-Fi.",
                                18 * s, inner, false, 3)) {
     ui_.text(x, y, line, 18 * s, kFaint);
     y += 26 * s;

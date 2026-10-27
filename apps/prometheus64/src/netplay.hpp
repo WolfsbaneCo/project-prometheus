@@ -23,7 +23,8 @@ class Netplay {
  public:
   static constexpr int kProtocol = 2;  // this app's own messages (the relay has its own version)
   static constexpr int kPorts = 4;
-  static constexpr int kMinDelay = 2, kMaxDelay = 12;
+  // Up to a third of a second: enough for friends on different continents.
+  static constexpr int kMinDelay = 2, kMaxDelay = 20;
 
   enum class Phase { Off, Connecting, Lobby, Starting, Running };
 
@@ -150,6 +151,8 @@ class Netplay {
   uint32_t session_ = 0;
   std::vector<Event> events_;
   uint64_t last_ping_ns_ = 0;
+  std::map<int, std::vector<int>> recent_pings_;  // this computer's last few measurements, per player
+  uint64_t begin_at_ns_ = 0;  // host: when to start, once the start message has reached the others
 
   // Lockstep.
   std::array<Slot, 256> ring_{};
