@@ -221,13 +221,13 @@ void App::draw_backup() {
     para("Finish signing in in your browser. Choose the Google account for your saves and allow access to the "
          "files Prometheus 64 makes.", 21, kText);
     y += 10 * s;
-    para("Prometheus 64 only sees its own Prometheus Saves folder, nothing else in your Drive.", 19, kDim);
+    para("Prometheus 64 only sees its own Memories folder, nothing else in your Drive.", 19, kDim);
     button(x, py + ph - 92 * s, "Cancel", false, kBbCancel);
     return;
   }
 
   if (!backup_.connected()) {
-    para("Your saves are copied to Prometheus Saves > N64 in your Google Drive: quietly, when you close "
+    para("Your saves are copied to Memories > N64 in your Google Drive: quietly, when you close "
          "Prometheus 64 and every hour while it's open. Only saves go up, never games.", 21, kText);
     y += 12 * s;
     para("On another computer (or a future phone version), connect the same Google account to carry on where you "
@@ -246,7 +246,7 @@ void App::draw_backup() {
   const std::string account = backup_.account();
   ui_.text(x, y, account.empty() ? "Connected to Google Drive" : "Connected as " + account, 22 * s, kText, true);
   y += 38 * s;
-  ui_.text(x, y, "Your saves are in Prometheus Saves > N64 in your Drive (you can move or rename them)", 19 * s, kDim);
+  ui_.text(x, y, "Your saves are in Memories > N64 in your Drive (you can move or rename them)", 19 * s, kDim);
   if (!backup_.root_id().empty()) button(x + inner, y - 12 * s, "Open in Drive", false, kBbOpenDrive, true);
   y += 56 * s;
 

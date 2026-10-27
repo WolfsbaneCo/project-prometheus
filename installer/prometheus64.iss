@@ -71,4 +71,4 @@ Root: HKA; Subkey: "Software\Classes\ProjectPrometheus.OnlineKey\shell\open\comm
 [Run]
 Filename: "{app}\Prometheus64.exe"; Description: "Start Prometheus 64"; Flags: nowait postinstall skipifsilent
 
-; Saves (Documents\Prometheus Saves, or Documents\N64 Saves from earlier versions) and settings are the player's own and are left in place on uninstall.
+; Saves (Documents\Memories, or Documents\N64 Saves from earlier versions) and settings are the player's own and are left in place on uninstall.

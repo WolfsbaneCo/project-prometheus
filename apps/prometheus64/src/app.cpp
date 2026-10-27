@@ -104,13 +104,13 @@ bool App::init(std::string& error) {
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
   load_group_key();
-  // Saves for every console share one folder: Prometheus Saves\N64 now, Prometheus Saves\GBA later.
+  // Saves for every console share one folder: Memories\N64 now, Memories\GBA later.
   // Earlier versions used Documents\N64 Saves; a computer that has it keeps using it (nothing moves).
   const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
   const fs::path docs_dir = docs ? from_utf8(docs) : pref_dir_;
   std::error_code lib_ec;
   const fs::path default_library = fs::is_directory(docs_dir / "N64 Saves", lib_ec) ? docs_dir / "N64 Saves"
-                                                                                     : docs_dir / "Prometheus Saves" / "N64";
+                                                                                     : docs_dir / "Memories" / "N64";
   library_dir_ = from_utf8(settings_.get("library", utf8(default_library)));
   slot_ = std::clamp(settings_.get_int("state_slot", 1), 1, 10);
 

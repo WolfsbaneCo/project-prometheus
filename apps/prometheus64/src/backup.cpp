@@ -23,13 +23,13 @@ namespace p64 {
 namespace {
 
 constexpr const char* kSecretName = "Prometheus 64/Google Drive";
-// Drive keeps saves like the library: Prometheus Saves > N64 (and later Prometheus Saves > GBA).
+// Drive keeps saves like the library: Memories > N64 (and later Memories > GBA).
 // Each folder carries a hidden property (key "prometheus") so it is found again after a move or rename.
-constexpr const char* kTopName = "Prometheus Saves";
+constexpr const char* kTopName = "Memories";
 constexpr const char* kTopTag = "library";
 constexpr const char* kConsoleName = "N64";
 constexpr const char* kConsoleTag = "n64";
-// Earlier versions kept everything in one "N64 Saves" folder: it becomes Prometheus Saves > N64.
+// Earlier versions kept everything in one "N64 Saves" folder: it becomes Memories > N64.
 constexpr const char* kOldName = "N64 Saves";
 constexpr const char* kOldTag = "saves";
 constexpr std::size_t kHistoryLimit = 10;  // brief 9.2: the last 10 in-game saves per game
@@ -368,7 +368,7 @@ void Backup::run_sync(bool include_states) {
 
   // The N64 saves folder, wherever the player has moved it and whatever they renamed it: the one this
   // computer used before, else the one carrying its tag (made by another computer, perhaps), else an
-  // earlier version's "N64 Saves" moved into place, else a new Prometheus Saves > N64. Only a folder
+  // earlier version's "N64 Saves" moved into place, else a new Memories > N64. Only a folder
   // in the bin or deleted is replaced.
   if (!root.empty() && !d.alive(root)) {
     if (d.problem() != Drive::Problem::None) return finish(false);
@@ -381,7 +381,7 @@ void Backup::run_sync(bool include_states) {
     if (top.empty() && !d.create_folder("root", kTopName, top, kTopTag)) return finish(false);
     if (!d.find_folder(kOldTag, kOldName, old)) return finish(false);
     if (!old.empty()) {
-      progress("Moving your N64 Saves folder into Prometheus Saves...");
+      progress("Moving your N64 Saves folder into Memories...");
       if (!d.move_into(old, top, kConsoleName, kConsoleTag)) return finish(false);
       root = old;
     } else if (!d.create_folder(top, kConsoleName, root, kConsoleTag)) {
