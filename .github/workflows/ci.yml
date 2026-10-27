@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -111,6 +112,8 @@ jobs:
     name: Prometheus 64 (Windows installer)
     runs-on: windows-latest
     needs: core-windows
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
       - name: Configure
@@ -160,10 +163,11 @@ jobs:
           path: dist/Prometheus64-Setup-${{ steps.version.outputs.version }}.exe
           archive: false
 
-  # Pushing a tag like v0.1.0 publishes the installer as a GitHub release.
+  # Publishes the installer as a GitHub release: push a tag like v0.1.0, or run this workflow by
+  # hand on main (Actions > CI > Run workflow), which tags main with the version in CMakeLists.txt.
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     needs: [app-windows, save-converters, no-game-or-save-files]
     runs-on: ubuntu-latest
     permissions:
@@ -177,4 +181,5 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" $(find dist -type f -name '*.exe') --repo "$GITHUB_REPOSITORY" --title "Prometheus 64 ${GITHUB_REF_NAME#v}" --generate-notes
+          TAG: v${{ needs.app-windows.outputs.version }}
+        run: gh release create "$TAG" $(find dist -type f -name '*.exe') --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Prometheus 64 ${TAG#v}" --generate-notes
