@@ -22,6 +22,7 @@ namespace fs = std::filesystem;
 namespace p64 {
 namespace {
 
+// Named when the app was Prometheus 64; kept, so the Google sign-in carries over.
 constexpr const char* kSecretName = "Prometheus 64/Google Drive";
 // Drive keeps saves like the library: Memories > N64 (and later Memories > GBA).
 // Each folder carries a hidden property (key "prometheus") so it is found again after a move or rename.

@@ -500,10 +500,10 @@ void Netplay::on_binary(const std::string& data) {
       if (!r.ok || !p) return;
       if (proto != kProtocol || versions != versions_) {
         Writer w;
-        w.u8(kReject).str("Different versions of Prometheus 64. Host: " + versions_ + ", you: " + versions +
+        w.u8(kReject).str("Different versions of Project Prometheus. Host: " + versions_ + ", you: " + versions +
                           ". Install the same version on both computers");
         send(from, w.b);
-        p->problem = "Has a different version of Prometheus 64";
+        p->problem = "Has a different version of Project Prometheus";
         return;
       }
       p->local_players = std::clamp(local, 1, kPorts);

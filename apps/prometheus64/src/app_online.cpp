@@ -94,7 +94,7 @@ Color ping_colour(int ms) {
 
 std::string App::versions() const {
   const char* core = core_.info().library_version;
-  return std::string("Prometheus 64 ") + P64_VERSION + " / core " + (core ? core : "?");
+  return std::string("Project Prometheus ") + P64_VERSION + " / core " + (core ? core : "?");
 }
 
 // The group this computer belongs to, from its key file (tests can point elsewhere).
@@ -770,7 +770,7 @@ void App::draw_online() {
     };
     float t = step(1, "Make a free Cloudflare account", "Skip this if you already have one.", 96 * s);
     online_button(x + inner, t, "Open Cloudflare", s, false, kObSignup, true);
-    t = step(2, "Create a key for Prometheus 64",
+    t = step(2, "Create a key for Project Prometheus",
              "On the page that opens, scroll down and click Continue to summary, then Create Token, then Copy. "
              "If no permissions are filled in, use the template \"Edit Cloudflare Workers\".",
              126 * s);

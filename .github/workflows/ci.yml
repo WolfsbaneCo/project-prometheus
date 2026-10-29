@@ -68,7 +68,7 @@ jobs:
           path: core/
 
   app-linux:
-    name: Prometheus 64 (Linux build)
+    name: Project Prometheus (Linux build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -109,7 +109,7 @@ jobs:
 
   # The download for players: one installer that holds the app, the core, fonts and licences.
   app-windows:
-    name: Prometheus 64 (Windows installer)
+    name: Project Prometheus (Windows installer)
     runs-on: windows-latest
     needs: core-windows
     outputs:
@@ -135,7 +135,7 @@ jobs:
         run: |
           $app = "build/apps/prometheus64/Release"
           New-Item -ItemType Directory -Force stage/cores, stage/licenses | Out-Null
-          Copy-Item "$app/Prometheus64.exe" stage/
+          Copy-Item "$app/ProjectPrometheus.exe" stage/
           Copy-Item -Recurse "$app/assets" stage/
           Copy-Item core/mupen64plus_next_libretro.dll stage/cores/
           Copy-Item core/CORE-SOURCE.txt stage/cores/
@@ -155,12 +155,12 @@ jobs:
           if (-not (Test-Path $iscc)) {
             choco install innosetup -y --no-progress
           }
-          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$PWD\stage" installer\prometheus64.iss
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$PWD\stage" installer\project-prometheus.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # Uploaded as the bare .exe (not zipped), so the download is the installer itself.
       - uses: actions/upload-artifact@v7
         with:
-          path: dist/Prometheus64-Setup-${{ steps.version.outputs.version }}.exe
+          path: dist/ProjectPrometheus-Setup-${{ steps.version.outputs.version }}.exe
           archive: false
 
   # Publishes the installer as a GitHub release: push a tag like v0.1.0, or run this workflow by
@@ -175,11 +175,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: Prometheus64-Setup-*
+          pattern: ProjectPrometheus-Setup-*
           path: dist
           merge-multiple: true
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.app-windows.outputs.version }}
-        run: gh release create "$TAG" $(find dist -type f -name '*.exe') --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Prometheus 64 ${TAG#v}" --generate-notes
+        run: gh release create "$TAG" $(find dist -type f -name '*.exe') --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Project Prometheus ${TAG#v}" --generate-notes

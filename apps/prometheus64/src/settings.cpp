@@ -33,7 +33,7 @@ void Settings::save() const {
   const auto tmp = std::filesystem::path(file_).concat(".tmp");
   {
     std::ofstream out(tmp, std::ios::trunc);
-    out << "# Prometheus 64 settings\n";
+    out << "# Project Prometheus settings\n";
     for (const auto& [k, v] : values_) out << k << " = " << v << "\n";
   }
   std::filesystem::rename(tmp, file_, ec);

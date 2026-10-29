@@ -15,7 +15,7 @@ namespace savekit {
 struct ImportOptions {
   // A Project64 folder, its Save folder, or a single save file. Only ever read.
   std::filesystem::path source;
-  // The library root (Prometheus 64 uses "Memories/N64"; earlier versions "N64 Saves").
+  // The library root (Project Prometheus uses "Memories/N64" and "Memories/GBA"; earlier versions "N64 Saves").
   std::filesystem::path library;
   bool dry_run = false;
   // Make the newest imported save current even when the library already holds a different
@@ -46,7 +46,7 @@ struct StoreOptions {
   std::filesystem::path library;
   std::string game;  // the ROM's internal header name
   SaveSet save;
-  std::string source = "Prometheus 64";
+  std::string source = "Project Prometheus";
   std::size_t history_limit = 10;
   std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 };

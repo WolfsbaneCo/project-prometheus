@@ -41,7 +41,7 @@ add_executable(prometheus64 WIN32
   src/ui.cpp
   src/video.cpp
 )
-set_target_properties(prometheus64 PROPERTIES OUTPUT_NAME Prometheus64)
+set_target_properties(prometheus64 PROPERTIES OUTPUT_NAME ProjectPrometheus)
 target_compile_definitions(prometheus64 PRIVATE P64_VERSION="${PROJECT_VERSION}")
 # Google Drive backup: the app's Google client ID (and the installed-app client "secret", which
 # Google doesn't treat as secret). Given by CI from repository secrets, never stored in the repo.
@@ -82,10 +82,10 @@ add_custom_command(TARGET prometheus64 POST_BUILD
           "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/OFL.txt"
           "$<TARGET_FILE_DIR:prometheus64>/assets/fonts/"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          "${PROJECT_SOURCE_DIR}/assets/branding/prometheus64/png/prometheus64-icon-512.png"
+          "${PROJECT_SOURCE_DIR}/assets/branding/prometheus/png/prometheus-icon-512.png"
           "$<TARGET_FILE_DIR:prometheus64>/assets/icon.png"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          "${PROJECT_SOURCE_DIR}/assets/branding/prometheus64/png/prometheus64-icon-small-256.png"
+          "${PROJECT_SOURCE_DIR}/assets/branding/prometheus/png/prometheus-icon-small-256.png"
           "$<TARGET_FILE_DIR:prometheus64>/assets/icon-small.png")
 
 # Binding logic of the Controls screen, tested without a window or devices.

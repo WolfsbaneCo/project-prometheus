@@ -1,7 +1,7 @@
 #include <windows.h>
 #include "version.h"
 
-1 ICON "../../../assets/branding/prometheus64/prometheus64.ico"
+1 ICON "../../../assets/branding/prometheus/prometheus.ico"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION APP_VERSION_COMMAS
@@ -14,12 +14,12 @@ BEGIN
     BLOCK "040904b0"
     BEGIN
       VALUE "CompanyName", "Wolfsbane Co."
-      VALUE "FileDescription", "Prometheus 64"
+      VALUE "FileDescription", "Project Prometheus"
       VALUE "FileVersion", APP_VERSION_STRING
-      VALUE "InternalName", "prometheus64"
+      VALUE "InternalName", "ProjectPrometheus"
       VALUE "LegalCopyright", "Copyright (C) 2026 Wolfsbane Co."
-      VALUE "OriginalFilename", "Prometheus64.exe"
-      VALUE "ProductName", "Prometheus 64"
+      VALUE "OriginalFilename", "ProjectPrometheus.exe"
+      VALUE "ProductName", "Project Prometheus"
       VALUE "ProductVersion", APP_VERSION_STRING
     END
   END

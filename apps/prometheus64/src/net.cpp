@@ -14,7 +14,7 @@
 namespace p64::net {
 namespace {
 
-constexpr const char* kUserAgent = "Prometheus64";
+constexpr const char* kUserAgent = "ProjectPrometheus";
 
 size_t collect(char* data, size_t size, size_t count, void* user) {
   static_cast<std::string*>(user)->append(data, size * count);
@@ -34,7 +34,7 @@ void wait_socket(curl_socket_t sock, bool for_write, int ms) {
 // What a refused relay connection means, in plain words (the relay answers with these codes).
 std::string refusal(long status) {
   switch (status) {
-    case 400: return "This version of Prometheus 64 doesn't match the group's relay. Everyone needs the same version";
+    case 400: return "This version of Project Prometheus doesn't match the group's relay. Everyone needs the same version";
     case 401: return "Your key file doesn't open this group's games. If the group was set up again, ask for the new key file";
     case 403: return "This game is full";
     case 404: return "No game is open with this code. Check the code with the host";

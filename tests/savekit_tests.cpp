@@ -347,7 +347,7 @@ TEST_CASE("in-game saves from the app become current and keep history") {
   CHECK(r.changed);
   CHECK(load_current(library, "TESTGAME") == o.save);
   CHECK(count_dirs(library / "TESTGAME" / "history") == 2);
-  CHECK(text_of(library / "TESTGAME" / "info.json").find("Prometheus 64") != std::string::npos);
+  CHECK(text_of(library / "TESTGAME" / "info.json").find("Project Prometheus") != std::string::npos);
 
   // History keeps the newest N.
   o.history_limit = 2;

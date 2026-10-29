@@ -1,4 +1,4 @@
-// Prometheus 64: an N64 player built around the Mupen64Plus-Next emulator core.
+// Project Prometheus: a player for classic consoles (N64, GBA), built around libretro emulator cores.
 //
 //   Prometheus64 [game file]
 //

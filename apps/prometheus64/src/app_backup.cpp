@@ -209,7 +209,7 @@ void App::draw_backup() {
   y += 64 * s;
 
   if (!google::configured()) {
-    para("Google Drive backup isn't switched on in this copy of Prometheus 64 yet: the app is still waiting to be "
+    para("Google Drive backup isn't switched on in this copy of Project Prometheus yet: the app is still waiting to be "
          "registered with Google. It arrives in an update; your saves stay safe on this computer until then.", 21, kDim);
     button(px + pw - 48 * s, py + ph - 92 * s, "Close", false, kBbClose, true);
     return;
@@ -219,16 +219,16 @@ void App::draw_backup() {
 
   if (state == Backup::State::SigningIn) {
     para("Finish signing in in your browser. Choose the Google account for your saves and allow access to the "
-         "files Prometheus 64 makes.", 21, kText);
+         "files Project Prometheus makes.", 21, kText);
     y += 10 * s;
-    para("Prometheus 64 only sees its own Memories folder, nothing else in your Drive.", 19, kDim);
+    para("Project Prometheus only sees its own Memories folder, nothing else in your Drive.", 19, kDim);
     button(x, py + ph - 92 * s, "Cancel", false, kBbCancel);
     return;
   }
 
   if (!backup_.connected()) {
     para("Your saves are copied to Memories > N64 in your Google Drive: quietly, when you close "
-         "Prometheus 64 and every hour while it's open. Only saves go up, never games.", 21, kText);
+         "Project Prometheus and every hour while it's open. Only saves go up, never games.", 21, kText);
     y += 12 * s;
     para("On another computer (or a future phone version), connect the same Google account to carry on where you "
          "left off. That uses your in-game saves; save states stay on the computer that made them.", 19, kDim);

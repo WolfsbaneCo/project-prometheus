@@ -90,8 +90,8 @@ App::App(Options options) : opt_(std::move(options)) {}
 int App::run() {
   std::string error;
   if (!init(error)) {
-    SDL_Log("Prometheus 64 could not start: %s", error.c_str());
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Prometheus 64", error.c_str(), window_);
+    SDL_Log("Project Prometheus could not start: %s", error.c_str());
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Project Prometheus", error.c_str(), window_);
     shutdown();
     return 1;
   }
@@ -101,13 +101,15 @@ int App::run() {
 }
 
 bool App::init(std::string& error) {
-  SDL_SetAppMetadata("Prometheus 64", "0.1.1", "org.projectprometheus.prometheus64");
+  SDL_SetAppMetadata("Project Prometheus", P64_VERSION, "org.projectprometheus.app");
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
     error = SDL_GetError();
     return false;
   }
   user_event_ = SDL_RegisterEvents(1);
 
+  // The app was called Prometheus 64 at first: its settings, online key and backup state stay in
+  // that folder, so they carry over.
   if (char* pref = SDL_GetPrefPath("Project Prometheus", "Prometheus 64")) {
     pref_dir_ = from_utf8(pref);
     SDL_free(pref);
@@ -131,7 +133,7 @@ bool App::init(std::string& error) {
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
   SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-  window_ = SDL_CreateWindow("Prometheus 64", opt_.width, opt_.height,
+  window_ = SDL_CreateWindow("Project Prometheus", opt_.width, opt_.height,
                              SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
   if (!window_) {
     error = std::string("could not open a window: ") + SDL_GetError();
@@ -243,7 +245,7 @@ bool App::init(std::string& error) {
   core_path_ = core_path;
   error = core_.open(core_path);
   if (!error.empty()) {
-    error += "\n\nExpected the emulator core at:\n" + utf8(core_path) + "\n\nReinstalling Prometheus 64 fixes this.";
+    error += "\n\nExpected the emulator core at:\n" + utf8(core_path) + "\n\nReinstalling Project Prometheus fixes this.";
     return false;
   }
 
@@ -1012,7 +1014,7 @@ bool App::handle_hotkey(const SDL_Event& e) {
     case SDL_SCANCODE_F12:
       if (const char* pics = SDL_GetUserFolder(SDL_FOLDER_PICTURES)) {
         const auto stamp = std::chrono::system_clock::now().time_since_epoch().count();
-        const fs::path f = from_utf8(pics) / "Prometheus 64" / ("screenshot-" + std::to_string(stamp) + ".png");
+        const fs::path f = from_utf8(pics) / "Project Prometheus" / ("screenshot-" + std::to_string(stamp) + ".png");
         take_screenshot(f);
         toast("Screenshot saved to " + utf8(f.parent_path()));
       }
@@ -1375,7 +1377,7 @@ void App::draw_home() {
 
   const float margin = 72 * s;
   ui_.image(ui_.logo(), margin, 54 * s, 72 * s, 72 * s);
-  ui_.text(margin + 92 * s, 52 * s, "Prometheus 64", 44 * s, kText, true);
+  ui_.text(margin + 92 * s, 52 * s, "Project Prometheus", 44 * s, kText, true);
   ui_.text(margin + 94 * s, 106 * s, "Classics, rekindled", 21 * s, kDim);
 
   // Footer: every shortcut is also a button.
