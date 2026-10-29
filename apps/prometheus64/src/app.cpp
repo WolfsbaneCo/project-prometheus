@@ -85,9 +85,10 @@ std::string load_into(Core& core, const Game& game) {
 
 const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 
-// GBA pictures: 240x160 pixel art on a big screen. All but Original correct the colours: the GBA's
-// unlit screen was dark and muted, so games were drawn with strong colours that look harsh on a
-// modern screen (gpSP's colour correction makes them look as intended).
+// GBA pictures: 240x160 pixel art on a big screen. Sharp, the default, keeps every pixel a crisp
+// square and the game's own colours: smoothing (xBR) rounds and bends small sprites and text, and
+// gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen. Handheld is that
+// screen on purpose: its colours, pixel grid and slight ghosting.
 struct GbaLookDef {
   const char* name;
   const char* blurb;
@@ -96,12 +97,15 @@ struct GbaLookDef {
   bool colour_correction, ghosting;
 };
 const GbaLookDef kGbaLooks[] = {
-    {"Clean", "Smooth edges, as if redrawn in HD", Look::Pixels::Xbr, 0.0f, true, false},
-    {"Sharp", "Crisp pixels, every one the same size", Look::Pixels::Sharp, 0.0f, true, false},
-    {"Handheld", "The GBA's screen: its pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true},
-    {"Original", "Exact pixels and colours", Look::Pixels::Sharp, 0.0f, false, false},
+    {"Sharp", "Crisp pixels and the game's own colours", Look::Pixels::Sharp, 0.0f, false, false},
+    {"Smooth", "Rounded edges, as if redrawn in HD", Look::Pixels::Xbr, 0.0f, false, false},
+    {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true},
 };
 constexpr int kGbaLookCount = static_cast<int>(std::size(kGbaLooks));
+// The look chosen for a GBA game. Its own setting ("gba_look"), so N64 presets never carry over.
+int gba_look(const Settings& settings, const std::string& id) {
+  return std::clamp(settings.game_int(id, "gba_look", 0), 0, kGbaLookCount - 1);
+}
 
 App::App(Options options) : opt_(std::move(options)) {}
 
@@ -411,7 +415,7 @@ void App::apply_core_options(const Game& game) {
     set("gpsp_serial", link == "cable" ? "mul_poke" : link == "wireless" ? "rfu" : "auto");
     set("gpsp_rumble", "1");
     set("gpsp_frameskip", "disabled");
-    const GbaLookDef& look = kGbaLooks[std::clamp(settings_.game_int(game.id, "preset", 0), 0, kGbaLookCount - 1)];
+    const GbaLookDef& look = kGbaLooks[gba_look(settings_, game.id)];
     set("gpsp_color_correction", look.colour_correction ? "enabled" : "disabled");
     set("gpsp_frame_mixing", look.ghosting ? "enabled" : "disabled");
     for (const auto& o : opt_.core_options) {  // test mode: "--option key=value" overrides
@@ -603,7 +607,7 @@ Look App::current_look() const {
   Look l;
   const std::string id = game_ ? game_->id : "";
   if (game_ && game_->system == System::GBA) {
-    const GbaLookDef& g = kGbaLooks[std::clamp(settings_.game_int(id, "preset", 0), 0, kGbaLookCount - 1)];
+    const GbaLookDef& g = kGbaLooks[gba_look(settings_, id)];
     l.fill = static_cast<FillMode>(fill_mode(&*game_));
     l.pixels = g.pixels;
     l.grid = g.grid;
@@ -1353,7 +1357,7 @@ std::vector<App::MenuItem> App::menu_items() const {
   };
   if (game_ && game_->system == System::GBA) {
     // A GBA game: its own pictures; no textures, resolution or overscan (a sharp 240x160 screen).
-    const GbaLookDef& g = kGbaLooks[std::clamp(settings_.game_int(id, "preset", 0), 0, kGbaLookCount - 1)];
+    const GbaLookDef& g = kGbaLooks[gba_look(settings_, id)];
     std::vector<MenuItem> gba;
     for (MenuItem& it : items) {
       if (it.id == kTextures || it.id == kResolution || it.id == kOverscan) continue;
@@ -1398,8 +1402,8 @@ void App::menu_change(int id, int dir) {
       break;
     case kPicture: {
       if (game_ && game_->system == System::GBA) {
-        const int p = (std::clamp(settings_.game_int(gid, "preset", 0), 0, kGbaLookCount - 1) + step + kGbaLookCount) % kGbaLookCount;
-        settings_.set_game_int(gid, "preset", p);
+        const int p = (gba_look(settings_, gid) + step + kGbaLookCount) % kGbaLookCount;
+        settings_.set_game_int(gid, "gba_look", p);
         toast(std::string("Picture: ") + kGbaLooks[p].name + " - " + kGbaLooks[p].blurb);
         apply_core_options(*game_);  // colours and ghosting: the core picks them up as it runs
         break;
