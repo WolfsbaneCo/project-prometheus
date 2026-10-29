@@ -62,7 +62,7 @@ Checked with homebrew test ROMs (jsmolka gba-tests, a hello-world) on Linux and 
 - [ ] A real Pokémon trade and battle between two computers over the internet, with the link cable mode (Ruby/Sapphire/Emerald/FireRed/LeafGreen) and with the Wireless Adapter (FireRed/LeafGreen/Emerald). The test ROMs don't use the link port, so no link message has travelled yet.
 - [ ] Trading between different games (Ruby with FireRed) and between regions.
 - [ ] Saves imported from other emulators (mGBA, VBA-M) for each save type: SRAM, flash 64 and 128 KB, EEPROM.
-- [ ] The real-time clock in Ruby, Sapphire and Emerald (berries, tides) follows the computer's clock.
+- [x] The real-time clock in Ruby, Sapphire and Emerald (berries, tides) follows the computer's clock. Checked with Emerald in the test bench, with the system clock shifted by a test-only shim: the cartridge clock the game reads (2026-10-29 23:15:14) and its own day count and time (day 9799, 23:15) both moved by exactly the shift (1 day, 1 hour, 1 minute, 1 second), so time passes while the app is closed. Ruby, Sapphire, FireRed and LeafGreen carry the same clock flag in gpSP's game list.
 
 ## Added by event gifts (see [0008](decisions/0008-event-gifts.md))
 

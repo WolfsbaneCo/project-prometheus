@@ -15,6 +15,7 @@
 //   shot <file.ppm>            the current picture
 //   state save|load <file>     a save state
 //   writesave <file>           the cartridge save as it is now
+//   dumpmem <addr> <len> <file> memory as the console sees it (hex address)
 //   peek8|peek16|peek32 <addr> print memory (hex address)
 //   poke8|poke16|poke32 <addr> <value>
 //   flag <id>                  print an Emerald event flag (hex id), from the save block in RAM
@@ -191,6 +192,13 @@ int main(int argc, char** argv) {
       } else if (!b.core.load_state(read_file(path))) {
         fail("could not load state " + path);
       }
+    } else if (cmd == "dumpmem") {
+      std::string a, path;
+      std::size_t len = 0;
+      ss >> a >> len >> path;
+      const uint8_t* p = b.core.memory(static_cast<uint32_t>(std::stoul(a, nullptr, 16)), len);
+      if (!p) fail("address not mapped: " + a);
+      write_file(path, p, len);
     } else if (cmd == "writesave") {
       std::string path;
       ss >> path;

@@ -36,6 +36,8 @@ The quick menu shows each item's shortcut next to it, and the shortcuts work whi
 
 **GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger.
 
+**The cartridge clock** (Pokémon Ruby, Sapphire and Emerald: berries, tides, daily events) runs on your computer's real time, so time passes while the app is closed, as it did with the cartridge's battery.
+
 **Saves** go into `Documents\Memories\N64` and `Documents\Memories\GBA`, one folder per game (a computer that already had `Documents\N64 Saves` from an earlier version keeps using it), with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file (GBA: `.sav`, `.srm`, `.sa1`, `.fla` or `.eep`). The emulator's original file is only read, never changed.
 
 ### Playing online
