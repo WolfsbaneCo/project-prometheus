@@ -237,7 +237,7 @@ void WebSocket::run(std::string url) {
     if (!open) break;
 
     // Read everything waiting.
-    wait_socket(sock, false, 2);
+    wait_socket(sock, false, 1);  // short, so inputs queued meanwhile go out within a millisecond
     for (;;) {
       size_t got = 0;
       const curl_ws_frame* meta = nullptr;

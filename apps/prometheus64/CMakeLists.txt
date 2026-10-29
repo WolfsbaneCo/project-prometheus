@@ -53,6 +53,13 @@ target_include_directories(prometheus64 PRIVATE src third_party/libretro third_p
                            "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_archive p64_curl p64_warnings)
 
+# Online play without the emulator: two players in one process, through a relay, at the game's
+# speed. Measures pauses and delays from the network alone (tools/netsim.cpp). Not built by default:
+#   cmake --build build --target p64_netsim
+add_executable(p64_netsim EXCLUDE_FROM_ALL tools/netsim.cpp src/netplay.cpp src/net.cpp src/json.cpp)
+target_include_directories(p64_netsim PRIVATE src)
+target_link_libraries(p64_netsim PRIVATE SDL3::SDL3-static p64_curl)
+
 if(WIN32)
   target_link_libraries(prometheus64 PRIVATE ws2_32 advapi32)  # the sign-in's loopback, Credential Manager
   configure_file(windows/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/version.h" @ONLY)

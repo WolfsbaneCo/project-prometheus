@@ -19,6 +19,14 @@ constexpr int kBatch = 2;               // frames of input per message: halves t
 constexpr uint32_t kHashEvery = 300;    // compare memory fingerprints every 5 seconds
 constexpr uint64_t kPingEveryNs = 1'000'000'000;
 constexpr std::size_t kPingsBeforeStart = 3;  // about 3 seconds after someone joins
+// Adjusting the delay during the game. Every second, each computer tells each other one how early
+// its inputs arrived. Each keeps its own delay just big enough that its inputs arrive at least
+// kSpare frames before they are needed everywhere: raised at once when they came late or close,
+// lowered a frame at a time when they had kLowerAt frames to spare for kLowerAfterNs.
+constexpr uint64_t kTimingEveryNs = 1'000'000'000;
+constexpr int kSpare = 1;
+constexpr int kLowerAt = 3;
+constexpr uint64_t kLowerAfterNs = 3'000'000'000;
 
 std::string url_encode(const std::string& s) {
   std::string out;
@@ -230,6 +238,10 @@ void Netplay::update() {
     begin_at_ns_ = 0;
     begin();
   }
+  if (phase_ == Phase::Running && now - last_timing_ns_ >= kTimingEveryNs) {
+    last_timing_ns_ = now;
+    send_timing();
+  }
   // Ping everyone once a second: through the relay, so it measures the real path.
   if (phase_ != Phase::Connecting && now - last_ping_ns_ > kPingEveryNs) {
     last_ping_ns_ = now;
@@ -429,6 +441,8 @@ void Netplay::start(const std::vector<uint8_t>& save) {
   send(kBroadcast, w.b);
   ws_.send(std::string{static_cast<char>(kToRelay), 1});  // the relay turns away anyone who arrives now
   for (auto& p : players_) p.ready = p.id == 0;
+  ring_ = {};  // from now on, inputs that arrive early are kept for the game
+  links_.clear();
   phase_ = Phase::Starting;
   status_ = "Starting...";
 }
@@ -452,7 +466,6 @@ void Netplay::report_ready() {
 void Netplay::begin() {
   phase_ = Phase::Running;
   status_.clear();
-  ring_ = {};
   pending_.clear();
   my_hashes_.clear();
   their_hashes_.clear();
@@ -461,6 +474,10 @@ void Netplay::begin() {
   // The first `delay` frames have no input yet: everyone starts with nothing pressed.
   for (uint32_t f = 0; f < static_cast<uint32_t>(delay_); ++f) slot(f).known = 0xF;
   sampled_until_ = static_cast<uint32_t>(delay_);
+  my_delay_ = delay_;
+  yield_frames_ = 0;
+  last_yield_frame_ = 0;
+  last_timing_ns_ = last_lower_ns_ = SDL_GetTicksNS();
   events_.push_back({Event::Begin});
 }
 
@@ -579,6 +596,8 @@ void Netplay::on_binary(const std::string& data) {
       std::vector<uint8_t> save(n);
       if (!r.bytes(save.data(), n)) return;
       game_ = g;
+      ring_ = {};  // from now on, inputs that arrive early are kept for the game
+      links_.clear();
       phase_ = Phase::Starting;
       status_ = "Loading " + g.title + "...";
       Event e{Event::LoadGame, {}, g};
@@ -615,7 +634,8 @@ void Netplay::on_binary(const std::string& data) {
       return;
     }
     case kInput: {
-      if (phase_ != Phase::Running) return;
+      // While starting too: someone who began a moment earlier may already be sending.
+      if (phase_ != Phase::Running && phase_ != Phase::Starting) return;
       const uint32_t first = r.u32();
       const unsigned frames = r.u8();
       const unsigned count = r.u8();
@@ -624,6 +644,13 @@ void Netplay::on_binary(const std::string& data) {
         if (ports_[i].player == from) owned.push_back(i);
       }
       if (count != owned.size()) return;
+      if (phase_ == Phase::Running) {
+        Link& l = links_[from];
+        const int margin = static_cast<int>(static_cast<int64_t>(first) - static_cast<int64_t>(frame_));
+        l.min_margin = std::min(l.min_margin, margin);
+        l.sum_margin += margin;
+        ++l.count;
+      }
       for (unsigned f = 0; f < frames && r.ok; ++f) {
         Slot& s = slot(first + f);
         for (int port : owned) {
@@ -678,6 +705,14 @@ void Netplay::on_binary(const std::string& data) {
       end(r.str(), false);
       return;
     }
+    case kTiming: {
+      if (phase_ != Phase::Running) return;
+      const int their_delay = static_cast<int>(r.u8());
+      const int min_margin = static_cast<int16_t>(r.u16());
+      const double avg = static_cast<int16_t>(r.u16()) / 4.0;
+      if (r.ok) on_timing(from, their_delay, min_margin, avg);
+      return;
+    }
     default:
       return;
   }
@@ -710,20 +745,27 @@ uint8_t Netplay::used_ports() const {
 
 void Netplay::sample_local(const std::vector<PadState>& local) {
   if (phase_ != Phase::Running) return;
-  const uint32_t target = frame_ + static_cast<uint32_t>(delay_);
-  if (sampled_until_ > target) return;  // already sampled for this frame
+  const uint32_t target = frame_ + static_cast<uint32_t>(my_delay_);
+  // Already sampled for this frame (or further: after the delay was lowered, until it catches up).
+  if (sampled_until_ > target) return;
   std::vector<PadState> mine;
-  Slot& s = slot(target);
   for (int i = 0; i < kPorts; ++i) {
     if (ports_[i].player != me_) continue;
     const int k = ports_[i].local;
-    const PadState p = quantise(k < static_cast<int>(local.size()) ? local[k] : PadState{});
-    s.pads[i] = p;
-    s.known |= static_cast<uint8_t>(1u << i);
-    mine.push_back(p);
+    mine.push_back(quantise(k < static_cast<int>(local.size()) ? local[k] : PadState{}));
+  }
+  // After the delay was raised, the frames in between get the same input.
+  for (uint32_t t = sampled_until_; t <= target; ++t) {
+    Slot& s = slot(t);
+    std::size_t n = 0;
+    for (int i = 0; i < kPorts; ++i) {
+      if (ports_[i].player != me_) continue;
+      s.pads[i] = mine[n++];
+      s.known |= static_cast<uint8_t>(1u << i);
+    }
+    pending_.push_back({t, mine});
   }
   sampled_until_ = target + 1;
-  pending_.push_back({target, std::move(mine)});
 }
 
 void Netplay::flush(bool force) {
@@ -736,6 +778,62 @@ void Netplay::flush(bool force) {
   }
   send(kBroadcast, w.b);
   pending_.clear();
+}
+
+// Tells each other computer how early its inputs arrived here over the last second.
+void Netplay::send_timing() {
+  for (auto& [id, l] : links_) {
+    if (l.count == 0) continue;  // nothing came (paused): nothing to say
+    l.last_avg = static_cast<double>(l.sum_margin) / l.count;
+    Writer w;
+    w.u8(kTiming).u8(static_cast<unsigned>(my_delay_));
+    w.u16(static_cast<uint16_t>(static_cast<int16_t>(std::clamp(l.min_margin, -1000, 1000))));
+    w.u16(static_cast<uint16_t>(static_cast<int16_t>(std::lround(std::clamp(l.last_avg, -1000.0, 1000.0) * 4))));
+    send(id, w.b);
+    l.min_margin = INT32_MAX;
+    l.sum_margin = l.count = 0;
+  }
+}
+
+// What another computer says about this one's inputs: adjust this computer's delay, and hold back
+// when it runs ahead of that computer.
+void Netplay::on_timing(int from, int their_delay, int min_margin, double avg_margin) {
+  Link& l = links_[from];
+  l.their_delay = their_delay;
+  l.their_min = min_margin;
+  l.their_avg = avg_margin;
+  l.reported = true;
+  const uint64_t now = SDL_GetTicksNS();
+
+  // Late or too close there: raise at once, by what was missing.
+  if (min_margin < kSpare) {
+    my_delay_ = std::min(kMaxDelay, my_delay_ + (kSpare - min_margin));
+    last_lower_ns_ = now;
+  } else if (now - last_lower_ns_ >= kLowerAfterNs) {
+    // Plenty to spare everywhere for a while: one frame less (less lag for this computer's players).
+    bool plenty = true;
+    for (const auto& [id, other] : links_) plenty = plenty && other.reported && other.their_min >= kLowerAt;
+    if (plenty && my_delay_ > kMinDelay) {
+      --my_delay_;
+      last_lower_ns_ = now;
+    }
+  }
+
+  // Running ahead: inputs from there arrive later than this computer's arrive there, beyond what
+  // the two delays explain. With a trip of L frames and this computer A frames ahead, its inputs
+  // arrive there (my delay - L + A) frames early and theirs arrive here (their delay - L - A), so
+  // A is half the difference. Hold back that many frames (one at a time), so both run level and
+  // neither needs extra delay.
+  const double ahead = ((l.their_delay - l.last_avg) - (my_delay_ - l.their_avg)) / 2.0;
+  if (ahead >= 1.5) yield_frames_ = std::max(yield_frames_, static_cast<int>(ahead));
+}
+
+bool Netplay::take_yield() {
+  if (phase_ != Phase::Running || yield_frames_ <= 0) return false;
+  if (frame_ - last_yield_frame_ < 8) return false;  // spread out, so it's never a visible pause
+  last_yield_frame_ = frame_;
+  --yield_frames_;
+  return true;
 }
 
 bool Netplay::ready_to_run() const {
@@ -788,7 +886,10 @@ void Netplay::frame_done(const uint8_t* ram, std::size_t size) {
 
 void Netplay::request_reset() {
   if (!is_host() || phase_ != Phase::Running) return;
-  reset_frame_ = frame_ + static_cast<uint32_t>(delay_) + 2;  // far enough ahead for everyone to hear in time
+  // Far enough ahead for everyone to hear in time: the delays cover the trip to each of them.
+  int most = my_delay_;
+  for (const auto& [id, l] : links_) most = std::max(most, l.their_delay);
+  reset_frame_ = frame_ + static_cast<uint32_t>(most) + 4;
   Writer w;
   w.u8(kReset).u32(reset_frame_);
   send(kBroadcast, w.b);

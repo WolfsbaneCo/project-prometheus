@@ -546,7 +546,7 @@ void App::process_net_events() {
         acc_ns_ = 0;
         last_ns_ = SDL_GetTicksNS();
         stalled_since_ns_ = 0;
-        toast("Online game started  -  " + std::to_string(net_.delay()) + " frames of input delay", 4);
+        toast("Online game started  -  " + std::to_string(net_.delay()) + " frames of input delay, adjusting as you play", 4);
         break;
       case Netplay::Event::Ended:
         input_.set_overrides(false);
@@ -592,6 +592,20 @@ void App::run_online_frames(uint64_t frame_ns) {
     net_.flush();
     if (!net_.ready_to_run()) {
       net_.flush(true);
+      // An input that's a little late usually arrives within a few milliseconds: wait for it here,
+      // up to half a frame, rather than leaving this whole frame empty.
+      const uint64_t until = SDL_GetTicksNS() + frame_ns / 2;
+      while (net_.running() && !net_.ready_to_run() && SDL_GetTicksNS() < until) {
+        SDL_DelayNS(500'000);
+        net_.update();
+      }
+    }
+    if (net_.running() && net_.ready_to_run() && net_.take_yield()) {
+      // This computer is running ahead of the others: one frame later, now and then, until level.
+      acc_ns_ = std::min(acc_ns_, frame_ns);
+      return;
+    }
+    if (!net_.ready_to_run()) {
       if (!stalled_since_ns_) stalled_since_ns_ = SDL_GetTicksNS();
       acc_ns_ = std::min(acc_ns_, frame_ns);
       return;
@@ -603,7 +617,7 @@ void App::run_online_frames(uint64_t frame_ns) {
     stalled_since_ns_ = 0;
     if (net_.frame() % 600 == 0 && net_.frame()) {
       SDL_Log("online: frame %u, %d pauses, %llu ms waiting in the last 10 s (delay %d)", net_.frame(), stalls_,
-              static_cast<unsigned long long>(stalled_ns_ / 1'000'000), net_.delay());
+              static_cast<unsigned long long>(stalled_ns_ / 1'000'000), net_.my_delay());
       stalls_ = 0;
       stalled_ns_ = 0;
     }
@@ -863,9 +877,9 @@ void App::draw_online() {
   }
   y += 66 * s;
   for (const auto& line : wrap(ui_,
-                               "More delay copes with a slower or farther connection but buttons react later. The "
-                               "suggested value covers the slowest recent ping. If the game keeps pausing, stop and "
-                               "host again with more. Tip: a wired connection plays smoother than Wi-Fi.",
+                               "Where the game starts: during the game, each computer adjusts its own delay to its "
+                               "connection, lower while it's steady (less lag) and higher when it wobbles (no pauses). "
+                               "Tip: a wired connection plays smoother than Wi-Fi.",
                                18 * s, inner, false, 3)) {
     ui_.text(x, y, line, 18 * s, kFaint);
     y += 26 * s;
