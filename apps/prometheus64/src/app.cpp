@@ -85,6 +85,24 @@ std::string load_into(Core& core, const Game& game) {
 
 const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 
+// GBA pictures: 240x160 pixel art on a big screen. All but Original correct the colours: the GBA's
+// unlit screen was dark and muted, so games were drawn with strong colours that look harsh on a
+// modern screen (gpSP's colour correction makes them look as intended).
+struct GbaLookDef {
+  const char* name;
+  const char* blurb;
+  Look::Pixels pixels;
+  float grid;
+  bool colour_correction, ghosting;
+};
+const GbaLookDef kGbaLooks[] = {
+    {"Clean", "Smooth edges, as if redrawn in HD", Look::Pixels::Xbr, 0.0f, true, false},
+    {"Sharp", "Crisp pixels, every one the same size", Look::Pixels::Sharp, 0.0f, true, false},
+    {"Handheld", "The GBA's screen: its pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true},
+    {"Original", "Exact pixels and colours", Look::Pixels::Sharp, 0.0f, false, false},
+};
+constexpr int kGbaLookCount = static_cast<int>(std::size(kGbaLooks));
+
 App::App(Options options) : opt_(std::move(options)) {}
 
 int App::run() {
@@ -378,6 +396,9 @@ void App::apply_core_options(const Game& game) {
     set("gpsp_serial", "auto");      // link play: picks the cable mode or the Wireless Adapter by game
     set("gpsp_rumble", "1");
     set("gpsp_frameskip", "disabled");
+    const GbaLookDef& look = kGbaLooks[std::clamp(settings_.game_int(game.id, "preset", 0), 0, kGbaLookCount - 1)];
+    set("gpsp_color_correction", look.colour_correction ? "enabled" : "disabled");
+    set("gpsp_frame_mixing", look.ghosting ? "enabled" : "disabled");
     for (const auto& o : opt_.core_options) {  // test mode: "--option key=value" overrides
       const auto eq = o.find('=');
       if (eq != std::string::npos) set(o.substr(0, eq).c_str(), o.substr(eq + 1));
@@ -554,13 +575,23 @@ void App::restart_game_keep_progress() {
 
 int App::fill_mode(const Game* game) const {
   const int f = std::clamp(settings_.game_int(game ? game->id : "", "fill", 0), 0, static_cast<int>(FillMode::Count) - 1);
-  const bool breaks = game && widescreen_breaks(game->internal_name);
+  const bool breaks = game && (game->system == System::GBA || widescreen_breaks(game->internal_name));
   return f == static_cast<int>(FillMode::Widescreen) && breaks ? static_cast<int>(FillMode::Fit) : f;
 }
 
 Look App::current_look() const {
   Look l;
   const std::string id = game_ ? game_->id : "";
+  if (game_ && game_->system == System::GBA) {
+    const GbaLookDef& g = kGbaLooks[std::clamp(settings_.game_int(id, "preset", 0), 0, kGbaLookCount - 1)];
+    l.fill = static_cast<FillMode>(fill_mode(&*game_));
+    l.pixels = g.pixels;
+    l.grid = g.grid;
+    l.lines = 160;
+    const float a = core_.av().geometry.aspect_ratio;
+    l.aspect = a > 0 ? a : 3.0f / 2.0f;
+    return l;
+  }
   const PresetDef& p = kPresets[std::clamp(settings_.game_int(id, "preset", 0), 0, 3)];
   l.fill = static_cast<FillMode>(fill_mode(game_ ? &*game_ : nullptr));
   l.overscan = std::clamp(settings_.game_int(id, "overscan", 0), 0, 8) / 100.0f;
@@ -1252,7 +1283,7 @@ std::vector<App::MenuItem> App::menu_items() const {
                                                      : "Auto (" + std::to_string(rw) + "x" + std::to_string(rh) + ")";
   const bool gliden = std::string(kPresets[preset].rdp) == "gliden64";
   const bool online = online_game_ && net_.active();
-  return {
+  std::vector<MenuItem> items = {
       {"Resume", "", kResume, "Esc"},
       {"Save state", online ? "off online" : "slot " + std::to_string(slot_), kSaveState, "F5"},
       {"Load state", online ? "off online" : "slot " + std::to_string(slot_), kLoadState, "F7"},
@@ -1269,6 +1300,19 @@ std::vector<App::MenuItem> App::menu_items() const {
       {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
       {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
   };
+  if (game_ && game_->system == System::GBA) {
+    // A GBA game: its own pictures; no textures, resolution or overscan (a sharp 240x160 screen).
+    const GbaLookDef& g = kGbaLooks[std::clamp(settings_.game_int(id, "preset", 0), 0, kGbaLookCount - 1)];
+    std::vector<MenuItem> gba;
+    for (MenuItem& it : items) {
+      if (it.id == kTextures || it.id == kResolution || it.id == kOverscan) continue;
+      if (it.id == kPicture) it.value = g.name;
+      if (it.id == kFill && look.fill == FillMode::Fit) it.value = "Fit (3:2)";
+      gba.push_back(std::move(it));
+    }
+    return gba;
+  }
+  return items;
 }
 
 void App::menu_change(int id, int dir) {
@@ -1302,6 +1346,13 @@ void App::menu_change(int id, int dir) {
       if (overlay_ == Overlay::None) toast("State slot " + std::to_string(slot_));
       break;
     case kPicture: {
+      if (game_ && game_->system == System::GBA) {
+        const int p = (std::clamp(settings_.game_int(gid, "preset", 0), 0, kGbaLookCount - 1) + step + kGbaLookCount) % kGbaLookCount;
+        settings_.set_game_int(gid, "preset", p);
+        toast(std::string("Picture: ") + kGbaLooks[p].name + " - " + kGbaLooks[p].blurb);
+        apply_core_options(*game_);  // colours and ghosting: the core picks them up as it runs
+        break;
+      }
       const int p = (settings_.game_int(gid, "preset", 0) + step + 4) % 4;
       settings_.set_game_int(gid, "preset", p);
       toast(std::string("Picture: ") + kPresets[p].name + " - " + kPresets[p].blurb);
@@ -1321,10 +1372,13 @@ void App::menu_change(int id, int dir) {
       const int ws = static_cast<int>(FillMode::Widescreen);
       const int before = fill_mode(game_ ? &*game_ : nullptr);
       int f = (before + step + count) % count;
-      const bool skip = f == ws && game_ && widescreen_breaks(game_->internal_name);
+      const bool gba = game_ && game_->system == System::GBA;
+      const bool skip = f == ws && game_ && (gba || widescreen_breaks(game_->internal_name));
       if (skip) f = (f + step + count) % count;
       settings_.set_game_int(gid, "fill", f);
-      if (skip) {
+      if (skip && gba) {
+        toast(std::string("Fill mode: ") + fill_mode_name(static_cast<FillMode>(f)));  // GBA games have no widescreen
+      } else if (skip) {
         toast("No widescreen for this game: its text and fades are made for a 4:3 screen. Ambient fill fills the sides instead", 6);
       } else {
         toast(std::string("Fill mode: ") + fill_mode_name(static_cast<FillMode>(f)) +
@@ -1528,7 +1582,8 @@ void App::draw_home() {
     for (std::size_t l = 0; l < lines.size(); ++l) {
       ui_.text(x + 22 * s, y + 22 * s + l * 32 * s, lines[l], 26 * s, sel ? kText : kText.with_alpha(0.85f), true);
     }
-    std::string meta = g.region.empty() ? g.internal_name : g.region;
+    // Which console, then where it's from: one library holds every console's games.
+    std::string meta = std::string(system_name(g.system)) + "  ·  " + (g.region.empty() ? g.internal_name : g.region);
     ui_.text(x + 22 * s, y + tile_h - 44 * s, ui_.fit(meta, 18 * s, tile_w - 150 * s), 18 * s, kDim);
     if (fs::is_directory(library_for(g.system) / g.internal_name / "current", ec)) {
       const float cw = ui_.measure("Saved progress", 15 * s) + 24 * s;
@@ -1678,6 +1733,9 @@ void App::draw_help() {
   column(px + 40 * s, "Keyboard", keyboard, 8);
   column(px + pw / 3 + 20 * s, "Controller", pad, 7);
   column(px + 2 * pw / 3, "Shortcuts", hotkeys, 7);
+  ui_.text(px + 40 * s, py + ph - 154 * s,
+           "GBA games: A, B, L, R and Start as above, Select on Z, the +Control Pad on the D-pad or the stick.", 18 * s,
+           kText);
   ui_.text(px + 40 * s, py + ph - 122 * s,
            "Change any key or button on the Controls screen: press C in the library, or Menu > Controls.", 18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 90 * s,

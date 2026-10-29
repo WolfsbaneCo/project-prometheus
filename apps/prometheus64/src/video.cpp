@@ -33,8 +33,101 @@ uniform float u_lines;   // source lines across the quad
 uniform float u_alpha;
 uniform float u_bicubic; // 1 = Catmull-Rom from the full-size frame
 uniform vec2 u_size;     // texture size in texels
+uniform float u_pixels;  // pixel art: 0 = plain, 1 = xBR smoothing, 2 = sharp pixels
+uniform float u_scale;   // output pixels per texel
+uniform float u_grid;    // handheld LCD grid strength
 in vec2 v_uv;
 out vec4 o;
+
+// Pixel art made smooth for big screens: Hyllian's xBR-lv2 (corner C, smooth tips), ported from
+// libretro's glsl-shaders/xbr/shaders/xbr-lv2.glsl.
+//   Copyright (C) 2011-2016 Hyllian - sergiogdb@gmail.com
+//   Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+//   and associated documentation files (the "Software"), to deal in the Software without
+//   restriction, including without limitation the rights to use, copy, modify, merge, publish,
+//   distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+//   Software is furnished to do so, subject to the following conditions: The above copyright
+//   notice and this permission notice shall be included in all copies or substantial portions of
+//   the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+//   PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+//   LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+//   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+//   DEALINGS IN THE SOFTWARE.
+// The edges blend over one output pixel whatever the size (delta from the actual scale), and every
+// sample is a texel centre, so the texture's own filtering makes no difference.
+const vec3 rgbw = vec3(14.352, 28.176, 5.472);
+const vec4 Ao = vec4(1.0, -1.0, -1.0, 1.0), Bo = vec4(1.0, 1.0, -1.0, -1.0), Co = vec4(1.5, 0.5, -0.5, 0.5);
+const vec4 Ax = vec4(1.0, -1.0, -1.0, 1.0), Bx = vec4(0.5, 2.0, -0.5, -2.0), Cx = vec4(1.0, 1.0, -0.5, 0.0);
+const vec4 Ay = vec4(1.0, -1.0, -1.0, 1.0), By = vec4(2.0, 0.5, -2.0, -0.5), Cy = vec4(2.0, 0.0, -1.0, 0.5);
+const vec4 Ci = vec4(0.25);
+vec4 xdf(vec4 a, vec4 b) { return abs(a - b); }
+vec4 xdiff(vec4 a, vec4 b) { return vec4(notEqual(a, b)); }
+vec4 xeq(vec4 a, vec4 b) { return step(xdf(a, b), vec4(15.0)); }
+vec4 xneq(vec4 a, vec4 b) { return vec4(1.0) - xeq(a, b); }
+vec4 xwd(vec4 a, vec4 b, vec4 c, vec4 d, vec4 e, vec4 f, vec4 g, vec4 h) {
+  return xdf(a, b) + xdf(a, c) + xdf(d, e) + xdf(d, f) + 4.0 * xdf(g, h);
+}
+float c_df(vec3 c1, vec3 c2) { vec3 d = abs(c1 - c2); return d.r + d.g + d.b; }
+vec3 px(vec2 c) { return textureLod(u_tex, c / u_size, 0.0).rgb; }  // c: texel centre, in texels
+
+vec3 xbr(vec2 uv) {
+  vec2 p = uv * u_size;
+  vec2 ctr = floor(p) + 0.5;
+  vec2 fp = p - floor(p);
+  vec3 A1 = px(ctr + vec2(-1, -2)), B1 = px(ctr + vec2(0, -2)), C1 = px(ctr + vec2(1, -2));
+  vec3 A = px(ctr + vec2(-1, -1)), B = px(ctr + vec2(0, -1)), C = px(ctr + vec2(1, -1));
+  vec3 D = px(ctr + vec2(-1, 0)), E = px(ctr), F = px(ctr + vec2(1, 0));
+  vec3 G = px(ctr + vec2(-1, 1)), H = px(ctr + vec2(0, 1)), I = px(ctr + vec2(1, 1));
+  vec3 G5 = px(ctr + vec2(-1, 2)), H5 = px(ctr + vec2(0, 2)), I5 = px(ctr + vec2(1, 2));
+  vec3 A0 = px(ctr + vec2(-2, -1)), D0 = px(ctr + vec2(-2, 0)), G0 = px(ctr + vec2(-2, 1));
+  vec3 C4 = px(ctr + vec2(2, -1)), F4 = px(ctr + vec2(2, 0)), I4 = px(ctr + vec2(2, 1));
+  vec4 b = vec4(dot(B, rgbw), dot(D, rgbw), dot(H, rgbw), dot(F, rgbw));
+  vec4 c = vec4(dot(C, rgbw), dot(A, rgbw), dot(G, rgbw), dot(I, rgbw));
+  vec4 d = b.yzwx, e = vec4(dot(E, rgbw)), f = b.wxyz, g = c.zwxy, h = b.zwxy, i = c.wxyz;
+  vec4 i4 = vec4(dot(I4, rgbw), dot(C1, rgbw), dot(A0, rgbw), dot(G5, rgbw));
+  vec4 i5 = vec4(dot(I5, rgbw), dot(C4, rgbw), dot(A1, rgbw), dot(G0, rgbw));
+  vec4 h5 = vec4(dot(H5, rgbw), dot(F4, rgbw), dot(B1, rgbw), dot(D0, rgbw));
+  vec4 f4 = h5.yzwx;
+  float s = max(u_scale, 1.0);
+  vec4 delta = vec4(1.0 / s), delta_l = vec4(0.5 / s, 1.0 / s, 0.5 / s, 1.0 / s), delta_u = delta_l.yxwz;
+  vec4 fx = Ao * fp.y + Bo * fp.x, fx_l = Ax * fp.y + Bx * fp.x, fx_u = Ay * fp.y + By * fp.x;
+  vec4 irlv0 = xdiff(e, f) * xdiff(e, h);
+  vec4 irlv1 = irlv0 * (xneq(f, b) * xneq(f, c) + xneq(h, d) * xneq(h, g) +
+                        xeq(e, i) * (xneq(f, f4) * xneq(f, i4) + xneq(h, h5) * xneq(h, i5)) + xeq(e, g) + xeq(e, c));
+  vec4 irlv2l = xdiff(e, g) * xdiff(d, g), irlv2u = xdiff(e, c) * xdiff(b, c);
+  vec4 fx45i = clamp((fx + delta - Co - Ci) / (2.0 * delta), 0.0, 1.0);
+  vec4 fx45 = clamp((fx + delta - Co) / (2.0 * delta), 0.0, 1.0);
+  vec4 fx30 = clamp((fx_l + delta_l - Cx) / (2.0 * delta_l), 0.0, 1.0);
+  vec4 fx60 = clamp((fx_u + delta_u - Cy) / (2.0 * delta_u), 0.0, 1.0);
+  vec4 wd1 = xwd(e, c, g, i, h5, f4, h, f), wd2 = xwd(h, d, i5, f, i4, b, e, i);
+  vec4 edri = step(wd1, wd2) * irlv0;
+  vec4 edr = step(wd1 + vec4(0.1), wd2) * step(vec4(0.5), irlv1);
+  vec4 edr_l = step(2.0 * xdf(f, g), xdf(h, c)) * irlv2l * edr;
+  vec4 edr_u = step(2.0 * xdf(h, c), xdf(f, g)) * irlv2u * edr;
+  fx45 = edr * fx45;
+  fx30 = edr_l * fx30;
+  fx60 = edr_u * fx60;
+  fx45i = edri * fx45i;
+  vec4 pxs = step(xdf(e, f), xdf(e, h));
+  vec4 maximos = max(max(fx30, fx60), max(fx45, fx45i));
+  vec3 res1 = E;
+  res1 = mix(res1, mix(H, F, pxs.x), maximos.x);
+  res1 = mix(res1, mix(B, D, pxs.z), maximos.z);
+  vec3 res2 = E;
+  res2 = mix(res2, mix(F, B, pxs.y), maximos.y);
+  res2 = mix(res2, mix(D, H, pxs.w), maximos.w);
+  return mix(res1, res2, step(c_df(E, res1), c_df(E, res2)));
+}
+
+// Crisp pixels at any size: each texel is a solid block, and only the one output pixel where two
+// blocks meet is blended (linear filtering at the texel's edge), so nothing shimmers or doubles.
+vec3 sharp_pixels(vec2 uv) {
+  vec2 p = uv * u_size;
+  vec2 cell = floor(p);
+  vec2 f = clamp((p - cell - 0.5) * max(u_scale, 1.0), -0.5, 0.5) + 0.5;
+  return textureLod(u_tex, (cell + f) / u_size, 0.0).rgb;
+}
 
 // Catmull-Rom in 9 bilinear taps (weights folded into the sample positions).
 vec3 catmull_rom(vec2 uv) {
@@ -66,7 +159,14 @@ void main() {
     o = vec4(textureLod(u_tex, uv, u_lod).rgb * u_dim, 1.0);
     return;
   }
-  vec3 c = u_bicubic > 0.5 ? catmull_rom(uv) : texture(u_tex, uv).rgb;
+  vec3 c = u_pixels > 1.5 ? sharp_pixels(uv) : u_pixels > 0.5 ? xbr(uv) : u_bicubic > 0.5 ? catmull_rom(uv) : texture(u_tex, uv).rgb;
+  if (u_grid > 0.0) {
+    // A handheld's LCD: a thin dark gap around each pixel, brightened so the screen keeps its level.
+    vec2 f = fract(uv * u_size);
+    float w = clamp(1.6 / max(u_scale, 1.0), 0.0, 0.5);
+    float m = smoothstep(0.0, w, f.x) * smoothstep(0.0, w, 1.0 - f.x) * smoothstep(0.0, w, f.y) * smoothstep(0.0, w, 1.0 - f.y);
+    c *= mix(1.0 - 0.55 * u_grid, 1.0 + 0.12 * u_grid, m);
+  }
   if (u_sharpen > 0.0) {
     vec3 n = texture(u_tex, uv + vec2(u_step.x, 0.0)).rgb + texture(u_tex, uv - vec2(u_step.x, 0.0)).rgb +
              texture(u_tex, uv + vec2(0.0, u_step.y)).rgb + texture(u_tex, uv - vec2(0.0, u_step.y)).rgb;
@@ -138,6 +238,9 @@ bool Video::init(std::string& error) {
   u_scan_ = gl::glGetUniformLocation(program_, "u_scan");
   u_lines_ = gl::glGetUniformLocation(program_, "u_lines");
   u_alpha_ = gl::glGetUniformLocation(program_, "u_alpha");
+  u_pixels_ = gl::glGetUniformLocation(program_, "u_pixels");
+  u_scale_ = gl::glGetUniformLocation(program_, "u_scale");
+  u_grid_ = gl::glGetUniformLocation(program_, "u_grid");
   gl::glGenVertexArrays(1, &vao_);
   gl::glGenTextures(1, &sw_tex_);
   return true;
@@ -256,6 +359,8 @@ void Video::draw_quad(const float src[4], const float dst[4], bool background, f
   gl::glUniform1f(u_scan_, background ? 0.0f : look.scanlines);
   gl::glUniform1f(u_alpha_, alpha);
   gl::glUniform1f(u_bicubic_, background ? 0.0f : bicubic_);
+  gl::glUniform1f(u_pixels_, background ? 0.0f : static_cast<float>(look.pixels));
+  gl::glUniform1f(u_grid_, background ? 0.0f : look.grid);
   gl::glUniform2f(u_size_, size_w_, size_h_);
   gl::glUniform1i(gl::glGetUniformLocation(program_, "u_tex"), 0);
   gl::glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -352,7 +457,13 @@ Rect Video::draw_game(int out_w, int out_h, const Look& look, float alpha) {
   // nearest-neighbour sampling.
   bicubic_ = look.smooth && static_cast<float>(r.h) > 0.55f * (sy1 - sy0) * th ? 1.0f : 0.0f;
   gl::glUseProgram(program_);
-  gl::glUniform1f(u_lines_, 240.0f * (sy1 - sy0) / v1);  // the N64's 240 lines, minus any crop
+  gl::glUniform1f(u_lines_, static_cast<float>(look.lines) * (sy1 - sy0) / v1);  // the console's lines, minus any crop
+  gl::glUniform1f(u_scale_, static_cast<float>(r.h) / std::max(1.0f, (sy1 - sy0) * th));
+  if (look.pixels != Look::Pixels::Plain) {
+    // The pixel-art filters pick their own samples: texel centres (xBR) or edges (sharp pixels).
+    gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  }
   if (alpha < 1.0f) {
     gl::glEnable(GL_BLEND);
     gl::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
