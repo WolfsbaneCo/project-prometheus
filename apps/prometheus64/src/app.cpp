@@ -291,7 +291,19 @@ bool App::init(std::string& error) {
       error = why.empty() ? "No N64 game found in " + utf8(opt_.rom) : "Could not read " + utf8(opt_.rom) + ": " + why;
       return false;
     }
-    if (opt_.online_host) {
+    if (opt_.link_host || !opt_.link_join.empty()) {
+      // Test mode: play it and link it.
+      games_ = found;
+      selected_ = 0;
+      open_online();
+      if (opt_.link_host) {
+        host_link();
+      } else {
+        code_input_ = opt_.link_join;
+        join_link();
+      }
+      overlay_ = Overlay::None;
+    } else if (opt_.online_host) {
       hosted_game_ = found.front();  // test mode: host it online instead of playing it here
       if (games_.empty()) games_ = found;
       open_online();
@@ -393,7 +405,9 @@ void App::apply_core_options(const Game& game) {
     set("gpsp_drc", "enabled");
     set("gpsp_rtc", "auto");         // the cartridge clock, for the games that have one
     set("gpsp_rtc_time_source", "system");  // follows the real time, as a cartridge's battery clock does
-    set("gpsp_serial", "auto");      // link play: picks the cable mode or the Wireless Adapter by game
+    // Link play: the cable or the Wireless Adapter (link_mode); other games' links as gpSP knows them.
+    const std::string link = link_mode(game);
+    set("gpsp_serial", link == "cable" ? "mul_poke" : link == "wireless" ? "rfu" : "auto");
     set("gpsp_rumble", "1");
     set("gpsp_frameskip", "disabled");
     const GbaLookDef& look = kGbaLooks[std::clamp(settings_.game_int(game.id, "preset", 0), 0, kGbaLookCount - 1)];
@@ -520,6 +534,11 @@ bool App::start_game(const Game& game) {
 
 void App::stop_game() {
   if (!game_) return;
+  if (link_.active()) {
+    link_.leave();  // the link belongs to the game
+    toast("Link ended");
+  }
+  link_.attach(nullptr);
   sync_game_save(true);
   guest_session_ = false;
   online_game_ = false;
@@ -839,7 +858,9 @@ void App::run_frames() {
     run_online_frames(frame_ns);  // the host's menu pauses everyone, so it decides
     return;
   }
-  if (screen_ != Screen::Playing || overlay_ != Overlay::None) {
+  // A linked GBA game keeps running behind the menus: the others' games are waiting on its link.
+  const bool linked = link_.active() && game_ && game_->system == System::GBA;
+  if (screen_ != Screen::Playing || (overlay_ != Overlay::None && !linked)) {
     acc_ns_ = 0;
     speed_since_ns_ = 0;
     return;
@@ -954,9 +975,19 @@ void App::loop() {
     input_.update(static_cast<float>(std::min<uint64_t>(t0 - last_ns_, 100'000'000)) / 1e9f);
     for (auto& n : input_.take_notices()) toast(n, 4);
     process_net_events();
+    link_.update();
+    for (auto& m : link_.take_messages()) {
+      SDL_Log("link: %s", m.c_str());
+      toast(m, 5);
+    }
+    if (opt_.link_host && !printed_link_ && !link_.code().empty()) {
+      std::printf("link-invite %s\n", link_.code().c_str());
+      std::fflush(stdout);
+      printed_link_ = true;
+    }
     process_backup();
     if (game_) run_frames();
-    audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host())));
+    audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host()) && !link_.active()));
     draw();
     ++frames_drawn;
 

@@ -20,6 +20,7 @@
 #include "core.hpp"
 #include "input.hpp"
 #include "library.hpp"
+#include "link.hpp"
 #include "netplay.hpp"
 #include "settings.hpp"
 #include "ui.hpp"
@@ -47,6 +48,8 @@ struct Options {
   bool ram_hash = false;             // test mode: print a hash of the console's RAM on exit
   bool online_host = false;          // test mode: host `rom` online at start (prints the invite code)
   std::string online_join;           // test mode: join this invite code at start
+  bool link_host = false;            // test mode: play `rom` (GBA) and host a link (prints its code)
+  std::string link_join;             // test mode: play `rom` (GBA) and join this link code
   bool online_start = false;         // test mode: the host starts as soon as everyone is ready
   uint32_t online_exit_frame = 0;    // test mode: print the RAM hash at this online frame and quit
   std::string setup_token;           // test mode: run the online setup with this key at start
@@ -63,7 +66,7 @@ class App {
  private:
   enum class Screen { Home, Playing };
   enum class Overlay { None, Menu, Seating, Help, Controls, Online, Backup };
-  enum class OnlinePage { Main, Setup, Join, Lobby };
+  enum class OnlinePage { Main, Setup, Join, Lobby, Link };
   enum class TextField { None, Name, Token, Code };
   struct Toast {
     std::string text;
@@ -131,6 +134,11 @@ class App {
   void finish_setup();
   void host_online();
   void join_online();
+  // GBA link play (link.hpp): the game whose link it is (running, else picked in the library).
+  const Game* link_game() const;
+  std::string link_mode(const Game& game) const;  // "cable", "wireless" or "auto"
+  void host_link();
+  void join_link();
   void start_online_game();
   void end_online_game();  // host: end for everyone, keep playing; guest: leave
   void process_net_events();
@@ -234,6 +242,7 @@ class App {
 
   // Online play.
   Netplay net_;
+  Link link_;
   OnlinePage online_page_ = OnlinePage::Main;
   TextField text_field_ = TextField::None;
   std::string name_input_, token_input_, code_input_, online_note_;
@@ -255,7 +264,7 @@ class App {
   uint64_t stalled_since_ns_ = 0;
   uint64_t stalled_ns_ = 0;  // time spent waiting for others' inputs, logged every 10 seconds of play
   int stalls_ = 0;
-  bool printed_invite_ = false;
+  bool printed_invite_ = false, printed_link_ = false;
   std::map<std::string, std::array<uint8_t, 32>> sha_cache_;
 
   // Google Drive backup.

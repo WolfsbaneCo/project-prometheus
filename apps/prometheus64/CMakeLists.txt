@@ -31,6 +31,7 @@ add_executable(prometheus64 WIN32
   src/json.cpp
   src/net.cpp
   src/netplay.cpp
+  src/link.cpp
   src/audio.cpp
   src/core.cpp
   src/gl.cpp

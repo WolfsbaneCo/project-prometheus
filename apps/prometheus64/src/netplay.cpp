@@ -28,20 +28,7 @@ constexpr int kSpare = 1;
 constexpr int kLowerAt = 3;
 constexpr uint64_t kLowerAfterNs = 3'000'000'000;
 
-std::string url_encode(const std::string& s) {
-  std::string out;
-  static const char* hex = "0123456789ABCDEF";
-  for (unsigned char c : s) {
-    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
-      out += static_cast<char>(c);
-    } else {
-      out += '%';
-      out += hex[c >> 4];
-      out += hex[c & 15];
-    }
-  }
-  return out;
-}
+using net::url_encode;
 
 // Little-endian message writing and reading. A reader that runs past the end stays failed and
 // returns zeros, so a short or garbled message is simply ignored.

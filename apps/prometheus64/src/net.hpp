@@ -15,6 +15,9 @@ namespace p64::net {
 void init();  // once, before any other call
 void shutdown();
 
+// For a URL's query: letters, digits, - and _ as they are, everything else %XX.
+std::string url_encode(const std::string& s);
+
 struct Part {
   std::string name, filename, content_type, data;
 };

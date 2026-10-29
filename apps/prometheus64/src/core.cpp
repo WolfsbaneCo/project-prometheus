@@ -117,6 +117,7 @@ std::string Core::open(const std::filesystem::path& library) {
   current_ = overrides_;
   options_changed_ = false;
   hw_requested_ = false;
+  netpacket_ = {};
   pixel_format_ = RETRO_PIXEL_FORMAT_0RGB1555;
   library_path_str_ = utf8(library);
   auto* so = SDL_LoadObject(library_path_str_.c_str());
@@ -326,6 +327,12 @@ bool Core::environment(unsigned cmd, void* data) {
       *static_cast<bool*>(data) = options_changed_;
       options_changed_ = false;
       return true;
+    case RETRO_ENVIRONMENT_SET_NETPACKET_INTERFACE: {
+      // Link play (gpSP): the app's Link carries its packets between the players.
+      const auto* cb = static_cast<const retro_netpacket_callback*>(data);
+      netpacket_ = cb ? *cb : retro_netpacket_callback{};
+      return true;
+    }
     case RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE:
       static_cast<retro_rumble_interface*>(data)->set_rumble_state = rumble_cb;
       return true;

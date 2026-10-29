@@ -69,6 +69,21 @@ void secure_defaults(CURL* c) {
 
 void init() { curl_global_init(CURL_GLOBAL_DEFAULT); }
 
+std::string url_encode(const std::string& s) {
+  std::string out;
+  static const char* hex = "0123456789ABCDEF";
+  for (unsigned char c : s) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+      out += static_cast<char>(c);
+    } else {
+      out += '%';
+      out += hex[c >> 4];
+      out += hex[c & 15];
+    }
+  }
+  return out;
+}
+
 void shutdown() { curl_global_cleanup(); }
 
 Response request(const std::string& method, const std::string& url, const std::vector<std::string>& headers,

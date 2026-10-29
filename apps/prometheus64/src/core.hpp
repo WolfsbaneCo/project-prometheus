@@ -70,6 +70,8 @@ class Core {
   bool hardware_rendering() const { return hw_requested_; }
   const retro_hw_render_callback& hw() const { return hw_; }
   retro_pixel_format pixel_format() const { return pixel_format_; }
+  // The core's link-play interface (GBA: gpSP), or nullptr when it has none.
+  const retro_netpacket_callback* netpacket() const { return netpacket_.start ? &netpacket_ : nullptr; }
 
   // Called by the app once its GL context exists (after load_game), and before it is destroyed.
   void context_reset();
@@ -89,6 +91,7 @@ class Core {
   retro_pixel_format pixel_format_ = RETRO_PIXEL_FORMAT_0RGB1555;
   bool hw_requested_ = false;
   retro_hw_render_callback hw_{};
+  retro_netpacket_callback netpacket_{};
   std::map<std::string, std::string> defaults_;   // from the core's option list
   std::map<std::string, std::string> overrides_;  // set by the app
   std::map<std::string, std::string> current_;    // what GET_VARIABLE hands out (stable storage)
