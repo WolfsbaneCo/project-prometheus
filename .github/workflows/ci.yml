@@ -42,26 +42,31 @@ jobs:
             exit 1
           fi
 
-  # The emulator core, cross-compiled at the commit pinned in the script. Cached on that commit.
+  # The emulator cores (N64 and GBA), cross-compiled at the commits pinned in their scripts.
+  # Cached on those commits.
   core-windows:
-    name: Emulator core (Windows)
+    name: Emulator cores (Windows)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - name: Find the pinned core commit
         id: pin
-        run: echo "commit=$(grep -oP '^CORE_COMMIT=\K[0-9a-f]+' tools/build-core-windows.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "commit=$(grep -oP '^CORE_COMMIT=\K[0-9a-f]+' tools/build-core-windows.sh)" >> "$GITHUB_OUTPUT"
+          echo "gba=$(grep -oP 'P64_GPSP_COMMIT \K[0-9a-f]+' apps/prometheus64/third_party/gpsp/CMakeLists.txt)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         id: cache
         with:
           path: core
-          key: core-windows-${{ steps.pin.outputs.commit }}-${{ hashFiles('tools/build-core-windows.sh') }}
+          key: core-windows-${{ steps.pin.outputs.commit }}-${{ steps.pin.outputs.gba }}-${{ hashFiles('tools/build-core-windows.sh', 'tools/build-gba-core-windows.sh', 'tools/mingw-w64.cmake', 'apps/prometheus64/third_party/gpsp/CMakeLists.txt') }}
       - name: Install MinGW-w64
         if: steps.cache.outputs.cache-hit != 'true'
         run: sudo apt-get update && sudo apt-get install -y mingw-w64 nasm
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
-        run: tools/build-core-windows.sh core
+        run: |
+          tools/build-core-windows.sh core
+          tools/build-gba-core-windows.sh core
       - uses: actions/upload-artifact@v7
         with:
           name: core-windows
@@ -139,6 +144,8 @@ jobs:
           Copy-Item -Recurse "$app/assets" stage/
           Copy-Item core/mupen64plus_next_libretro.dll stage/cores/
           Copy-Item core/CORE-SOURCE.txt stage/cores/
+          Copy-Item core/gpsp_libretro.dll stage/cores/
+          Copy-Item core/GBA-CORE-SOURCE.txt stage/cores/
           Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, installer/libarchive-COPYING.txt, LICENSE stage/licenses/
           Get-ChildItem -Recurse stage | Select-Object FullName, Length
       - name: Version

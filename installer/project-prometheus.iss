@@ -3,7 +3,7 @@
 ; Installs for the current user only, so it needs no administrator rights.
 
 #ifndef AppVersion
-  #define AppVersion "0.1.1"
+  #define AppVersion "0.2.0"
 #endif
 #ifndef StageDir
   #define StageDir "..\stage"
@@ -38,7 +38,7 @@ ChangesAssociations=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
-Name: "associate"; Description: "Open game files (.z64, .n64, .v64) with Project Prometheus when double-clicked"; GroupDescription: "Game files:"
+Name: "associate"; Description: "Open game files (.z64, .n64, .v64, .gba) with Project Prometheus when double-clicked"; GroupDescription: "Game files:"
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
@@ -58,15 +58,17 @@ Name: "{autodesktop}\Project Prometheus"; Filename: "{app}\ProjectPrometheus.exe
 ; Game files: Project Prometheus becomes their program (if Windows asks once, pick Project Prometheus and tick
 ; "Always"). Archives (.zip, .7z, .rar) only get it as a choice under "Open with": their own program
 ; stays the same. Everything is per user and removed on uninstall.
-Root: HKA; Subkey: "Software\Classes\Prometheus64.Game"; ValueType: string; ValueName: ""; ValueData: "N64 game"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Prometheus64.Game"; ValueType: string; ValueName: ""; ValueData: "Game"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Prometheus64.Game\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\ProjectPrometheus.exe,0"
 Root: HKA; Subkey: "Software\Classes\Prometheus64.Game\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\ProjectPrometheus.exe"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\.z64"; ValueType: string; ValueName: ""; ValueData: "Prometheus64.Game"; Flags: uninsdeletevalue; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.n64"; ValueType: string; ValueName: ""; ValueData: "Prometheus64.Game"; Flags: uninsdeletevalue; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.v64"; ValueType: string; ValueName: ""; ValueData: "Prometheus64.Game"; Flags: uninsdeletevalue; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\.gba"; ValueType: string; ValueName: ""; ValueData: "Prometheus64.Game"; Flags: uninsdeletevalue; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.z64\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.n64\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.v64\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.gba\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.zip\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.7z\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.rar\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue

@@ -54,3 +54,12 @@ Checked against a stand-in for Google's sign-in and Drive API (the same requests
 - [ ] The whole flow against real Google, once the project is registered: the sign-in page, the token exchange (a forum report says Desktop clients need the client secret even with PKCE; the app sends it when the build has one), `about` with only `drive.file`, multipart uploads and the 7-day question after publishing.
 - [ ] Windows Credential Manager on a real Windows PC (checked under Wine), and that the browser's return to `127.0.0.1` raises no firewall prompt.
 - [ ] Brief 9.5 (settings sync), section 10 (sharing on a home network) and optional encryption: not built yet.
+
+## Added by GBA games (see [0007](decisions/0007-gba.md))
+
+Checked with homebrew test ROMs (jsmolka gba-tests, a hello-world) on Linux and Windows builds, link sessions between two copies through a local relay, and GBA saves through the Drive stand-in on two computers.
+
+- [ ] A real Pokémon trade and battle between two computers over the internet, with the link cable mode (Ruby/Sapphire/Emerald/FireRed/LeafGreen) and with the Wireless Adapter (FireRed/LeafGreen/Emerald). The test ROMs don't use the link port, so no link message has travelled yet.
+- [ ] Trading between different games (Ruby with FireRed) and between regions.
+- [ ] Saves imported from other emulators (mGBA, VBA-M) for each save type: SRAM, flash 64 and 128 KB, EEPROM.
+- [ ] The real-time clock in Ruby, Sapphire and Emerald (berries, tides) follows the computer's clock.

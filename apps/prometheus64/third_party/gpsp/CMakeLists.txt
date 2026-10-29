@@ -3,6 +3,13 @@
 # PC: the x86 dynamic recompiler, RGB565 output), into gpsp_libretro.so / .dll next to the app.
 # gpSP is chosen for its networked link play: the Pokemon generation 3 link cable mode and the GBA
 # Wireless Adapter, where each console runs on its own and only link messages travel.
+#
+# Builds on its own too (tools/build-gba-core-windows.sh), for builds whose app compiler cannot
+# build gpSP (Microsoft's: gpSP uses GNU assembly and GCC extensions).
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  cmake_minimum_required(VERSION 3.20)
+  project(gpsp_libretro LANGUAGES C CXX)
+endif()
 include(FetchContent)
 
 set(P64_GPSP_REPO https://github.com/libretro/gpsp.git)
