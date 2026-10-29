@@ -78,7 +78,7 @@ std::string load_into(Core& core, const Game& game) {
   std::vector<uint8_t> data;
   if (std::string err = load_game_data(game, data); !err.empty()) return err;
   const fs::path name = game.entry.empty() ? game.path : game.path.parent_path() / from_utf8(game.entry).filename();
-  return core.load_game(name, std::move(data));
+  return core.load_game(name, std::move(data), game.entry.empty());
 }
 
 }  // namespace
@@ -183,6 +183,7 @@ bool App::init(std::string& error) {
   // The emulator core.
   core_.system_dir = pref_dir_ / "system";
   core_.save_dir = pref_dir_ / "core";
+  core_.unpack_dir = pref_dir_ / "unpacked";
   std::error_code ec;
   fs::create_directories(core_.system_dir, ec);
   fs::create_directories(core_.save_dir, ec);

@@ -37,11 +37,15 @@ class Core {
   Hooks hooks;
   std::filesystem::path system_dir;
   std::filesystem::path save_dir;
+  // Where games from archives are unpacked for cores that only read games from a file (gpSP).
+  std::filesystem::path unpack_dir;
 
   // Loads the core library and calls retro_init. Returns an error message, or empty on success.
   std::string open(const std::filesystem::path& library);
   // `rom` is the name the core sees; `data` is the whole game (the app unpacks archives itself).
-  std::string load_game(const std::filesystem::path& rom, std::vector<uint8_t> data);
+  // `on_disk`: `rom` is the game's own file. When it is not (the game was in an archive) and the
+  // core reads games only from a file, `data` is written to a file in unpack_dir for it.
+  std::string load_game(const std::filesystem::path& rom, std::vector<uint8_t> data, bool on_disk);
   void unload_game();
   // Unloads the game, shuts the core down and releases the library. Call while the GL context
   // still exists: the core's renderer frees GPU objects on the way out.
@@ -78,6 +82,7 @@ class Core {
   void context_destroy();
 
  private:
+  void remove_unpacked();
   struct Api;
   bool environment(unsigned cmd, void* data);
   static bool RETRO_CALLCONV env_trampoline(unsigned cmd, void* data);
@@ -99,6 +104,8 @@ class Core {
   std::string system_dir_str_, save_dir_str_, library_path_str_;
   std::vector<uint8_t> rom_data_;
   std::string rom_path_;
+  std::filesystem::path unpacked_;  // the file written for the core, removed with the game
+  unsigned unpack_count_ = 0;
 };
 
 }  // namespace p64

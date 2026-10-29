@@ -14,6 +14,8 @@
 namespace p64 {
 namespace {
 
+namespace fs = std::filesystem;
+
 std::string utf8(const std::filesystem::path& p) {
   const auto u = p.u8string();
   return std::string(u.begin(), u.end());
@@ -105,6 +107,11 @@ void Core::close() {
   if (game_loaded_) unload_game();
   if (initialised_ && api_) api_->deinit();
   initialised_ = false;
+  if (!unpack_dir.empty()) {
+    // Now the core has let go of every game file it was given.
+    std::error_code ec;
+    fs::remove_all(unpack_dir, ec);
+  }
   delete api_;
   api_ = nullptr;
   if (library_) SDL_UnloadObject(static_cast<SDL_SharedObject*>(library_));
@@ -168,11 +175,29 @@ std::string Core::open(const std::filesystem::path& library) {
   return {};
 }
 
-std::string Core::load_game(const std::filesystem::path& rom, std::vector<uint8_t> data) {
+std::string Core::load_game(const std::filesystem::path& rom, std::vector<uint8_t> data, bool on_disk) {
   if (!api_) return "no emulator core loaded";
   if (game_loaded_) unload_game();
   rom_path_ = utf8(rom);
   rom_data_ = std::move(data);
+  if (info_.need_fullpath && !on_disk) {
+    // Each load gets its own folder: on Windows the core keeps the file open until it shuts down,
+    // so an earlier copy may not be removable yet. Removing the folder clears what can go.
+    std::error_code ec;
+    fs::remove_all(unpack_dir, ec);
+    const fs::path folder = unpack_dir / std::to_string(++unpack_count_);
+    fs::create_directories(folder, ec);
+    unpacked_ = folder / rom.filename();
+    std::ofstream out(unpacked_, std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(rom_data_.data()), static_cast<std::streamsize>(rom_data_.size()));
+    if (!out.flush()) {
+      out.close();
+      fs::remove(unpacked_, ec);
+      unpacked_.clear();
+      return "could not unpack the game for the emulator (is the disk full?)";
+    }
+    rom_path_ = utf8(unpacked_);
+  }
 
   retro_game_info game{};
   game.path = rom_path_.c_str();
@@ -181,11 +206,21 @@ std::string Core::load_game(const std::filesystem::path& rom, std::vector<uint8_
     game.size = rom_data_.size();
   }
   hw_requested_ = false;
-  if (!api_->load_game(&game)) return "the emulator core could not start this game";
+  if (!api_->load_game(&game)) {
+    remove_unpacked();
+    return "the emulator core could not start this game";
+  }
   game_loaded_ = true;
   api_->get_system_av_info(&av_);
   for (unsigned port = 0; port < 4; ++port) api_->set_controller_port_device(port, RETRO_DEVICE_JOYPAD);
   return {};
+}
+
+void Core::remove_unpacked() {
+  if (unpacked_.empty()) return;
+  std::error_code ec;
+  if (fs::remove(unpacked_, ec)) fs::remove(unpacked_.parent_path(), ec);  // still open: removed at close()
+  unpacked_.clear();
 }
 
 void Core::unload_game() {
@@ -193,6 +228,7 @@ void Core::unload_game() {
   api_->unload_game();
   game_loaded_ = false;
   hw_requested_ = false;
+  remove_unpacked();
 }
 
 void Core::context_reset() {
