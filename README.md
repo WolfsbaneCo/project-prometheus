@@ -59,6 +59,17 @@ GBA games don't play in lockstep like N64 games: each player plays their own gam
 - In Pokémon Ruby, Sapphire, Emerald, FireRed and LeafGreen, walk into a Pokémon Center and go upstairs to the Cable Club to trade or battle, as with a real link cable. FireRed, LeafGreen and Emerald can use the Wireless Adapter instead (**Link: cable / wireless** on the Play online page); both players need the same choice, and the app says so if they differ.
 - Both players need the group's key file, as for online play above. The games don't have to be the same: Ruby trades with FireRed, as on real consoles.
 
+### Event gifts: the tickets from Pokémon's old events
+
+Pokémon Emerald's event islands (Birth Island for Deoxys, Navel Rock for Lugia and Ho-Oh, Faraway Island for Mew, Southern Island for Latias or Latios) open with tickets that Nintendo handed out at events and stores, years ago. The app plays the event's distribution machine, so your game receives them the way players did then, with no cheats and no save editing: your game's own Mystery Gift receives a Wonder Card, and the deliveryman in a Pokémon Center hands over the ticket.
+
+1. **Once:** unlock Mystery Gift in your game. In any Poké Mart, fill in the questionnaire on the counter with **LINK TOGETHER WITH ALL** (you need your Pokédex), then save.
+2. **Save your game**, press **Esc** for the menu, then **Event gifts** (or **N**, then **Event gifts**), and **Open event** on the ticket you want. The game restarts at its title screen, with the Wireless Adapter.
+3. In the game: **MYSTERY GIFT**, **WONDER CARDS**, **WIRELESS COMMUNICATION**.
+4. Upstairs in any Pokémon Center, the deliveryman hands you the ticket. Show it at the Lilycove City harbor (after the Hall of Fame).
+
+The games hold one Wonder Card at a time, as they did then: collect a gift before receiving the next. Emerald (English) for now; how it works is in [decision 0008](docs/decisions/0008-event-gifts.md).
+
 ### GBA pictures for big screens
 
 | Look | |
@@ -103,6 +114,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0005 Online play](docs/decisions/0005-online-play.md)
   - [0006 Google Drive backup](docs/decisions/0006-drive-backup.md)
   - [0007 GBA games](docs/decisions/0007-gba.md)
+  - [0008 Event gifts](docs/decisions/0008-event-gifts.md)
 - **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
 - **Privacy policy and terms of use** (shared by every Wolfsbane app): [wolfsbanecompany.com/apps/privacy](https://wolfsbanecompany.com/apps/privacy/) and [/apps/terms](https://wolfsbanecompany.com/apps/terms/), from the website repository [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company)
 - **Waiting on the owner:** [`docs/open-questions.md`](docs/open-questions.md)
@@ -116,7 +128,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 | 2: Saves | **Working.** In-game saves stored in the library with history; imports from other emulators; `n64save` tool and converters |
 | 3: Google Drive sync | **Working.** Connect in the app, automatic backups (on close, hourly, at start), carrying on across computers with in-game saves, choosing when two computers both saved, offline retries, save states as a per-computer backup. Checked against a stand-in for Google with two Linux computers and a Windows one; waiting for the project's Google registration ([setup](docs/google-drive-setup.md)). Still to come: syncing settings, device-to-device sharing on a home network, optional encryption |
 | 4: Netplay | **Working.** Private groups with a shared key file and a relay on the group owner's free Cloudflare account (set up from inside the app), game codes, lockstep with game and version checks, an input delay that adjusts itself during the game, the host's save. Checked with Harvest Moon 64 and Super Smash Bros. between two copies on Linux and between Linux and Windows; not yet over the internet |
-| GBA | **Working.** gpSP core picked by the game's header, four looks for big screens, saves in the library with imports and Drive backup, link play over the relay (Pokémon link cable and Wireless Adapter). Checked with homebrew test ROMs; a real Pokémon trade over the internet is still to be tried |
+| GBA | **Working.** gpSP core picked by the game's header, three looks for big screens, saves in the library with imports and Drive backup, link play over the relay (Pokémon link cable and Wireless Adapter), event gifts for Emerald (the four island tickets, through the game's own Mystery Gift). Event gifts checked with Pokémon Emerald from the card to the deliveryman; a real Pokémon trade over the internet is still to be tried |
 | 5: Cartridge | Not started |
 
 ## Building from source

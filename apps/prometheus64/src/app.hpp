@@ -20,6 +20,7 @@
 #include "core.hpp"
 #include "input.hpp"
 #include "library.hpp"
+#include "gift_station.hpp"
 #include "link.hpp"
 #include "netplay.hpp"
 #include "settings.hpp"
@@ -66,7 +67,7 @@ class App {
  private:
   enum class Screen { Home, Playing };
   enum class Overlay { None, Menu, Seating, Help, Controls, Online, Backup };
-  enum class OnlinePage { Main, Setup, Join, Lobby, Link };
+  enum class OnlinePage { Main, Setup, Join, Lobby, Link, Events };
   enum class TextField { None, Name, Token, Code };
   struct Toast {
     std::string text;
@@ -139,6 +140,14 @@ class App {
   std::string link_mode(const Game& game) const;  // "cable", "wireless" or "auto"
   void host_link();
   void join_link();
+  // Event gifts (GBA Pokémon): the app as an event's distribution machine (gift_station.hpp).
+  std::vector<EventGift> events_for(const Game& game) const;
+  void open_event(const EventGift& gift);
+  void close_event();
+  void update_event();
+  // A link needs the link hardware the game was started with: restart it (keeping its progress)
+  // when an event left the Wireless Adapter in.
+  void ensure_link_hardware();
   void start_online_game();
   void end_online_game();  // host: end for everyone, keep playing; guest: leave
   void process_net_events();
@@ -243,6 +252,9 @@ class App {
   // Online play.
   Netplay net_;
   Link link_;
+  GiftStation gifts_;
+  std::string event_key_;  // the open event's gift ("aurora"); empty when none
+  GiftStation::Stage event_stage_ = GiftStation::Stage::Closed;
   OnlinePage online_page_ = OnlinePage::Main;
   TextField text_field_ = TextField::None;
   std::string name_input_, token_input_, code_input_, online_note_;

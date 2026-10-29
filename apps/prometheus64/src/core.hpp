@@ -74,6 +74,9 @@ class Core {
   bool hardware_rendering() const { return hw_requested_; }
   const retro_hw_render_callback& hw() const { return hw_; }
   retro_pixel_format pixel_format() const { return pixel_format_; }
+  // The console's memory at a bus address (GBA: 0x02000000 work RAM, 0x03000000 internal RAM), as
+  // the core maps it; nullptr when `size` bytes from there are not all in one mapped block.
+  uint8_t* memory(uint32_t address, std::size_t size);
   // The core's link-play interface (GBA: gpSP), or nullptr when it has none.
   const retro_netpacket_callback* netpacket() const { return netpacket_.start ? &netpacket_ : nullptr; }
 
@@ -97,6 +100,12 @@ class Core {
   bool hw_requested_ = false;
   retro_hw_render_callback hw_{};
   retro_netpacket_callback netpacket_{};
+  struct MemoryBlock {
+    uint8_t* ptr;
+    uint32_t start;
+    std::size_t len;
+  };
+  std::vector<MemoryBlock> memory_;  // from the core's memory map
   std::map<std::string, std::string> defaults_;   // from the core's option list
   std::map<std::string, std::string> overrides_;  // set by the app
   std::map<std::string, std::string> current_;    // what GET_VARIABLE hands out (stable storage)

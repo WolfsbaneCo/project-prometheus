@@ -125,6 +125,7 @@ std::string Core::open(const std::filesystem::path& library) {
   options_changed_ = false;
   hw_requested_ = false;
   netpacket_ = {};
+  memory_.clear();
   pixel_format_ = RETRO_PIXEL_FORMAT_0RGB1555;
   library_path_str_ = utf8(library);
   auto* so = SDL_LoadObject(library_path_str_.c_str());
@@ -231,6 +232,13 @@ void Core::unload_game() {
   remove_unpacked();
 }
 
+uint8_t* Core::memory(uint32_t address, std::size_t size) {
+  for (const MemoryBlock& b : memory_) {
+    if (address >= b.start && address - b.start + size <= b.len) return b.ptr + (address - b.start);
+  }
+  return nullptr;
+}
+
 void Core::context_reset() {
   if (hw_requested_ && hw_.context_reset) hw_.context_reset();
 }
@@ -305,7 +313,6 @@ bool Core::environment(unsigned cmd, void* data) {
     case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
     case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
     case RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS:
-    case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
       return true;
     case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
       *static_cast<const char**>(data) = system_dir_str_.c_str();
@@ -367,6 +374,15 @@ bool Core::environment(unsigned cmd, void* data) {
       // Link play (gpSP): the app's Link carries its packets between the players.
       const auto* cb = static_cast<const retro_netpacket_callback*>(data);
       netpacket_ = cb ? *cb : retro_netpacket_callback{};
+      return true;
+    }
+    case RETRO_ENVIRONMENT_SET_MEMORY_MAPS: {
+      memory_.clear();
+      const auto* map = static_cast<const retro_memory_map*>(data);
+      for (unsigned i = 0; map && i < map->num_descriptors; ++i) {
+        const retro_memory_descriptor& d = map->descriptors[i];
+        if (d.ptr && !d.select) memory_.push_back({static_cast<uint8_t*>(d.ptr) + d.offset, static_cast<uint32_t>(d.start), d.len});
+      }
       return true;
     }
     case RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE:

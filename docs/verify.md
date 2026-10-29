@@ -63,3 +63,11 @@ Checked with homebrew test ROMs (jsmolka gba-tests, a hello-world) on Linux and 
 - [ ] Trading between different games (Ruby with FireRed) and between regions.
 - [ ] Saves imported from other emulators (mGBA, VBA-M) for each save type: SRAM, flash 64 and 128 KB, EEPROM.
 - [ ] The real-time clock in Ruby, Sapphire and Emerald (berries, tides) follows the computer's clock.
+
+## Added by event gifts (see [0008](decisions/0008-event-gifts.md))
+
+Checked with Pokémon Emerald (USA, Europe) in the test bench and in the app: the card received and saved for each path (no card, the same card, another card replaced), and the Aurora Ticket handed over by the deliveryman with the ship flag set.
+
+- [ ] The Lilycove City harbor sailing to each island with each ticket, on a save past the Hall of Fame.
+- [ ] Mystery Gift unlocked in a real playthrough with the questionnaire (the test save had the flag set directly).
+- [ ] Sending a received card to a friend (the cards allow it), and other Emerald languages.

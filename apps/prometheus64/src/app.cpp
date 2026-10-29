@@ -411,7 +411,8 @@ void App::apply_core_options(const Game& game) {
     set("gpsp_rtc", "auto");         // the cartridge clock, for the games that have one
     set("gpsp_rtc_time_source", "system");  // follows the real time, as a cartridge's battery clock does
     // Link play: the cable or the Wireless Adapter (link_mode); other games' links as gpSP knows them.
-    const std::string link = link_mode(game);
+    // An open event needs the Wireless Adapter: that's how the game reaches a distribution machine.
+    const std::string link = event_key_.empty() ? link_mode(game) : "wireless";
     set("gpsp_serial", link == "cable" ? "mul_poke" : link == "wireless" ? "rfu" : "auto");
     set("gpsp_rumble", "1");
     set("gpsp_frameskip", "disabled");
@@ -539,6 +540,7 @@ bool App::start_game(const Game& game) {
 
 void App::stop_game() {
   if (!game_) return;
+  close_event();  // an event belongs to the game too
   if (link_.active()) {
     link_.leave();  // the link belongs to the game
     toast("Link ended");
@@ -593,6 +595,7 @@ void App::restart_game_keep_progress() {
     core_.context_reset();
   }
   if (uint8_t* r = core_.save_ram(); r && ram.size() == core_.save_ram_size()) std::memcpy(r, ram.data(), ram.size());
+  if (gifts_.is_open()) gifts_.attach(core_.netpacket());
   core_.run();  // let the core settle before restoring
   if (!core_.load_state(state)) toast("Picture changed. The game restarted from your last save");
 }
@@ -1011,6 +1014,7 @@ void App::loop() {
     }
     process_backup();
     if (game_) run_frames();
+    update_event();
     audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host()) && !link_.active()));
     draw();
     ++frames_drawn;
@@ -1352,6 +1356,7 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Fullscreen", fullscreen_ ? "On" : "Off", kFullscreenItem, "F11"},
       {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers, "F10"},
       {"Controls", "", kControlsItem},
+      {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
       {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
       {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
   };
@@ -1361,12 +1366,14 @@ std::vector<App::MenuItem> App::menu_items() const {
     std::vector<MenuItem> gba;
     for (MenuItem& it : items) {
       if (it.id == kTextures || it.id == kResolution || it.id == kOverscan) continue;
+      if (it.id == kEventsItem && events_for(*game_).empty()) continue;
       if (it.id == kPicture) it.value = g.name;
       if (it.id == kFill && look.fill == FillMode::Fit) it.value = "Fit (3:2)";
       gba.push_back(std::move(it));
     }
     return gba;
   }
+  items.erase(std::remove_if(items.begin(), items.end(), [](const MenuItem& it) { return it.id == kEventsItem; }), items.end());
   return items;
 }
 
@@ -1485,6 +1492,12 @@ void App::menu_change(int id, int dir) {
       break;
     case kControlsItem:
       if (dir == 0) open_controls();
+      break;
+    case kEventsItem:
+      if (dir == 0) {
+        open_online();
+        online_page_ = OnlinePage::Events;
+      }
       break;
     case kReset:
       if (dir == 0) {
