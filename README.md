@@ -20,9 +20,14 @@ The **mouse** works everywhere: click a game to pick it and double-click to play
 | N (in the library) | Play online with friends in your group |
 | F2 / F3 | Next fill mode / next picture preset |
 | F5 / F7 / F6 | Save state / load state / next state slot |
+| F8 / F9 | Volume down / up |
 | F10 | Who's playing: seat controllers and keyboards for up to 4 players |
 | F11 or Alt+Enter | Fullscreen |
 | F12 | Screenshot |
+| Ctrl+R | Reset the game |
+| F1 | All controls and shortcuts |
+
+The quick menu shows each item's shortcut next to it, and the shortcuts work while the menu is open too.
 
 **Keyboard (one player), by default:** arrows move, X = A, C = B, Z = Z, Enter = Start, A/S = L/R, I/J/K/L = C buttons, T/F/G/H = D-pad, Shift = walk. Two players can share one keyboard: the left half (WASD) and the right half (arrows) each become a controller from "Who's playing".
 

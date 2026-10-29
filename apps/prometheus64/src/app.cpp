@@ -1003,8 +1003,15 @@ bool App::handle_hotkey(const SDL_Event& e) {
     default:
       break;
   }
-  if (!game_ || overlay_ != Overlay::None) return false;
+  // The game's shortcuts work while playing and in its menu (which shows them).
+  if (!game_ || (overlay_ != Overlay::None && overlay_ != Overlay::Menu)) return false;
   switch (e.key.scancode) {
+    case SDL_SCANCODE_F8:
+    case SDL_SCANCODE_F9:
+      menu_change(kVolume, e.key.scancode == SDL_SCANCODE_F9 ? 1 : -1);
+      settings_.save();
+      toast("Volume " + std::to_string(settings_.get_int("volume", 80)) + "%", 2);
+      return true;
     case SDL_SCANCODE_F2:
       menu_change(kFill, 1);
       return true;
@@ -1165,20 +1172,20 @@ std::vector<App::MenuItem> App::menu_items() const {
   const bool gliden = std::string(kPresets[preset].rdp) == "gliden64";
   const bool online = online_game_ && net_.active();
   return {
-      {"Resume", "", kResume},
-      {"Save state", online ? "off online" : "slot " + std::to_string(slot_), kSaveState},
-      {"Load state", online ? "off online" : "slot " + std::to_string(slot_), kLoadState},
-      {"State slot", std::to_string(slot_), kSlot},
-      {"Picture", kPresets[preset].name, kPicture},
+      {"Resume", "", kResume, "Esc"},
+      {"Save state", online ? "off online" : "slot " + std::to_string(slot_), kSaveState, "F5"},
+      {"Load state", online ? "off online" : "slot " + std::to_string(slot_), kLoadState, "F7"},
+      {"State slot", std::to_string(slot_), kSlot, "F6"},
+      {"Picture", kPresets[preset].name, kPicture, "F3"},
       {"Textures", gliden ? kTextureNames[texture_look(id)] : "Set by the picture style", kTextures},
-      {"Fill mode", fill_mode_name(look.fill), kFill},
+      {"Fill mode", fill_mode_name(look.fill), kFill, "F2"},
       {"Resolution", res, kResolution},
       {"Overscan crop", std::to_string(static_cast<int>(std::lround(look.overscan * 100))) + "%", kOverscan},
-      {"Volume", std::to_string(settings_.get_int("volume", 80)) + "%", kVolume},
-      {"Fullscreen", fullscreen_ ? "On" : "Off", kFullscreenItem},
-      {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers},
+      {"Volume", std::to_string(settings_.get_int("volume", 80)) + "%", kVolume, "F8/F9"},
+      {"Fullscreen", fullscreen_ ? "On" : "Off", kFullscreenItem, "F11"},
+      {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers, "F10"},
       {"Controls", "", kControlsItem},
-      {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset},
+      {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
       {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
   };
 }
@@ -1449,7 +1456,7 @@ void App::draw_menu() {
   const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_), H = static_cast<float>(out_h_);
   ui_.rect(0, 0, W, H, rgb(0x000000, 0.55f));
   const auto items = menu_items();
-  const float row = 50 * s, pw = 620 * s, ph = 150 * s + items.size() * row + 50 * s;
+  const float row = 50 * s, pw = 660 * s, ph = 150 * s + items.size() * row + 70 * s;
   const float px = (W - pw) / 2, py = std::max(20 * s, (H - ph) / 2);
   ui_.rect(px, py, pw, ph, kPanel.with_alpha(0.97f), 24 * s);
   ui_.outline(px, py, pw, ph, rgb(0xFFFFFF, 0.06f), 24 * s, 1.5f * s);
@@ -1467,7 +1474,13 @@ void App::draw_menu() {
     }
     add_hit(px + 18 * s, y, pw - 36 * s, row - 6 * s, kHitMenuRow, i);
     const bool off = items[i].value == "off online";  // brief 11.4: shown greyed out while online
-    ui_.text(px + 40 * s, y + 11 * s, items[i].label, 21 * s, off ? kFaint : sel ? kText : kText.with_alpha(0.82f), sel);
+    const float label_w = ui_.text(px + 40 * s, y + 11 * s, items[i].label, 21 * s, off ? kFaint : sel ? kText : kText.with_alpha(0.82f), sel);
+    if (!items[i].key.empty()) {
+      // The shortcut, as a small key cap after the label: it works while playing, and here too.
+      const float kx = px + 40 * s + label_w + 14 * s, kw = ui_.measure(items[i].key, 15 * s, true) + 16 * s;
+      ui_.rect(kx, y + 11 * s, kw, 26 * s, rgb(0xFFFFFF, sel ? 0.14f : 0.07f), 7 * s);
+      ui_.text(kx + 8 * s, y + 15 * s, items[i].key, 15 * s, off ? kFaint : sel ? kText : kDim, true);
+    }
     if (!items[i].value.empty()) {
       const bool adjustable = items[i].id >= kSlot && items[i].id <= kVolume;
       if (adjustable && sel) {
@@ -1486,8 +1499,10 @@ void App::draw_menu() {
     }
     y += row;
   }
-  ui_.text(px + pw / 2, py + ph - 42 * s, "Up/Down or W/S choose     Left/Right change     Enter select     Esc back     Mouse: click",
+  ui_.text(px + pw / 2, py + ph - 56 * s, "Up/Down or W/S choose     Left/Right change     Enter select     Esc back     Mouse: click",
            16 * s, kFaint, false, Align::Center);
+  ui_.text(px + pw / 2, py + ph - 32 * s, "F12 screenshot     F1 all controls and shortcuts", 16 * s, kFaint, false,
+           Align::Center);
 }
 
 void App::draw_seating() {
@@ -1561,8 +1576,8 @@ void App::draw_help() {
   };
   const Row hotkeys[] = {
       {"Esc", "Menu"}, {"F11 / Alt+Enter", "Fullscreen"}, {"F2", "Next fill mode"}, {"F3", "Next picture style"},
-      {"F5 / F7", "Save / load state"}, {"F6", "Next state slot"}, {"F10", "Who's playing"}, {"F12", "Screenshot"},
-      {"Ctrl+R", "Reset"},
+      {"F5 / F7", "Save / load state"}, {"F6", "Next state slot"}, {"F8 / F9", "Volume down / up"},
+      {"F10", "Who's playing"}, {"F12", "Screenshot"}, {"Ctrl+R", "Reset"},
   };
   auto column = [&](float x, const char* title, const Row* rows, int n) {
     float y = py + 100 * s;
@@ -1576,7 +1591,7 @@ void App::draw_help() {
   };
   column(px + 40 * s, "Keyboard", keyboard, 8);
   column(px + pw / 3 + 20 * s, "Controller", pad, 7);
-  column(px + 2 * pw / 3, "Shortcuts", hotkeys, 9);
+  column(px + 2 * pw / 3, "Shortcuts", hotkeys, 10);
   ui_.text(px + 40 * s, py + ph - 122 * s,
            "Change any key or button on the Controls screen: press C in the library, or Menu > Controls.", 18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 90 * s,

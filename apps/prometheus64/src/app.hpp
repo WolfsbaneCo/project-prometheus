@@ -72,6 +72,7 @@ class App {
   struct MenuItem {
     std::string label, value;
     int id;
+    std::string key = {};  // its keyboard shortcut, shown next to it
   };
   // A clickable area, recorded while drawing and tested against the mouse on the next events.
   struct Hit {
