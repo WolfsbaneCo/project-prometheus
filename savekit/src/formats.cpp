@@ -36,6 +36,8 @@ std::vector<Role> roles_for(Format format) {
       for (Memory m : kAllMemories) {
         roles.push_back({std::string(memory_key(m)) + ".bin", memory_size(m), {{m, 0, false}}, false});
       }
+      // The library also holds GBA saves this way (Memories/GBA/<game>/current/canonical/).
+      roles.push_back({std::string(memory_key(Memory::GbaSave)) + ".bin", kGbaSaveSize, {{Memory::GbaSave, 0, false}}, false});
       break;
     case Format::Project64:
       roles.push_back({".eep", kEepromSize, {{Memory::Eeprom, 0, false}}, true});

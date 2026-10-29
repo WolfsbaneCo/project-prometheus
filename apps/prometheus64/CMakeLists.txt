@@ -13,6 +13,7 @@ FetchContent_MakeAvailable(SDL3)
 
 add_subdirectory(archives)
 add_subdirectory(net)
+add_subdirectory(third_party/gpsp)
 
 # The relay's code, built into the app so it can install it on a player's Cloudflare account.
 file(READ "${PROJECT_SOURCE_DIR}/relay/src/index.js" P64_RELAY_JS)
@@ -52,6 +53,14 @@ target_compile_definitions(prometheus64 PRIVATE P64_GOOGLE_CLIENT_ID="${P64_GOOG
 target_include_directories(prometheus64 PRIVATE src third_party/libretro third_party/stb
                            "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_archive p64_curl p64_warnings)
+# The GBA core is built with the app and goes in "cores" next to it (the N64 core is put there by
+# tools/build-core-windows.sh, or by hand on other systems).
+add_dependencies(prometheus64 gpsp_libretro)
+add_custom_command(TARGET prometheus64 POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:prometheus64>/cores"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:gpsp_libretro>" "$<TARGET_FILE_DIR:prometheus64>/cores/"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_BINARY_DIR}/third_party/gpsp/GBA-CORE-SOURCE.txt"
+          "$<TARGET_FILE_DIR:prometheus64>/cores/")
 
 # Online play without the emulator: two players in one process, through a relay, at the game's
 # speed. Measures pauses and delays from the network alone (tools/netsim.cpp). Not built by default:

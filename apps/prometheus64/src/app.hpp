@@ -205,7 +205,17 @@ class App {
   Input input_;
   Ui ui_;
   Settings settings_;
-  std::filesystem::path pref_dir_, assets_dir_, library_dir_, core_path_;
+  std::filesystem::path pref_dir_, assets_dir_, library_dir_, gba_library_dir_;
+  // Each console's emulator core; the one loaded now. Between games the N64 core is loaded (online
+  // play compares its version).
+  std::filesystem::path n64_core_path_, gba_core_path_;
+  System loaded_system_ = System::N64;
+  // Loads `system`'s core unless it is loaded already. Returns an error message, or empty.
+  std::string use_core(System system);
+  // Where a console's saves live: Memories\N64, Memories\GBA.
+  const std::filesystem::path& library_for(System system) const {
+    return system == System::GBA ? gba_library_dir_ : library_dir_;
+  }
   std::vector<Game> games_;
   int selected_ = 0;
   std::optional<Game> game_;

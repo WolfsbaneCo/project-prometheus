@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 
@@ -11,6 +12,9 @@
 namespace fs = std::filesystem;
 
 namespace p64 {
+
+const char* system_name(System s) { return s == System::GBA ? "GBA" : "N64"; }
+
 namespace {
 
 std::string lower(std::string s) {
@@ -33,8 +37,10 @@ std::string region_name(unsigned char code) {
   }
 }
 
-// The largest N64 cartridge is 64 MB; anything bigger in an archive is not a game.
+// The largest N64 cartridge is 64 MB (GBA: 32 MB); anything bigger in an archive is not a game.
 constexpr std::size_t kMaxGameSize = 64u << 20;
+// Bytes read from the start of each file to recognise it: the GBA header ends at 0xC0.
+constexpr std::size_t kHeadSize = 0xC0;
 
 std::string display_title(const fs::path& file) {
   std::string t = file.stem().string();
@@ -44,16 +50,44 @@ std::string display_title(const fs::path& file) {
 
 bool has_game_extension(const fs::path& file) {
   const std::string ext = lower(file.extension().string());
-  return ext == ".z64" || ext == ".n64" || ext == ".v64";
+  return ext == ".z64" || ext == ".n64" || ext == ".v64" || ext == ".gba" || ext == ".agb";
 }
 
-// Fills `out` from a game's first 64 bytes. Returns false when they are not an N64 ROM header.
+// A GBA cartridge header: title at 0xA0, game code at 0xAC, the fixed value 0x96 at 0xB2 and a
+// checksum of 0xA0-0xBC at 0xBD. Checking both rules out other files that happen to fit.
+bool describe_gba(const savekit::Bytes& head, Game& out) {
+  if (head.size() < kHeadSize || head[0xB2] != 0x96) return false;
+  unsigned sum = 0;
+  for (std::size_t i = 0xA0; i <= 0xBC; ++i) sum += head[i];
+  if (static_cast<uint8_t>(-static_cast<int>(sum) - 0x19) != head[0xBD]) return false;
+  auto text = [&](std::size_t at, std::size_t n) {
+    std::string s;
+    for (std::size_t i = at; i < at + n && head[i]; ++i) s += static_cast<char>(head[i] >= 0x20 && head[i] < 0x7F ? head[i] : '_');
+    while (!s.empty() && s.back() == ' ') s.pop_back();
+    return s;
+  };
+  const std::string code = text(0xAC, 4);
+  char tail[16];
+  std::snprintf(tail, sizeof tail, "-%02X-%02X", head[0xBC], head[0xBD]);
+  out.system = System::GBA;
+  out.internal_name = text(0xA0, 12);
+  out.id = "AGB-" + (code.empty() ? std::string("XXXX") : code) + tail;
+  out.region = code.size() == 4 ? region_name(static_cast<unsigned char>(code[3])) : "";
+  return true;
+}
+
+// Fills `out` from a game's first bytes. Returns false when they are not an N64 or GBA header.
 bool describe(const savekit::Bytes& head, const fs::path& path, const std::string& entry, Game& out) {
-  auto h = savekit::parse_rom_header(head);
-  if (!h) return false;
   out.path = path;
   out.entry = entry;
   out.title = display_title(entry.empty() ? path : fs::path(std::u8string(entry.begin(), entry.end())).filename());
+  if (describe_gba(head, out)) {
+    if (out.internal_name.empty()) out.internal_name = out.title;
+    return true;
+  }
+  auto h = savekit::parse_rom_header(savekit::Bytes(head.begin(), head.begin() + std::min<std::size_t>(head.size(), 0x40)));
+  if (!h) return false;
+  out.system = System::N64;
   out.internal_name = h->internal_name.empty() ? out.title : h->internal_name;
   out.id = h->game_id();
   out.region = region_name(h->country);
@@ -70,7 +104,7 @@ std::vector<Game> read_games(const fs::path& file, std::string* error) {
   if (archive::is_archive(file)) {
     // Every file in the archive is checked by its header, whatever its name: archives often hold
     // a game under a .bin or .rom name, next to a readme.
-    const std::string err = archive::scan(file, 0x40, [&](const archive::Entry& e, const std::vector<uint8_t>& head) {
+    const std::string err = archive::scan(file, kHeadSize, [&](const archive::Entry& e, const std::vector<uint8_t>& head) {
       if (e.size > static_cast<int64_t>(kMaxGameSize)) return true;
       Game g;
       if (describe(head, file, e.name, g)) games.push_back(std::move(g));
@@ -83,10 +117,11 @@ std::vector<Game> read_games(const fs::path& file, std::string* error) {
     return games;
   }
   std::ifstream in(file, std::ios::binary);
-  savekit::Bytes head(0x40);
+  savekit::Bytes head(kHeadSize);
   in.read(reinterpret_cast<char*>(head.data()), static_cast<std::streamsize>(head.size()));
+  head.resize(static_cast<std::size_t>(in.gcount()));
   Game g;
-  if (in && describe(head, file, {}, g)) games.push_back(std::move(g));
+  if (head.size() >= 0x40 && describe(head, file, {}, g)) games.push_back(std::move(g));
   return games;
 }
 

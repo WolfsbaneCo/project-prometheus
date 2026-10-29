@@ -117,7 +117,7 @@ bool App::init(std::string& error) {
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
   load_group_key();
-  // Saves for every console share one folder: Memories\N64 now, Memories\GBA later.
+  // Saves for every console share one folder: Memories\N64, Memories\GBA.
   // Earlier versions used Documents\N64 Saves; a computer that has it keeps using it (nothing moves).
   const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
   const fs::path docs_dir = docs ? from_utf8(docs) : pref_dir_;
@@ -125,6 +125,11 @@ bool App::init(std::string& error) {
   const fs::path default_library = fs::is_directory(docs_dir / "N64 Saves", lib_ec) ? docs_dir / "N64 Saves"
                                                                                      : docs_dir / "Memories" / "N64";
   library_dir_ = from_utf8(settings_.get("library", utf8(default_library)));
+  // GBA saves sit next to the N64 ones (Memories\GBA), or in Documents\Memories\GBA when the N64
+  // library is somewhere else (the earlier N64 Saves folder).
+  const fs::path default_gba = library_dir_.filename() == "N64" ? library_dir_.parent_path() / "GBA"
+                                                                 : docs_dir / "Memories" / "GBA";
+  gba_library_dir_ = from_utf8(settings_.get("gba_library", utf8(default_gba)));
   slot_ = std::clamp(settings_.get_int("state_slot", 1), 1, 10);
 
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -163,17 +168,18 @@ bool App::init(std::string& error) {
   std::error_code ec;
   fs::create_directories(core_.system_dir, ec);
   fs::create_directories(core_.save_dir, ec);
-  fs::path core_path = opt_.core;
-  if (core_path.empty()) {
-    const fs::path base = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "");
+  // One emulator core per console, in "cores" next to the program.
+  const fs::path base = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "");
 #if defined(_WIN32)
-    core_path = base / "cores" / "mupen64plus_next_libretro.dll";
+  const char* ext = ".dll";
 #elif defined(__APPLE__)
-    core_path = base / "cores" / "mupen64plus_next_libretro.dylib";
+  const char* ext = ".dylib";
 #else
-    core_path = base / "cores" / "mupen64plus_next_libretro.so";
+  const char* ext = ".so";
 #endif
-  }
+  n64_core_path_ = opt_.core.empty() ? base / "cores" / (std::string("mupen64plus_next_libretro") + ext) : opt_.core;
+  gba_core_path_ = base / "cores" / (std::string("gpsp_libretro") + ext);
+  const fs::path core_path = n64_core_path_;
   core_.hooks.video = [this](const void* data, unsigned w, unsigned h, std::size_t pitch) {
     static const bool debug = SDL_getenv("P64_DEBUG") != nullptr;
     static int logged = 0;
@@ -242,7 +248,7 @@ bool App::init(std::string& error) {
   core_.hooks.geometry_changed = [this] {
     video_.prepare_target(core_.av().geometry.max_width, core_.av().geometry.max_height);
   };
-  core_path_ = core_path;
+  loaded_system_ = System::N64;
   error = core_.open(core_path);
   if (!error.empty()) {
     error += "\n\nExpected the emulator core at:\n" + utf8(core_path) + "\n\nReinstalling Project Prometheus fixes this.";
@@ -362,6 +368,22 @@ int App::texture_look(const std::string& id) const {
 }
 
 void App::apply_core_options(const Game& game) {
+  if (game.system == System::GBA) {
+    auto set = [&](const char* key, const std::string& value) { core_.set_option(key, value); };
+    set("gpsp_bios", "auto");        // the player's own gba_bios.bin in the system folder, else the open BIOS
+    set("gpsp_boot_mode", "game");   // straight into the game, like inserting a cartridge
+    set("gpsp_drc", "enabled");
+    set("gpsp_rtc", "auto");         // the cartridge clock, for the games that have one
+    set("gpsp_rtc_time_source", "system");  // follows the real time, as a cartridge's battery clock does
+    set("gpsp_serial", "auto");      // link play: picks the cable mode or the Wireless Adapter by game
+    set("gpsp_rumble", "1");
+    set("gpsp_frameskip", "disabled");
+    for (const auto& o : opt_.core_options) {  // test mode: "--option key=value" overrides
+      const auto eq = o.find('=');
+      if (eq != std::string::npos) set(o.substr(0, eq).c_str(), o.substr(eq + 1));
+    }
+    return;
+  }
   const PresetDef& p = kPresets[std::clamp(settings_.game_int(game.id, "preset", 0), 0, 3)];
   const bool widescreen = fill_mode(&game) == static_cast<int>(FillMode::Widescreen);
   auto set = [&](const char* key, const std::string& value) { core_.set_option(std::string(kOpt) + key, value); };
@@ -416,8 +438,28 @@ void App::apply_core_options(const Game& game) {
   }
 }
 
+std::string App::use_core(System system) {
+  if (system == loaded_system_ && core_.info().library_name) return {};
+  core_.close();
+  const fs::path& path = system == System::GBA ? gba_core_path_ : n64_core_path_;
+  std::string err = core_.open(path);
+  if (!err.empty()) {
+    // Put the previous core back, so the app stays usable.
+    core_.open(loaded_system_ == System::GBA ? gba_core_path_ : n64_core_path_);
+    return std::string("the ") + system_name(system) + " emulator core is missing (" + utf8(path) +
+           "). Reinstalling Project Prometheus fixes this";
+  }
+  loaded_system_ = system;
+  return {};
+}
+
 bool App::start_game(const Game& game) {
   if (game_) stop_game();
+  if (const std::string err = use_core(game.system); !err.empty()) {
+    toast("Could not start " + game.title + ": " + err, 8);
+    return false;
+  }
+  input_.set_gba(game.system == System::GBA);
   apply_core_options(game);
   const std::string err = load_into(core_, game);
   if (!err.empty()) {
@@ -463,7 +505,10 @@ void App::stop_game() {
   guest_save_.clear();
   core_.context_destroy();
   core_.close();
-  if (const std::string err = core_.open(core_path_); !err.empty()) toast(err, 8);
+  // Between games the N64 core is loaded (a core can't start a second game in one session).
+  loaded_system_ = System::N64;
+  if (const std::string err = core_.open(n64_core_path_); !err.empty()) toast(err, 8);
+  input_.set_gba(false);
   audio_.close();
   video_.clear_frame();
   game_.reset();
@@ -485,7 +530,7 @@ void App::restart_game_keep_progress() {
   // This core cannot start a second game in one session, so reload the core library itself
   // (as RetroArch does when it restarts a core).
   core_.close();
-  if (!core_.open(core_path_).empty()) {
+  if (!core_.open(game.system == System::GBA ? gba_core_path_ : n64_core_path_).empty()) {
     toast("Could not restart the emulator core");
     game_.reset();
     screen_ = Screen::Home;
@@ -534,6 +579,22 @@ void App::load_game_save() {
   last_saved_ram_.clear();
   pending_ram_.clear();
   uint8_t* ram = core_.save_ram();
+  if (game_->system == System::GBA) {
+    if (!ram || core_.save_ram_size() != savekit::kGbaSaveSize) return;
+    try {
+      if (auto saved = savekit::load_current(gba_library_dir_, game_->internal_name)) {
+        auto it = saved->memories.find(savekit::Memory::GbaSave);
+        if (it != saved->memories.end() && it->second.size() == savekit::kGbaSaveSize) {
+          std::memcpy(ram, it->second.data(), savekit::kGbaSaveSize);
+          toast("Loaded your saved progress");
+        }
+      }
+    } catch (const std::exception& e) {
+      toast(std::string("Could not load the save: ") + e.what(), 6);
+    }
+    last_saved_ram_.assign(ram, ram + savekit::kGbaSaveSize);
+    return;
+  }
   if (!ram || core_.save_ram_size() != kSrmSize) return;
   try {
     if (auto saved = savekit::load_current(library_dir_, game_->internal_name)) {
@@ -556,8 +617,10 @@ void App::load_game_save() {
 void App::sync_game_save(bool force) {
   if (guest_session_) return;  // the host keeps the save of an online game
   uint8_t* ram = core_.save_ram();
-  if (!game_ || !ram || core_.save_ram_size() != kSrmSize) return;
-  std::vector<uint8_t> now(ram, ram + kSrmSize);
+  const bool gba = game_ && game_->system == System::GBA;
+  const std::size_t size = gba ? savekit::kGbaSaveSize : kSrmSize;
+  if (!game_ || !ram || core_.save_ram_size() != size) return;
+  std::vector<uint8_t> now(ram, ram + size);
   if (now == last_saved_ram_) {
     pending_ram_.clear();
     return;
@@ -571,9 +634,18 @@ void App::sync_game_save(bool force) {
   if (!force && frame_count_ - pending_since_frame_ < 60) return;
   try {
     savekit::StoreOptions o;
-    o.library = library_dir_;
+    o.library = library_for(game_->system);
     o.game = game_->internal_name;
-    o.save = savekit::decode(savekit::Format::RetroArchMupen64PlusNext, {{".srm", savekit::Bytes(now)}}).save;
+    if (gba) {
+      // Never written (all 0xFF, as the core starts it): nothing to keep.
+      if (std::all_of(now.begin(), now.end(), [](uint8_t b) { return b == 0xFF; })) {
+        last_saved_ram_ = now;
+        return;
+      }
+      o.save.memories[savekit::Memory::GbaSave] = savekit::Bytes(now);
+    } else {
+      o.save = savekit::decode(savekit::Format::RetroArchMupen64PlusNext, {{".srm", savekit::Bytes(now)}}).save;
+    }
     // The core formats every Controller Pak; only keep the ones that hold notes.
     for (auto m : {savekit::Memory::ControllerPak1, savekit::Memory::ControllerPak2, savekit::Memory::ControllerPak3,
                    savekit::Memory::ControllerPak4}) {
@@ -593,7 +665,7 @@ void App::sync_game_save(bool force) {
 }
 
 fs::path App::state_path(int slot) const {
-  return library_dir_ / game_->internal_name / "states" / ("slot" + std::to_string(slot) + ".state");
+  return library_for(game_->system) / game_->internal_name / "states" / ("slot" + std::to_string(slot) + ".state");
 }
 
 void App::save_state() {
@@ -1458,7 +1530,7 @@ void App::draw_home() {
     }
     std::string meta = g.region.empty() ? g.internal_name : g.region;
     ui_.text(x + 22 * s, y + tile_h - 44 * s, ui_.fit(meta, 18 * s, tile_w - 150 * s), 18 * s, kDim);
-    if (fs::is_directory(library_dir_ / g.internal_name / "current", ec)) {
+    if (fs::is_directory(library_for(g.system) / g.internal_name / "current", ec)) {
       const float cw = ui_.measure("Saved progress", 15 * s) + 24 * s;
       ui_.rect(x + tile_w - cw - 18 * s, y + tile_h - 48 * s, cw, 30 * s, kRed.with_alpha(0.18f), 15 * s);
       ui_.text(x + tile_w - cw / 2 - 18 * s, y + tile_h - 42 * s, "Saved progress", 15 * s, rgb(0xFF8F8A), false,

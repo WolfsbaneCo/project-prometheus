@@ -19,8 +19,12 @@ enum class Memory {
   ControllerPak2,
   ControllerPak3,
   ControllerPak4,
+  // A GBA cartridge's save (SRAM, Flash or EEPROM, whichever the game uses), as gpSP holds it: one
+  // 128 KB block, the largest GBA save. Not in kAllMemories, which lists the N64's memories.
+  GbaSave,
 };
 
+// The N64's memories (every N64 save format holds a selection of these).
 inline constexpr std::array<Memory, 7> kAllMemories = {
     Memory::Eeprom,         Memory::Sram,           Memory::FlashRam,       Memory::ControllerPak1,
     Memory::ControllerPak2, Memory::ControllerPak3, Memory::ControllerPak4,
@@ -33,6 +37,7 @@ inline constexpr std::size_t kEeprom4kUsed = 0x200;
 inline constexpr std::size_t kSramSize = 0x8000;
 inline constexpr std::size_t kFlashRamSize = 0x20000;
 inline constexpr std::size_t kControllerPakSize = 0x8000;
+inline constexpr std::size_t kGbaSaveSize = 0x20000;
 
 std::size_t memory_size(Memory memory);
 

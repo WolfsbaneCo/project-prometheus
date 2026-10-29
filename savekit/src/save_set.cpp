@@ -7,6 +7,7 @@ std::size_t memory_size(Memory memory) {
     case Memory::Eeprom: return kEepromSize;
     case Memory::Sram: return kSramSize;
     case Memory::FlashRam: return kFlashRamSize;
+    case Memory::GbaSave: return kGbaSaveSize;
     default: return kControllerPakSize;
   }
 }
@@ -24,6 +25,7 @@ std::string_view memory_key(Memory memory) {
     case Memory::ControllerPak2: return "controller_pak_2";
     case Memory::ControllerPak3: return "controller_pak_3";
     case Memory::ControllerPak4: return "controller_pak_4";
+    case Memory::GbaSave: return "gba_save";
   }
   return "unknown";
 }

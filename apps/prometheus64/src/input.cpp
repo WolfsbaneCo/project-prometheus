@@ -310,6 +310,26 @@ void Input::test_press(int player, const std::string& button, bool down) {
 int16_t Input::retro_state(unsigned port, unsigned device, unsigned index, unsigned id) const {
   if (port >= kPlayers) return 0;
   const PadState& st = overriding_ ? overrides_[port] : state_[port];
+  if (gba_) {
+    // A GBA: A and B, L and R, Start as on the N64 controls; Select on Z (the keyboard's Z, a
+    // controller's triggers); the +Control Pad on the D-pad and on the stick (the arrow keys).
+    if (device != RETRO_DEVICE_JOYPAD) return 0;
+    auto on = [&](int b) { return (st.buttons & (1u << b)) != 0; };
+    uint16_t mask = 0;
+    auto put = [&](unsigned id, bool v) { if (v) mask |= static_cast<uint16_t>(1u << id); };
+    put(RETRO_DEVICE_ID_JOYPAD_A, on(kA));
+    put(RETRO_DEVICE_ID_JOYPAD_B, on(kB));
+    put(RETRO_DEVICE_ID_JOYPAD_L, on(kL));
+    put(RETRO_DEVICE_ID_JOYPAD_R, on(kR));
+    put(RETRO_DEVICE_ID_JOYPAD_START, on(kStart));
+    put(RETRO_DEVICE_ID_JOYPAD_SELECT, on(kZ));
+    put(RETRO_DEVICE_ID_JOYPAD_UP, on(kDUp) || st.y < -0.3f);
+    put(RETRO_DEVICE_ID_JOYPAD_DOWN, on(kDDown) || st.y > 0.3f);
+    put(RETRO_DEVICE_ID_JOYPAD_LEFT, on(kDLeft) || st.x < -0.3f);
+    put(RETRO_DEVICE_ID_JOYPAD_RIGHT, on(kDRight) || st.x > 0.3f);
+    if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return static_cast<int16_t>(mask);
+    return (mask >> id) & 1 ? 1 : 0;
+  }
   if (device == RETRO_DEVICE_JOYPAD) {
     uint16_t mask = 0;
     for (int b = 0; b < kButtonCount; ++b) {

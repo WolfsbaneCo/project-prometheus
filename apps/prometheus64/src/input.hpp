@@ -68,6 +68,8 @@ class Input {
   // Online play: the emulator reads these instead of the local devices.
   void set_overrides(bool on) { overriding_ = on; }
   void set_override(int port, const PadState& pad) { overrides_[port] = pad; }
+  // GBA games: the same controls, handed to the core as a GBA's buttons (see retro_state).
+  void set_gba(bool on) { gba_ = on; }
   bool rumble(unsigned port, bool strong, uint16_t strength);
 
   void start_seating();  // "Who's playing": seated players stay, free seats can be claimed
@@ -125,6 +127,7 @@ class Input {
   bool seating_ = false;
   bool overriding_ = false;
   std::array<PadState, kPlayers> overrides_{};
+  bool gba_ = false;
   std::vector<std::string> notices_;
 };
 
