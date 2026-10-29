@@ -55,6 +55,17 @@ const PresetDef kPresets[] = {
 
 
 // A Controller Pak holds a game's data when its note table (pages 3-4) names a game.
+// Games whose 2D parts (text, text boxes, fades) are drawn for a 4:3 screen, so the widescreen
+// trick, which widens only the 3D world, cuts and misplaces them. Harvest Moon 64: a fade covers
+// only the middle, letters go missing from the yes/no choices. By the name in the game's header.
+bool widescreen_breaks(const std::string& internal_name) {
+  static const char* const kNames[] = {"HARVESTMOON64"};
+  for (const char* n : kNames) {
+    if (internal_name == n) return true;
+  }
+  return false;
+}
+
 bool pak_has_notes(const savekit::Bytes& pak) {
   for (std::size_t at = 0x300; at + 32 <= 0x500 && at + 32 <= pak.size(); at += 32) {
     if (pak[at] || pak[at + 1] || pak[at + 2] || pak[at + 3]) return true;
@@ -350,7 +361,7 @@ int App::texture_look(const std::string& id) const {
 
 void App::apply_core_options(const Game& game) {
   const PresetDef& p = kPresets[std::clamp(settings_.game_int(game.id, "preset", 0), 0, 3)];
-  const bool widescreen = settings_.game(game.id, "fill", "") == std::to_string(static_cast<int>(FillMode::Widescreen));
+  const bool widescreen = fill_mode(&game) == static_cast<int>(FillMode::Widescreen);
   auto set = [&](const char* key, const std::string& value) { core_.set_option(std::string(kOpt) + key, value); };
   set("rdp-plugin", settings_.get("renderer", p.rdp));
   set("rsp-plugin", settings_.get("renderer", p.rdp) == std::string("gliden64") ? "hle" : p.rsp);
@@ -494,11 +505,17 @@ void App::restart_game_keep_progress() {
   if (!core_.load_state(state)) toast("Picture changed. The game restarted from your last save");
 }
 
+int App::fill_mode(const Game* game) const {
+  const int f = std::clamp(settings_.game_int(game ? game->id : "", "fill", 0), 0, static_cast<int>(FillMode::Count) - 1);
+  const bool breaks = game && widescreen_breaks(game->internal_name);
+  return f == static_cast<int>(FillMode::Widescreen) && breaks ? static_cast<int>(FillMode::Fit) : f;
+}
+
 Look App::current_look() const {
   Look l;
   const std::string id = game_ ? game_->id : "";
   const PresetDef& p = kPresets[std::clamp(settings_.game_int(id, "preset", 0), 0, 3)];
-  l.fill = static_cast<FillMode>(std::clamp(settings_.game_int(id, "fill", 0), 0, static_cast<int>(FillMode::Count) - 1));
+  l.fill = static_cast<FillMode>(fill_mode(game_ ? &*game_ : nullptr));
   l.overscan = std::clamp(settings_.game_int(id, "overscan", 0), 0, 8) / 100.0f;
   l.sharpen = p.sharpen;
   l.scanlines = p.scanlines;
@@ -1012,18 +1029,8 @@ bool App::handle_hotkey(const SDL_Event& e) {
       settings_.save();
       toast("Volume " + std::to_string(settings_.get_int("volume", 80)) + "%", 2);
       return true;
-    case SDL_SCANCODE_F2:
-      menu_change(kFill, 1);
-      return true;
-    case SDL_SCANCODE_F3:
-      if (online_blocks(kPicture)) return true;
-      menu_change(kPicture, 1);
-      return true;
     case SDL_SCANCODE_F5:
       if (!online_blocks(kSaveState)) save_state();
-      return true;
-    case SDL_SCANCODE_F6:
-      menu_change(kSlot, 1);
       return true;
     case SDL_SCANCODE_F7:
       if (!online_blocks(kLoadState)) load_state();
@@ -1175,10 +1182,10 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Resume", "", kResume, "Esc"},
       {"Save state", online ? "off online" : "slot " + std::to_string(slot_), kSaveState, "F5"},
       {"Load state", online ? "off online" : "slot " + std::to_string(slot_), kLoadState, "F7"},
-      {"State slot", std::to_string(slot_), kSlot, "F6"},
-      {"Picture", kPresets[preset].name, kPicture, "F3"},
+      {"State slot", std::to_string(slot_), kSlot},
+      {"Picture", kPresets[preset].name, kPicture},
       {"Textures", gliden ? kTextureNames[texture_look(id)] : "Set by the picture style", kTextures},
-      {"Fill mode", fill_mode_name(look.fill), kFill, "F2"},
+      {"Fill mode", fill_mode_name(look.fill), kFill},
       {"Resolution", res, kResolution},
       {"Overscan crop", std::to_string(static_cast<int>(std::lround(look.overscan * 100))) + "%", kOverscan},
       {"Volume", std::to_string(settings_.get_int("volume", 80)) + "%", kVolume, "F8/F9"},
@@ -1237,12 +1244,18 @@ void App::menu_change(int id, int dir) {
     }
     case kFill: {
       const int count = static_cast<int>(FillMode::Count);
-      const int before = settings_.game_int(gid, "fill", 0);
-      const int f = (before + step + count) % count;
-      settings_.set_game_int(gid, "fill", f);
-      toast(std::string("Fill mode: ") + fill_mode_name(static_cast<FillMode>(f)) +
-            (static_cast<FillMode>(f) == FillMode::Widescreen ? "  (works with many games, not all)" : ""));
       const int ws = static_cast<int>(FillMode::Widescreen);
+      const int before = fill_mode(game_ ? &*game_ : nullptr);
+      int f = (before + step + count) % count;
+      const bool skip = f == ws && game_ && widescreen_breaks(game_->internal_name);
+      if (skip) f = (f + step + count) % count;
+      settings_.set_game_int(gid, "fill", f);
+      if (skip) {
+        toast("No widescreen for this game: its text and fades are made for a 4:3 screen. Ambient fill fills the sides instead", 6);
+      } else {
+        toast(std::string("Fill mode: ") + fill_mode_name(static_cast<FillMode>(f)) +
+              (static_cast<FillMode>(f) == FillMode::Widescreen ? "  (text can look wrong in some games: then choose another)" : ""));
+      }
       if ((before == ws) != (f == ws)) {
         if (online_game_ && net_.active()) {
           // Turning widescreen on or off restarts the game, which an online game can't do.
@@ -1575,9 +1588,8 @@ void App::draw_help() {
       {"Menu", "Back or Guide"},
   };
   const Row hotkeys[] = {
-      {"Esc", "Menu"}, {"F11 / Alt+Enter", "Fullscreen"}, {"F2", "Next fill mode"}, {"F3", "Next picture style"},
-      {"F5 / F7", "Save / load state"}, {"F6", "Next state slot"}, {"F8 / F9", "Volume down / up"},
-      {"F10", "Who's playing"}, {"F12", "Screenshot"}, {"Ctrl+R", "Reset"},
+      {"Esc", "Menu"}, {"F11 / Alt+Enter", "Fullscreen"}, {"F5 / F7", "Save / load state"},
+      {"F8 / F9", "Volume down / up"}, {"F10", "Who's playing"}, {"F12", "Screenshot"}, {"Ctrl+R", "Reset"},
   };
   auto column = [&](float x, const char* title, const Row* rows, int n) {
     float y = py + 100 * s;
@@ -1591,7 +1603,7 @@ void App::draw_help() {
   };
   column(px + 40 * s, "Keyboard", keyboard, 8);
   column(px + pw / 3 + 20 * s, "Controller", pad, 7);
-  column(px + 2 * pw / 3, "Shortcuts", hotkeys, 10);
+  column(px + 2 * pw / 3, "Shortcuts", hotkeys, 7);
   ui_.text(px + 40 * s, py + ph - 122 * s,
            "Change any key or button on the Controls screen: press C in the library, or Menu > Controls.", 18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 90 * s,

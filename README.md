@@ -18,8 +18,7 @@ The **mouse** works everywhere: click a game to pick it and double-click to play
 | Esc, right-click, or Back/Guide on a controller | Quick menu: save states, picture, fill mode, resolution, volume, players, controls |
 | C (in the library) | Controls: change any key or controller button |
 | N (in the library) | Play online with friends in your group |
-| F2 / F3 | Next fill mode / next picture preset |
-| F5 / F7 / F6 | Save state / load state / next state slot |
+| F5 / F7 | Save state / load state (in the slot chosen in the menu) |
 | F8 / F9 | Volume down / up |
 | F10 | Who's playing: seat controllers and keyboards for up to 4 players |
 | F11 or Alt+Enter | Fullscreen |
@@ -70,7 +69,7 @@ Press **B** in the library (or click **Back up**), then **Connect Google Drive**
 
 **Textures** (in the menu, per game): **HD (crisp)** redraws the game's small textures at 4x with clean edges (xBRZ, the default), **HD (soft)** is gentler (HQ4X), **Original** keeps them as the console drew them.
 
-Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a little top and bottom), **Widescreen** (true 16:9 where the game allows it: Harvest Moon 64 shows extra scenery at both sides), **Ambient** (a soft glow of the picture fills the side bars) and **Stretch**.
+Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a little top and bottom), **Widescreen** (true 16:9: the 3D world is widened, but games that draw their text and fades for a 4:3 screen show them cut or misplaced, so it's not offered for those; Harvest Moon 64 is one), **Ambient** (a soft glow of the picture fills the side bars) and **Stretch**.
 
 ## Documents
 

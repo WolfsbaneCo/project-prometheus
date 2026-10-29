@@ -170,6 +170,7 @@ class App {
   void restart_game_keep_progress();
   void apply_core_options(const Game& game);
   Look current_look() const;
+  int fill_mode(const Game* game) const;  // the game's fill mode, never one that breaks it
   // Rendering size for a game: a fixed factor, or 0 to render at exactly render_height.
   int resolution_factor(const std::string& game_id) const;
   int render_height(const std::string& game_id) const;
