@@ -31,6 +31,8 @@ constexpr const char* kTopTag = "library";
 constexpr const char* kConsoleName = "N64";
 constexpr const char* kConsoleTag = "n64";
 // Earlier versions kept everything in one "N64 Saves" folder: it becomes Memories > N64.
+constexpr const char* kGbaName = "GBA";  // Memories > GBA
+constexpr const char* kGbaTag = "gba";
 constexpr const char* kOldName = "N64 Saves";
 constexpr const char* kOldTag = "saves";
 constexpr std::size_t kHistoryLimit = 10;  // brief 9.2: the last 10 in-game saves per game
@@ -177,9 +179,11 @@ void Backup::join() {
   if (worker_.joinable()) worker_.join();
 }
 
-void Backup::init(const fs::path& pref_dir, const fs::path& library, const std::string& device_name) {
+void Backup::init(const fs::path& pref_dir, const fs::path& library, const fs::path& gba_library,
+                  const std::string& device_name) {
   pref_dir_ = pref_dir;
   library_ = library;
+  gba_library_ = gba_library;
   device_name_ = device_name;
   state_file_ = pref_dir / "google-drive.json";
   incoming_ = pref_dir / "drive-incoming";
@@ -204,10 +208,13 @@ void Backup::load_state() {
   device_id_ = v["device_id"].str();
   account_ = v["account"].str();
   root_ = v["n64_folder"].str();  // ("root" in earlier versions named the old N64 Saves folder: not reused)
+  gba_root_ = v["gba_folder"].str();
   last_sync_ = static_cast<int64_t>(v["last_sync"].num());
   for (const auto& [name, g] : v["games"].object) games_[name] = {g["last"].str(), g["choice"].str()};
   for (const auto& c : v["conflicts"].array) {
-    conflicts_.push_back({c["game"].str(), c["here"].str(), c["there"].str(), c["device"].str()});
+    const bool gba = c["console"].str() == "GBA";
+    conflicts_.push_back({c["game"].str(), c["here"].str(), c["there"].str(), c["device"].str(),
+                          gba ? "GBA/" + c["game"].str() : c["game"].str(), gba});
   }
 }
 
@@ -220,10 +227,10 @@ void Backup::save_state() const {
   for (const auto& c : conflicts_) {
     conflicts += std::string(conflicts.empty() ? "" : ",\n    ") + "{\"game\": " + json::quote(c.game) +
                  ", \"here\": " + json::quote(c.here_saved) + ", \"there\": " + json::quote(c.there_saved) +
-                 ", \"device\": " + json::quote(c.there_device) + "}";
+                 ", \"device\": " + json::quote(c.there_device) + ", \"console\": " + json::quote(c.gba ? "GBA" : "N64") + "}";
   }
   write_file(state_file_, "{\n  \"device_id\": " + json::quote(device_id_) + ",\n  \"account\": " + json::quote(account_) +
-                              ",\n  \"n64_folder\": " + json::quote(root_) + ",\n  \"last_sync\": " + std::to_string(last_sync_) +
+                              ",\n  \"n64_folder\": " + json::quote(root_) + ",\n  \"gba_folder\": " + json::quote(gba_root_) + ",\n  \"last_sync\": " + std::to_string(last_sync_) +
                               ",\n  \"games\": {\n    " + games + "\n  },\n  \"conflicts\": [\n    " + conflicts + "\n  ]\n}\n");
 }
 
@@ -289,6 +296,7 @@ void Backup::disconnect() {
   token_.clear();
   account_.clear();
   root_.clear();
+  gba_root_.clear();
   last_sync_ = 0;
   games_.clear();
   conflicts_.clear();
@@ -329,14 +337,16 @@ void Backup::set_problem(const std::string& text, int kind) {
 }
 
 void Backup::run_sync(bool include_states) {
-  std::string token, root;
-  fs::path library;
+  std::string token, root, gba_root;
+  fs::path library, gba_library;
   std::map<std::string, GameState> games;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     token = token_;
     root = root_;
+    gba_root = gba_root_;
     library = library_;
+    gba_library = gba_library_;
     games = games_;
   }
   Drive d(token);
@@ -353,6 +363,7 @@ void Backup::run_sync(bool include_states) {
       conflicts_ = conflicts;
       for (auto& dl : downloads) downloads_.push_back(std::move(dl));
       root_ = root;
+      gba_root_ = gba_root;
       last_sync_ = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       problem_.clear();
       problem_kind_ = 0;
@@ -361,6 +372,7 @@ void Backup::run_sync(bool include_states) {
       problem_kind_ = d.problem() == Drive::Problem::SignedOut ? 1 : d.problem() == Drive::Problem::Full ? 2 : 0;
     }
     if (!root.empty()) root_ = root;
+    if (!gba_root.empty()) gba_root_ = gba_root;
     progress_.clear();
     state_ = State::Idle;
     save_state();
@@ -389,10 +401,12 @@ void Backup::run_sync(bool include_states) {
       return finish(false);
     }
   }
+  // One console's games, in its folder `croot` (Memories > N64 or > GBA), from `clib` on this computer.
+  const auto sync_console = [&](const std::string& croot, const fs::path& clib, bool gba) -> bool {
   std::vector<Drive::File> remote_games;
-  if (!d.list(root, remote_games)) return finish(false);
+  if (!d.list(croot, remote_games)) return false;
 
-  const auto local = scan_library(library);
+  const auto local = scan_library(clib);
   std::map<std::string, std::string> folders;  // game -> Drive folder id
   for (const auto& f : remote_games) {
     if (f.folder) folders.emplace(f.name, f.id);
@@ -404,22 +418,23 @@ void Backup::run_sync(bool include_states) {
   }
 
   for (const std::string& game : names) {
-    if (cancel_) return finish(false);
+    if (cancel_) return false;
     static const LocalGame kNone;
     const LocalGame& lg = local.count(game) ? local.at(game) : kNone;
-    GameState& gs = games[game];
+    const std::string key = gba ? std::string("GBA/") + game : game;  // N64 games keep their earlier keys
+    GameState& gs = games[key];
     std::string folder = folders.count(game) ? folders[game] : std::string();
     if (folder.empty()) {
       if (lg.current.empty() && lg.states.empty()) continue;
-      if (!d.create_folder(root, game, folder)) return finish(false);
+      if (!d.create_folder(croot, game, folder)) return false;
     }
     std::vector<Drive::File> children, history_files;
-    if (!d.list(folder, children)) return finish(false);
+    if (!d.list(folder, children)) return false;
     std::string history = find(children, "history") ? find(children, "history")->id : std::string();
-    if (history.empty() && !lg.entries.empty() && !d.create_folder(folder, "history", history)) return finish(false);
+    if (history.empty() && !lg.entries.empty() && !d.create_folder(folder, "history", history)) return false;
     std::map<std::string, std::pair<std::string, std::string>> remote_entries;  // id -> {folder id, name}
     if (!history.empty()) {
-      if (!d.list(history, history_files)) return finish(false);
+      if (!d.list(history, history_files)) return false;
       for (const auto& f : history_files) {
         if (f.name.size() > 8 && f.name.substr(f.name.size() - 8) == ".partial") {
           d.remove(f.id);  // an upload that never finished
@@ -434,7 +449,7 @@ void Backup::run_sync(bool include_states) {
     if (const auto* p = find(children, "current.json")) {
       pointer_id = p->id;
       std::string text;
-      if (!d.download(p->id, text)) return finish(false);
+      if (!d.download(p->id, text)) return false;
       json::Value v;
       if (json::parse(text, v)) {
         remote_id = v["id"].str();
@@ -448,7 +463,7 @@ void Backup::run_sync(bool include_states) {
     for (const auto& [id, name] : lg.entries) {
       if (remote_entries.count(id)) continue;
       progress("Backing up " + game + "...");
-      if (!upload_dir(d, history, library / from_utf8(game) / "history" / from_utf8(name), name)) return finish(false);
+      if (!upload_dir(d, history, clib / from_utf8(game) / "history" / from_utf8(name), name)) return false;
       remote_entries[id] = {"", name};
     }
 
@@ -472,11 +487,12 @@ void Backup::run_sync(bool include_states) {
       const auto it = remote_entries.find(remote_id);
       if (it == remote_entries.end() || it->second.first.empty()) return true;  // pointer without its save: wait
       progress("Getting " + game + " from " + (remote_device.empty() ? "Google Drive" : remote_device) + "...");
-      const fs::path dir = incoming_ / from_utf8(game) / "current";
+      const fs::path inbox = gba ? incoming_ / "GBA" : incoming_;
+      const fs::path dir = inbox / from_utf8(game) / "current";
       std::error_code ec;
-      fs::remove_all(incoming_ / from_utf8(game), ec);
+      fs::remove_all(inbox / from_utf8(game), ec);
       if (!download_dir(d, it->second.first, dir)) return false;
-      downloads.push_back({game, remote_id, remote_device, incoming_});
+      downloads.push_back({game, remote_id, remote_device, inbox, key, gba});
       return true;
     };
 
@@ -498,9 +514,9 @@ void Backup::run_sync(bool include_states) {
     } else if (!here_moved || remote_seen.count(lg.current)) {
       ok = pull();  // another device carried on from this computer's save
     } else {
-      conflicts.push_back({game, lg.saved, remote_saved, remote_device});
+      conflicts.push_back({game, lg.saved, remote_saved, remote_device, key, gba});
     }
-    if (!ok) return finish(false);
+    if (!ok) return false;
 
     // Keep the last 10 versions in Drive too, never the one the pointer names.
     if (remote_entries.size() > kHistoryLimit) {
@@ -516,13 +532,13 @@ void Backup::run_sync(bool include_states) {
     // Save states: this device's own, as a backup (they never move to another device).
     if (include_states && !lg.states.empty()) {
       std::string states = find(children, "states") ? find(children, "states")->id : std::string();
-      if (states.empty() && !d.create_folder(folder, "states", states)) return finish(false);
+      if (states.empty() && !d.create_folder(folder, "states", states)) return false;
       std::vector<Drive::File> devices, files;
-      if (!d.list(states, devices)) return finish(false);
+      if (!d.list(states, devices)) return false;
       const std::string mine = device_name_ + " (" + device_id_.substr(0, 4) + ")";
       std::string dev = find(devices, mine) ? find(devices, mine)->id : std::string();
-      if (dev.empty() && !d.create_folder(states, mine, dev)) return finish(false);
-      if (!d.list(dev, files)) return finish(false);
+      if (dev.empty() && !d.create_folder(states, mine, dev)) return false;
+      if (!d.list(dev, files)) return false;
       for (const auto& path : lg.states) {
         const std::string data = read_file(path);
         const std::string name = utf8(path.filename());
@@ -531,17 +547,34 @@ void Backup::run_sync(bool include_states) {
         if (f && f->sha256 == sha) continue;
         progress("Backing up " + game + " save states...");
         std::string id;
-        if (!(f ? d.update(f->id, data) : d.upload(dev, name, data, id))) return finish(false);
+        if (!(f ? d.update(f->id, data) : d.upload(dev, name, data, id))) return false;
       }
     }
   }
+  return true;
+  };
+  if (!sync_console(root, library, false)) return finish(false);
+
+  // The GBA saves folder, found the same way (Memories > GBA), made only once there is a GBA save.
+  if (!gba_root.empty() && !d.alive(gba_root)) {
+    if (d.problem() != Drive::Problem::None) return finish(false);
+    gba_root.clear();
+  }
+  if (gba_root.empty() && !d.find_folder(kGbaTag, kGbaName, gba_root)) return finish(false);
+  if (gba_root.empty() && !scan_library(gba_library).empty()) {
+    std::string top;
+    if (!d.find_folder(kTopTag, kTopName, top)) return finish(false);
+    if (top.empty() && !d.create_folder("root", kTopName, top, kTopTag)) return finish(false);
+    if (!d.create_folder(top, kGbaName, gba_root, kGbaTag)) return finish(false);
+  }
+  if (!gba_root.empty() && !sync_console(gba_root, gba_library, true)) return finish(false);
   finish(true);
 }
 
 void Backup::choose(const std::string& game, bool keep_here) {
   std::lock_guard<std::mutex> lock(mutex_);
   games_[game].choice = keep_here ? "here" : "there";
-  conflicts_.erase(std::remove_if(conflicts_.begin(), conflicts_.end(), [&](const Conflict& c) { return c.game == game; }),
+  conflicts_.erase(std::remove_if(conflicts_.begin(), conflicts_.end(), [&](const Conflict& c) { return c.key == game; }),
                    conflicts_.end());
   save_state();
 }
@@ -609,18 +642,21 @@ std::vector<Backup::Conflict> Backup::conflicts() const {
 }
 
 std::vector<Backup::Found> Backup::found_here(bool include_states) const {
-  fs::path library;
+  fs::path libraries[2];
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    library = library_;
+    libraries[0] = library_;
+    libraries[1] = gba_library_;
   }
   std::vector<Found> out;
-  for (const auto& [name, lg] : scan_library(library)) {
-    Found f{name, static_cast<int>(lg.entries.size()), 0};
-    if (include_states) {
-      for (const auto& s : lg.states) f.states += s.extension() == ".state";
+  for (const fs::path& library : libraries) {
+    for (const auto& [name, lg] : scan_library(library)) {
+      Found f{name, static_cast<int>(lg.entries.size()), 0};
+      if (include_states) {
+        for (const auto& s : lg.states) f.states += s.extension() == ".state";
+      }
+      if (f.saves || f.states) out.push_back(f);
     }
-    if (f.saves || f.states) out.push_back(f);
   }
   return out;
 }

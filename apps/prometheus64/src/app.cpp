@@ -768,9 +768,11 @@ void App::choose_games_folder() {
 
 void App::choose_save_to_import() {
   if (games_.empty()) return;
-  static const SDL_DialogFileFilter filters[] = {{"N64 save files", "srm;sra;eep;fla;mpk"}};
+  static const SDL_DialogFileFilter n64[] = {{"N64 save files", "srm;sra;eep;fla;mpk"}};
+  static const SDL_DialogFileFilter gba[] = {{"GBA save files", "sav;srm;sa1;fla;eep"}};
+  const bool is_gba = games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)].system == System::GBA;
   auto* info = new std::pair<uint32_t, int>(user_event_, kSaveChosen);
-  SDL_ShowOpenFileDialog(dialog_done, info, window_, filters, 1, nullptr, false);
+  SDL_ShowOpenFileDialog(dialog_done, info, window_, is_gba ? gba : n64, 1, nullptr, false);
 }
 
 void App::import_save(const fs::path& file) {
@@ -781,6 +783,23 @@ void App::import_save(const fs::path& file) {
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     std::ifstream in(file, std::ios::binary);
     savekit::Bytes data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (g.system == System::GBA) {
+      // GBA saves are the cartridge's memory as it is (VisualBoyAdvance-M, mGBA and RetroArch all
+      // write them that way): 512 bytes to 128 KB, filled out with 0xFF to gpSP's 128 KB block.
+      if (data.empty() || data.size() > savekit::kGbaSaveSize) {
+        toast("That isn't a GBA save file (GBA saves are 128 KB or smaller)", 6);
+        return;
+      }
+      data.resize(savekit::kGbaSaveSize, 0xFF);
+      savekit::StoreOptions o;
+      o.library = gba_library_dir_;
+      o.game = g.internal_name;
+      o.save.memories[savekit::Memory::GbaSave] = data;
+      o.source = "imported save file";
+      savekit::store_current(o);
+      toast("Save imported for " + g.title + ". Your previous save is kept in history", 5);
+      return;
+    }
     // Recognise the file by its type and size; other emulators' files share these layouts.
     savekit::Decoded d;
     if (ext == ".srm") {

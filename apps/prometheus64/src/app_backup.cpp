@@ -77,7 +77,7 @@ std::string App::game_title(const std::string& folder) const {
 }
 
 void App::init_backup() {
-  backup_.init(pref_dir_, library_dir_, device_name());
+  backup_.init(pref_dir_, library_dir_, gba_library_dir_, device_name());
   if (opt_.backup_connect && !backup_.connected()) backup_.connect(true);
 }
 
@@ -95,7 +95,7 @@ void App::open_backup() {
 // the hourly backup starts when due.
 void App::process_backup() {
   for (auto& dl : backup_.take_downloads()) {
-    if (game_ && game_->internal_name == dl.game) {
+    if (game_ && game_->internal_name == dl.game && (game_->system == System::GBA) == dl.gba) {
       toast("Newer progress for " + game_title(dl.game) + " is on Google Drive. It's used next time you start the game", 6);
       continue;  // not while that game is running; the next backup fetches it again
     }
@@ -103,12 +103,12 @@ void App::process_backup() {
       auto save = savekit::load_current(dl.library, dl.game);
       if (!save) continue;
       savekit::StoreOptions o;
-      o.library = library_dir_;
+      o.library = library_for(dl.gba ? System::GBA : System::N64);
       o.game = dl.game;
       o.save = *save;
       o.source = "Google Drive (" + (dl.device.empty() ? std::string("another device") : dl.device) + ")";
       savekit::store_current(o);  // the save it replaces stays in history
-      backup_.applied(dl.game, dl.id);
+      backup_.applied(dl.key, dl.id);
       toast("Picked up your latest " + game_title(dl.game) + " progress" + (dl.device.empty() ? "" : " from " + dl.device), 6);
     } catch (const std::exception& e) {
       toast(std::string("Could not use the save from Google Drive: ") + e.what(), 6);
@@ -227,7 +227,7 @@ void App::draw_backup() {
   }
 
   if (!backup_.connected()) {
-    para("Your saves are copied to Memories > N64 in your Google Drive: quietly, when you close "
+    para("Your saves are copied to Memories > N64 and Memories > GBA in your Google Drive: quietly, when you close "
          "Project Prometheus and every hour while it's open. Only saves go up, never games.", 21, kText);
     y += 12 * s;
     para("On another computer (or a future phone version), connect the same Google account to carry on where you "
@@ -246,7 +246,7 @@ void App::draw_backup() {
   const std::string account = backup_.account();
   ui_.text(x, y, account.empty() ? "Connected to Google Drive" : "Connected as " + account, 22 * s, kText, true);
   y += 38 * s;
-  ui_.text(x, y, "Your saves are in Memories > N64 in your Drive (you can move or rename them)", 19 * s, kDim);
+  ui_.text(x, y, "Your saves are in Memories > N64 and > GBA in your Drive (you can move or rename them)", 19 * s, kDim);
   if (!backup_.root_id().empty()) button(x + inner, y - 12 * s, "Open in Drive", false, kBbOpenDrive, true);
   y += 56 * s;
 
@@ -335,7 +335,7 @@ void App::backup_click(int id) {
   if (id >= kBbUseThere) {
     const auto c = backup_.conflicts();
     if (static_cast<std::size_t>(id - kBbUseThere) < c.size()) {
-      backup_.choose(c[static_cast<std::size_t>(id - kBbUseThere)].game, false);
+      backup_.choose(c[static_cast<std::size_t>(id - kBbUseThere)].key, false);
       backup_.sync(backup_states());
     }
     return;
@@ -343,7 +343,7 @@ void App::backup_click(int id) {
   if (id >= kBbKeepHere) {
     const auto c = backup_.conflicts();
     if (static_cast<std::size_t>(id - kBbKeepHere) < c.size()) {
-      backup_.choose(c[static_cast<std::size_t>(id - kBbKeepHere)].game, true);
+      backup_.choose(c[static_cast<std::size_t>(id - kBbKeepHere)].key, true);
       backup_.sync(backup_states());
     }
     return;
