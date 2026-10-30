@@ -204,6 +204,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0008 Pokémon event gifts and daily hints](docs/decisions/0008-event-gifts.md)
 - **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
 - **Privacy policy and terms of use** (shared by every Wolfsbane app): [wolfsbanecompany.com/apps/privacy](https://wolfsbanecompany.com/apps/privacy/) and [/apps/terms](https://wolfsbanecompany.com/apps/terms/), from the website repository [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company)
+- **To build next, with the plan for each:** [`docs/backlog.md`](docs/backlog.md)
 - **Waiting on the owner:** [`docs/open-questions.md`](docs/open-questions.md)
 - **Unverified assumptions:** [`docs/verify.md`](docs/verify.md)
 
