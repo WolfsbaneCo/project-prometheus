@@ -65,7 +65,8 @@ GBA games don't play in lockstep like N64 games: each player plays their own gam
 
 | Look | |
 |---|---|
-| Sharp (default) | Crisp pixels, every one the same size at any screen size, in the game's own colours |
+| Clean (default) | The balance: jagged staircase edges rounded off and softened by one pixel, while text, faces and colours keep the game's own shapes |
+| Sharp | Crisp pixels, every one the same size at any screen size, in the game's own colours |
 | Smooth | Rounded edges, as if redrawn in HD (xBR); small sprites and text can look a little bent |
 | Handheld | The GBA's own screen: its muted colours, pixel grid and the slight ghosting some games relied on for transparency |
 | Pixel-perfect | Every pixel exactly the same whole number of screen pixels (6x on a 1080p screen, 9x on 1440p), as other GBA emulators size their window: nothing blended at all, with a little more border |
@@ -120,7 +121,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 | 2: Saves | **Working.** In-game saves stored in the library with history; imports from other emulators; `n64save` tool and converters |
 | 3: Google Drive sync | **Working.** Connect in the app, automatic backups (on close, hourly, at start), carrying on across computers with in-game saves, choosing when two computers both saved, offline retries, save states as a per-computer backup. Checked against a stand-in for Google with two Linux computers and a Windows one; waiting for the project's Google registration ([setup](docs/google-drive-setup.md)). Still to come: syncing settings, device-to-device sharing on a home network, optional encryption |
 | 4: Netplay | **Working.** Private groups with a shared key file and a relay on the group owner's free Cloudflare account (set up from inside the app), game codes, lockstep with game and version checks, an input delay that adjusts itself during the game, the host's save. Checked with Harvest Moon 64 and Super Smash Bros. between two copies on Linux and between Linux and Windows; not yet over the internet |
-| GBA | **Working.** gpSP core picked by the game's header, four looks for big screens, saves in the library with imports and Drive backup, link play over the relay (link cable and Wireless Adapter). A real trade over the internet is still to be tried |
+| GBA | **Working.** gpSP core picked by the game's header, five looks for big screens, saves in the library with imports and Drive backup, link play over the relay (link cable and Wireless Adapter). A real trade over the internet is still to be tried |
 | 5: Cartridge | Not started |
 
 ## Building from source

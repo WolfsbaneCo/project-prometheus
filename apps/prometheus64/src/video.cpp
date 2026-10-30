@@ -293,8 +293,53 @@ void Video::hardware_frame(unsigned width, unsigned height) {
   frame_h_ = height;
 }
 
+namespace {
+
+// Scale2x (AdvanceMAME's EPX): each pixel becomes 2x2, and a corner takes a neighbour's colour
+// only where two neighbours that meet there match and the line doesn't continue, which turns
+// one-pixel staircases into smooth diagonals. It only copies colours, never mixes them, and leaves
+// straight edges and single-pixel strokes alone. Twice gives Scale4x.
+template <typename Px>
+void scale2x(const Px* src, std::size_t src_stride, unsigned w, unsigned h, Px* dst) {
+  const std::size_t out = 2 * static_cast<std::size_t>(w);
+  for (unsigned y = 0; y < h; ++y) {
+    const Px* row = src + y * src_stride;
+    const Px* up = y > 0 ? row - src_stride : row;
+    const Px* down = y + 1 < h ? row + src_stride : row;
+    Px* o0 = dst + 2 * y * out;
+    Px* o1 = o0 + out;
+    for (unsigned x = 0; x < w; ++x) {
+      const unsigned l = x > 0 ? x - 1 : x, r = x + 1 < w ? x + 1 : x;
+      const Px B = up[x], D = row[l], E = row[x], F = row[r], H = down[x];
+      Px e0 = E, e1 = E, e2 = E, e3 = E;
+      if (B != H && D != F) {
+        if (D == B) e0 = D;
+        if (B == F) e1 = F;
+        if (D == H) e2 = D;
+        if (H == F) e3 = F;
+      }
+      o0[2 * x] = e0;
+      o0[2 * x + 1] = e1;
+      o1[2 * x] = e2;
+      o1[2 * x + 1] = e3;
+    }
+  }
+}
+
+template <typename Px>
+const void* scale4x(const void* data, std::size_t pitch, unsigned w, unsigned h, std::vector<uint8_t>& a,
+                    std::vector<uint8_t>& b) {
+  a.resize(static_cast<std::size_t>(w) * h * 4 * sizeof(Px));
+  b.resize(static_cast<std::size_t>(w) * h * 16 * sizeof(Px));
+  scale2x(static_cast<const Px*>(data), pitch / sizeof(Px), w, h, reinterpret_cast<Px*>(a.data()));
+  scale2x(reinterpret_cast<const Px*>(a.data()), 2 * static_cast<std::size_t>(w), 2 * w, 2 * h, reinterpret_cast<Px*>(b.data()));
+  return b.data();
+}
+
+}  // namespace
+
 void Video::software_frame(const void* data, unsigned width, unsigned height, std::size_t pitch,
-                           retro_pixel_format format) {
+                           retro_pixel_format format, bool round_edges) {
   gl::glBindTexture(GL_TEXTURE_2D, sw_tex_);
   GLenum fmt = GL_BGRA, type = GL_UNSIGNED_INT_8_8_8_8_REV;
   unsigned bpp = 4;
@@ -306,6 +351,13 @@ void Video::software_frame(const void* data, unsigned width, unsigned height, st
     fmt = GL_BGRA;
     type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
     bpp = 2;
+  }
+  if (round_edges) {
+    data = bpp == 2 ? scale4x<uint16_t>(data, pitch, width, height, round_a_, round_b_)
+                    : scale4x<uint32_t>(data, pitch, width, height, round_a_, round_b_);
+    width *= 4;
+    height *= 4;
+    pitch = static_cast<std::size_t>(width) * bpp;
   }
   if (width > sw_w_ || height > sw_h_) {
     sw_w_ = std::max(width, sw_w_);

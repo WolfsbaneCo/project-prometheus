@@ -86,12 +86,14 @@ std::string load_into(Core& core, const Game& game) {
 
 const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 
-// GBA pictures: 240x160 pixel art on a big screen. Sharp, the default, keeps every pixel a crisp
-// square and the game's own colours: smoothing (xBR) rounds and bends small sprites and text, and
-// gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen. Handheld is that
-// screen on purpose: its colours, pixel grid and slight ghosting. Pixel-perfect is Sharp at a
-// whole-number size, as emulators like VBA size their window: no pixel blended at all, a little
-// more border. (Settings keep the index: new looks go at the end.)
+// GBA pictures: 240x160 pixel art on a big screen. Clean, the default, is the balance: staircase
+// edges rounded (Scale4x, which only copies colours, so text and faces keep their shapes) and
+// soft one-pixel edges, without the blockiness of Sharp or the warping of Smooth (xBR, which
+// rounds and bends small sprites and text). Sharp keeps every pixel a crisp square. gpSP's colour
+// correction mutes the colours toward the GBA's dark, unlit screen: Handheld is that screen on
+// purpose, with its pixel grid and slight ghosting. Pixel-perfect is Sharp at a whole-number size,
+// as emulators like VBA size their window. (Settings keep the index: new looks go at the end, and
+// the default is Clean's index.)
 struct GbaLookDef {
   const char* name;
   const char* blurb;
@@ -105,11 +107,13 @@ const GbaLookDef kGbaLooks[] = {
     {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false},
     {"Pixel-perfect", "Every pixel exactly the same size, at a whole-number scale", Look::Pixels::Sharp, 0.0f, false, false,
      true},
+    {"Clean", "Smooth edges, with the game's own shapes, text and colours", Look::Pixels::Round, 0.0f, false, false, false},
 };
+constexpr int kGbaLookDefault = 4;  // Clean
 constexpr int kGbaLookCount = static_cast<int>(std::size(kGbaLooks));
 // The look chosen for a GBA game. Its own setting ("gba_look"), so N64 presets never carry over.
 int gba_look(const Settings& settings, const std::string& id) {
-  return std::clamp(settings.game_int(id, "gba_look", 0), 0, kGbaLookCount - 1);
+  return std::clamp(settings.game_int(id, "gba_look", kGbaLookDefault), 0, kGbaLookCount - 1);
 }
 
 App::App(Options options) : opt_(std::move(options)) {}
@@ -228,7 +232,8 @@ bool App::init(std::string& error) {
     if (data == RETRO_HW_FRAME_BUFFER_VALID) {
       video_.hardware_frame(w, h);
     } else {
-      video_.software_frame(data, w, h, pitch, core_.pixel_format());
+      const bool round = game_ && game_->system == System::GBA && kGbaLooks[gba_look(settings_, game_->id)].pixels == Look::Pixels::Round;
+      video_.software_frame(data, w, h, pitch, core_.pixel_format(), round);
     }
   };
   core_.hooks.audio = [this](const int16_t* d, std::size_t n) {

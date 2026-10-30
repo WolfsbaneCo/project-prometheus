@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "gl.hpp"
 #include "libretro.h"
@@ -22,7 +23,8 @@ struct Look {
   float scanlines = 0.0f;      // 0 = off
   bool smooth = true;          // false = sharp pixels (the "Native" look)
   // Pixel art (the GBA): how the small picture becomes a big one. Plain = the settings above.
-  enum class Pixels { Plain, Xbr, Sharp } pixels = Pixels::Plain;
+  // Round: Sharp, drawn from a copy with its staircases rounded (Scale4x, see software_frame).
+  enum class Pixels { Plain, Xbr, Sharp, Round } pixels = Pixels::Plain;
   float grid = 0.0f;           // a handheld LCD's pixel grid, 0 = off
   bool whole_pixels = false;   // Fit and Ambient: scale by a whole number only
   int lines = 240;             // the console's picture height, for scanlines
@@ -42,7 +44,10 @@ class Video {
   uintptr_t target_framebuffer() const { return target_fbo_; }
 
   void hardware_frame(unsigned width, unsigned height);
-  void software_frame(const void* data, unsigned width, unsigned height, std::size_t pitch, retro_pixel_format format);
+  // round_edges: the frame is enlarged 4x first with its staircase edges rounded (Scale4x), for
+  // the Round look; colours are never mixed, so text keeps its exact shapes.
+  void software_frame(const void* data, unsigned width, unsigned height, std::size_t pitch, retro_pixel_format format,
+                      bool round_edges = false);
   void clear_frame() { frame_w_ = frame_h_ = 0; }
   bool has_frame() const { return frame_w_ > 0; }
 
@@ -68,6 +73,7 @@ class Video {
   unsigned target_w_ = 0, target_h_ = 0;
   GLuint sw_tex_ = 0;
   unsigned sw_w_ = 0, sw_h_ = 0;
+  std::vector<uint8_t> round_a_, round_b_;  // Scale4x work buffers
   bool frame_is_hw_ = false;
   unsigned frame_w_ = 0, frame_h_ = 0;
 };
