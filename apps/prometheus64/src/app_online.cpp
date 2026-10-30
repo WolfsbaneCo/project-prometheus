@@ -960,11 +960,12 @@ void App::draw_online() {
     }
     const char* steps[] = {
         "1.  Once: unlock Mystery Gift in your game. In any Poke Mart, fill in the questionnaire on the counter with "
-        "LINK TOGETHER WITH ALL (you need your Pokedex), then save.",
+        "LINK TOGETHER WITH ALL (in Emerald, once you have your Pokedex), then save.",
         "2.  Save your game, then open an event here: the game restarts at its title screen, with the Wireless Adapter.",
         "3.  In the game: MYSTERY GIFT, then WONDER CARDS, then WIRELESS COMMUNICATION.",
-        "4.  Upstairs in any Pokemon Center, the deliveryman hands you the gift. Tickets: show them at the Lilycove City "
-        "harbor (after the Hall of Fame). Altering Cave: its Pokemon change once he has told you. One card at a time.",
+        "4.  Upstairs in any Pokemon Center, the deliveryman hands you the gift. Tickets: show them at the harbor he "
+        "names (Emerald: after the Hall of Fame; FireRed and LeafGreen: once the Sevii Islands are open). Altering "
+        "Cave: its Pokemon change once he has told you. One card at a time.",
     };
     for (const char* step : steps) {
       for (const auto& line : wrap(ui_, step, 18 * s, inner, false, 3)) {
