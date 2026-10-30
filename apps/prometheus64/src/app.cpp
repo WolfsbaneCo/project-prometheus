@@ -86,12 +86,9 @@ std::string load_into(Core& core, const Game& game) {
 
 const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 
-// GBA pictures: 240x160 pixel art on a big screen. Smooth, the default: the frame is first
-// doubled with MMPX, which rounds staircases while keeping text, eyes and thin lines as drawn,
-// and xBR then smooths that doubled picture. xBR straight on the 240x160 frame rounds a whole game
-// pixel at a time, which melts small details and bends letters ("mushy"); on the doubled frame its
-// rounding is half the size. Clean is MMPX at 4x with crisp one-pixel edges; Sharp keeps every
-// pixel a square. gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen:
+// GBA pictures: 240x160 pixel art on a big screen. Smooth, the default (the owner's choice):
+// xBR-lv2 rounds the edges as if redrawn in HD. Clean is MMPX at 4x with crisp one-pixel edges:
+// rounded staircases, with text and thin lines kept as drawn; Sharp keeps every pixel a square. gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen:
 // Handheld is that screen on purpose, with its pixel grid and slight ghosting. Pixel-perfect is
 // Sharp at a whole-number size, as emulators like VBA size their window. (Settings keep the index:
 // new looks go at the end.)
@@ -105,7 +102,7 @@ struct GbaLookDef {
 };
 const GbaLookDef kGbaLooks[] = {
     {"Sharp", "Crisp pixels filling the screen, in the game's own colours", Look::Pixels::Sharp, 0.0f, false, false, false, 0},
-    {"Smooth", "Smooth, as if redrawn in HD, keeping text and details", Look::Pixels::Xbr, 0.0f, false, false, false, 2},
+    {"Smooth", "Rounded edges, as if redrawn in HD", Look::Pixels::Xbr, 0.0f, false, false, false, 0},
     {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false, 0},
     {"Pixel-perfect", "Every pixel exactly the same size, at a whole-number scale", Look::Pixels::Sharp, 0.0f, false, false,
      true, 0},
