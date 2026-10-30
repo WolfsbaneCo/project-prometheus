@@ -120,12 +120,16 @@ vec3 xbr(vec2 uv) {
   return mix(res1, res2, step(c_df(E, res1), c_df(E, res2)));
 }
 
-// Crisp pixels at any size: each texel is a solid block, and only the one output pixel where two
-// blocks meet is blended (linear filtering at the texel's edge), so nothing shimmers or doubles.
+// Crisp pixels at any size: each texel is a solid block, sampled at its centre, and only within
+// the last half output pixel before an edge does the sample slide toward the neighbour (linear
+// filtering does the blend). So at most one output pixel per edge is mixed, which keeps the
+// blocks even at sizes like 4.5x without shimmering; at whole-number sizes none is.
 vec3 sharp_pixels(vec2 uv) {
   vec2 p = uv * u_size;
   vec2 cell = floor(p);
-  vec2 f = clamp((p - cell - 0.5) * max(u_scale, 1.0), -0.5, 0.5) + 0.5;
+  vec2 d = p - cell - 0.5;                       // from the texel's centre, -0.5..0.5
+  float r = 0.5 - 0.5 / max(u_scale, 1.0);       // the part of the texel that is solid
+  vec2 f = (d - clamp(d, -r, r)) * max(u_scale, 1.0) + 0.5;
   return textureLod(u_tex, (cell + f) / u_size, 0.0).rgb;
 }
 
@@ -406,6 +410,14 @@ Rect Video::draw_game(int out_w, int out_h, const Look& look, float alpha) {
       sy0 = mid - half;
       sy1 = mid + half;
     }
+  }
+  if (look.whole_pixels && (look.fill == FillMode::Fit || look.fill == FillMode::Ambient)) {
+    // Every game pixel exactly k by k screen pixels, the largest k that fits: perfectly even and
+    // unblended, with a little more border (the picture at 6x on a 1080p screen, 9x on 1440p).
+    const float pw = (sx1 - sx0) * tw, ph = (sy1 - sy0) * th;
+    const float k = std::max(1.0f, std::floor(std::min(static_cast<float>(out_w) / pw, static_cast<float>(out_h) / ph)));
+    dw = pw * k;
+    dh = ph * k;
   }
   r.w = static_cast<int>(std::lround(dw));
   r.h = static_cast<int>(std::lround(dh));

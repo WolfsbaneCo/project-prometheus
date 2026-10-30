@@ -89,18 +89,22 @@ const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 // GBA pictures: 240x160 pixel art on a big screen. Sharp, the default, keeps every pixel a crisp
 // square and the game's own colours: smoothing (xBR) rounds and bends small sprites and text, and
 // gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen. Handheld is that
-// screen on purpose: its colours, pixel grid and slight ghosting.
+// screen on purpose: its colours, pixel grid and slight ghosting. Pixel-perfect is Sharp at a
+// whole-number size, as emulators like VBA size their window: no pixel blended at all, a little
+// more border. (Settings keep the index: new looks go at the end.)
 struct GbaLookDef {
   const char* name;
   const char* blurb;
   Look::Pixels pixels;
   float grid;
-  bool colour_correction, ghosting;
+  bool colour_correction, ghosting, whole_pixels;
 };
 const GbaLookDef kGbaLooks[] = {
-    {"Sharp", "Crisp pixels and the game's own colours", Look::Pixels::Sharp, 0.0f, false, false},
-    {"Smooth", "Rounded edges, as if redrawn in HD", Look::Pixels::Xbr, 0.0f, false, false},
-    {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true},
+    {"Sharp", "Crisp pixels filling the screen, in the game's own colours", Look::Pixels::Sharp, 0.0f, false, false, false},
+    {"Smooth", "Rounded edges, as if redrawn in HD", Look::Pixels::Xbr, 0.0f, false, false, false},
+    {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false},
+    {"Pixel-perfect", "Every pixel exactly the same size, at a whole-number scale", Look::Pixels::Sharp, 0.0f, false, false,
+     true},
 };
 constexpr int kGbaLookCount = static_cast<int>(std::size(kGbaLooks));
 // The look chosen for a GBA game. Its own setting ("gba_look"), so N64 presets never carry over.
@@ -624,6 +628,7 @@ Look App::current_look() const {
     l.fill = static_cast<FillMode>(fill_mode(&*game_));
     l.pixels = g.pixels;
     l.grid = g.grid;
+    l.whole_pixels = g.whole_pixels;
     l.lines = 160;
     const float a = core_.av().geometry.aspect_ratio;
     l.aspect = a > 0 ? a : 3.0f / 2.0f;

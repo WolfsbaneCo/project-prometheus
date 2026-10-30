@@ -24,6 +24,7 @@ struct Look {
   // Pixel art (the GBA): how the small picture becomes a big one. Plain = the settings above.
   enum class Pixels { Plain, Xbr, Sharp } pixels = Pixels::Plain;
   float grid = 0.0f;           // a handheld LCD's pixel grid, 0 = off
+  bool whole_pixels = false;   // Fit and Ambient: scale by a whole number only
   int lines = 240;             // the console's picture height, for scanlines
 };
 
