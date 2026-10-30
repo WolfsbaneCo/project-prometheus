@@ -61,6 +61,99 @@ GBA games don't play in lockstep like N64 games: each player plays their own gam
 - In Pokémon Ruby, Sapphire, Emerald, FireRed and LeafGreen, walk into a Pokémon Center and go upstairs to the Cable Club to trade or battle, as with a real link cable. FireRed, LeafGreen and Emerald can use the Wireless Adapter instead (**Link: cable / wireless** on the Play online page); both players need the same choice, and the app says so if they differ.
 - Both players need the group's key file, as for online play above. The games don't have to be the same: Ruby trades with FireRed, as on real consoles.
 
+### Pokémon event gifts: the tickets and gifts from old events
+
+Some of the Generation 3 Pokémon games' best content was only ever handed out at events: tickets to islands where Mew, Deoxys, Lugia, Ho-Oh, Latias and Latios wait, and a few gifts that were never distributed outside Japan at all. The events are long over, and emulators usually offer them only through cheat codes.
+
+Project Prometheus plays the part of the event's own equipment instead: the distribution machine at a store or event (Emerald, FireRed, LeafGreen, over the Wireless Adapter) or the e-Reader reading an event card (Ruby, Sapphire, over the link cable). Your game receives the gift through its own menus, exactly as players did then. **No cheats, no save editing:** the app never writes to your game's memory or save; your game decides everything, keeps the gift itself, and saves it.
+
+#### What each game can receive
+
+| Game | Gift | What it does | Where you collect it |
+|---|---|---|---|
+| **Emerald** | Aurora Ticket | Ferry to Birth Island (Deoxys) | Deliveryman, upstairs in any Pokémon Center |
+| | Mystic Ticket | Ferry to Navel Rock (Lugia and Ho-Oh) | Deliveryman |
+| | Old Sea Map | Ferry to Faraway Island (Mew) | Deliveryman |
+| | Eon Ticket | Ferry to Southern Island (Latias or Latios: the one you didn't see on TV) | Deliveryman |
+| | Pichu Egg | A Pichu egg whose Pichu knows Surf, marked as an event Pokémon (a Japan-only event) | Deliveryman (needs a free party slot) |
+| | Altering Cave | The cave on Route 103 changes its wild Pokémon: Mareep, Pineco, Houndour, Teddiursa, Aipom, Shuckle, Stantler or Smeargle (or back to Zubat). Never distributed outside Japan | Deliveryman tells you; the cave changes at once |
+| **FireRed, LeafGreen** | Aurora Ticket | Seagallop ferry to Birth Island (Deoxys) | Deliveryman, upstairs in any Pokémon Center |
+| | Mystic Ticket | Seagallop ferry to Navel Rock (Lugia and Ho-Oh) | Deliveryman |
+| | Altering Cave | The cave on Six Island changes its wild Pokémon (the same eight choices) | Deliveryman tells you |
+| **Ruby, Sapphire** | Eon Ticket | Ferry to Southern Island (Latias in Ruby, Latios in Sapphire) | Your Dad, at the Petalburg City Gym |
+
+English versions of the games (game codes `BPEE`, `BPRE`, `BPGE`, `AXVE`, `AXPE`). Other languages aren't covered yet.
+
+#### Emerald, FireRed and LeafGreen: Mystery Gift
+
+**Once per save: switch Mystery Gift on.**
+
+1. *Emerald only:* get your Pokédex first (Professor Birch gives it to you after your first battle with your rival on Route 103).
+2. Go into any Poké Mart and read the **questionnaire** on the counter. Answer **Yes**, and fill it in as **LINK TOGETHER WITH ALL** (four words, from the word lists).
+3. The clerk is surprised you know the words: **MYSTERY GIFT** now appears on your game's title menu. **Save your game.**
+
+**Receiving a gift.**
+
+1. **Save your game first.** Opening an event restarts the game, and anything unsaved is lost.
+2. In Project Prometheus, press **Esc** (or right-click) for the menu, then **Event gifts**. (From the library: pick the game, press **N**, then **Event gifts**.)
+3. Choose the gift and press **Open event**. For the Altering Cave, pick its Pokémon first with **‹ ›**. The game restarts at its title screen with the Wireless Adapter plugged in, and a banner at the top says what to do.
+4. In the game: **MYSTERY GIFT**, then **WONDER CARDS**, then **WIRELESS COMMUNICATION**. The game finds the "event", connects, receives the **Wonder Card** and saves it. The app tells you where to collect the gift.
+   - If you already hold another Wonder Card, the game asks whether to throw it away; if its gift wasn't collected yet, it warns you first. Your games hold one card at a time, as they always did: collect a gift before receiving the next.
+   - Receiving the same card twice is harmless: the game says you already have it.
+5. Continue your game and go **upstairs in any Pokémon Center**. The **deliveryman**, at the left end of the counter, hands over the gift: the ticket goes into your **Key Items** pocket, or the egg into your party. For the Altering Cave he tells you which Pokémon have been seen there, and the cave has them from then on.
+6. Back in the app, you can close the event (**Event gifts**, **Close event**), or just carry on playing.
+
+**Using a ticket.**
+
+- **Emerald:** after you've entered the **Hall of Fame**, go to the harbor in **Lilycove City** and show the ticket to the sailor.
+- **FireRed, LeafGreen:** the **Seagallop ferry** sails from the **Vermilion City** harbor once you've reached the Sevii Islands in the story. Talk to the sailor there with the ticket in your bag.
+
+#### Ruby and Sapphire: Mystery Events (the e-Reader)
+
+Ruby and Sapphire have no Mystery Gift. Their Eon Ticket came from a Nintendo e-Reader card: the e-Reader, plugged into the game with a link cable, read the card and sent it to the game's **Mystery Events** menu. The app plays that e-Reader.
+
+**Once per save: join the Mystery Event Club.**
+
+1. You need your **5th Gym badge** (from your Dad, Norman, at the Petalburg City Gym).
+2. In any Pokémon Center, talk to the man who asks about your **profile** (the Mystery Event Club). Choose to give your profile and enter **MYSTERY EVENT IS EXCITING**.
+3. He welcomes you as a member: **MYSTERY EVENTS** now appears on your game's title menu. **Save your game.**
+
+**Receiving the Eon Ticket.**
+
+1. **Save your game first.**
+2. In Project Prometheus: **Esc**, **Event gifts**, then **Open event** on the Eon Ticket. The game restarts at its title screen, connected by link cable to the app's e-Reader.
+3. In the game: **MYSTERY EVENTS**. When it says **"Press the A Button to load event"**, press **A**. The game loads the event ("Don't remove the Game Link cable"), then shows **"Go and see your DAD at the GYM in PETALBURG CITY."** and saves. Press A: the game restarts.
+4. Continue your game and talk to your **Dad at the Petalburg City Gym**. He has a letter for you: the **Eon Ticket** goes into your Key Items pocket. (Afterwards he's back to his usual self.)
+5. After the **Hall of Fame**, show the ticket at the **Lilycove City** harbor: the ferry takes you to **Southern Island**.
+
+The event loads once per game: loading it again says so. Friends whose games mix records with yours can receive the ticket too, as the original event allowed.
+
+#### If something doesn't work
+
+- **The title menu has no MYSTERY GIFT / MYSTERY EVENTS:** the questionnaire (or the Mystery Event Club) step above wasn't done in this save, or the game wasn't saved after it. In Emerald, the questionnaire only works once you have the Pokédex; in Ruby and Sapphire, the club only after the 5th badge.
+- **"Communication error" or nothing is found:** close Mystery Gift (or Mystery Events) in the game, open the event again from **Event gifts**, and try once more. Events can't run during link play or online play: end those first.
+- **The deliveryman isn't there:** he only appears while your game holds a Wonder Card whose gift is waiting. If you threw the card away, receive it again.
+- **"Your BAG's KEY ITEMS POCKET is full" / "party is full":** make room (move a key item or a Pokémon to the PC) and talk to him again.
+- **"This EVENT can be loaded only once" / "already have that WONDER CARD":** your game already has this gift.
+
+#### Daily hints: Mirage Island and the Lottery Corner (Ruby, Sapphire, Emerald)
+
+Two of these games' luck events are almost impossible to plan for: **Mirage Island** (Route 130) appears only on days when a hidden daily number matches one of your party Pokémon, about 1 in 65,000 per Pokémon per day; and the **Lottery Corner** in the Lilycove Department Store pays its Master Ball only when all five digits of the day's number match one of your Pokémon's ID numbers, about 1 in 100,000.
+
+Project Prometheus reads your running game the way a guide would and tells you, once, on the days you'd be lucky:
+
+- *"Mirage Island is out today! Sail to Route 130, west of Pacifidlog Town, with [your Pokémon] in your party."* The island is gone when the day changes, and that Pokémon has to stay in your party.
+- *"Lucky day at the Lottery Corner: today's number matches N digits of [your Pokémon]'s ID. Draw a ticket at the Lilycove Department Store to win a [prize]."* (2 digits: PP Up; 3: Exp. Share; 4: Max Revive; 5: Master Ball.) Your party and every PC box count. Once you've drawn today's ticket, it stays quiet.
+
+It never changes the odds or your game, and says nothing on ordinary days. Because the game's clock follows your computer's real clock, the daily numbers change every real day, as on a cartridge. Turn the hints off with **Daily hints** in the in-game menu.
+
+#### How it works, briefly
+
+- **Emerald, FireRed, LeafGreen:** the app runs a virtual Wonder distributor on gpSP's Wireless Adapter emulation. It speaks Nintendo's wireless protocol and Game Freak's link layer, and serves a Mystery Gift session: a Wonder Card, plus a short script the deliveryman runs to hand the gift over (giving the item and setting the game's own ferry flag), written in the games' own script language and character set.
+- **Ruby, Sapphire:** the app is the second Game Boy on gpSP's link cable emulation, as the e-Reader was. It answers the game's link handshake and player data exchange, then sends one Mystery Event: a compatibility check, a checksum, a script put on your Dad, and the message the game shows.
+- **Daily hints:** the app reads the game's own numbers (the daily Mirage and lottery values, your Pokémon's IDs) and applies the game's own rules to them.
+- All of it was written from the [pret](https://github.com/pret) decompilations of the games, which document what the games expect, and tested against the games from the card all the way to the item in the bag. The details, and what has been checked, are in [decision 0008](docs/decisions/0008-event-gifts.md).
+
 ### GBA pictures for big screens
 
 | Look | |
@@ -108,6 +201,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0005 Online play](docs/decisions/0005-online-play.md)
   - [0006 Google Drive backup](docs/decisions/0006-drive-backup.md)
   - [0007 GBA games](docs/decisions/0007-gba.md)
+  - [0008 Pokémon event gifts and daily hints](docs/decisions/0008-event-gifts.md)
 - **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
 - **Privacy policy and terms of use** (shared by every Wolfsbane app): [wolfsbanecompany.com/apps/privacy](https://wolfsbanecompany.com/apps/privacy/) and [/apps/terms](https://wolfsbanecompany.com/apps/terms/), from the website repository [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company)
 - **Waiting on the owner:** [`docs/open-questions.md`](docs/open-questions.md)
@@ -121,7 +215,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 | 2: Saves | **Working.** In-game saves stored in the library with history; imports from other emulators; `n64save` tool and converters |
 | 3: Google Drive sync | **Working.** Connect in the app, automatic backups (on close, hourly, at start), carrying on across computers with in-game saves, choosing when two computers both saved, offline retries, save states as a per-computer backup. Checked against a stand-in for Google with two Linux computers and a Windows one; waiting for the project's Google registration ([setup](docs/google-drive-setup.md)). Still to come: syncing settings, device-to-device sharing on a home network, optional encryption |
 | 4: Netplay | **Working.** Private groups with a shared key file and a relay on the group owner's free Cloudflare account (set up from inside the app), game codes, lockstep with game and version checks, an input delay that adjusts itself during the game, the host's save. Checked with Harvest Moon 64 and Super Smash Bros. between two copies on Linux and between Linux and Windows; not yet over the internet |
-| GBA | **Working.** gpSP core picked by the game's header, five looks for big screens, saves in the library with imports and Drive backup, link play over the relay (link cable and Wireless Adapter). A real trade over the internet is still to be tried |
+| GBA | **Working.** gpSP core picked by the game's header, five looks for big screens, saves in the library with imports and Drive backup, link play over the relay (link cable and Wireless Adapter), Pokémon event gifts for Emerald, FireRed, LeafGreen, Ruby and Sapphire, daily hints. A real trade over the internet and the island trips are still to be tried |
 | 5: Cartridge | Not started |
 
 ## Building from source
