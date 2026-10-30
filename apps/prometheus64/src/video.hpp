@@ -23,11 +23,16 @@ struct Look {
   float scanlines = 0.0f;      // 0 = off
   bool smooth = true;          // false = sharp pixels (the "Native" look)
   // Pixel art (the GBA): how the small picture becomes a big one. Plain = the settings above.
-  enum class Pixels { Plain, Xbr, Sharp } pixels = Pixels::Plain;
+  enum class Pixels { Plain, Sharp } pixels = Pixels::Plain;
   float grid = 0.0f;           // a handheld LCD's pixel grid, 0 = off
   bool whole_pixels = false;   // Fit and Ambient: scale by a whole number only
   int lines = 240;             // the console's picture height, for scanlines
 };
+
+// A software frame redrawn bigger on the CPU before it is shown (the GBA looks): MMPX at 2x or 4x
+// (rounded staircases, text and thin lines kept as drawn, no new colours), or xBRZ at the whole
+// number of times that reaches the screen's size, 2x to 6x (smooth, clean edges, as in VBA-M).
+enum class Prescale { None, Mmpx2, Mmpx4, Xbrz };
 
 struct Rect {
   int x = 0, y = 0, w = 0, h = 0;
@@ -43,10 +48,10 @@ class Video {
   uintptr_t target_framebuffer() const { return target_fbo_; }
 
   void hardware_frame(unsigned width, unsigned height);
-  // round_edges 2 or 4: the frame is enlarged that many times first with MMPX, which rounds its
-  // staircases without mixing colours, keeping text and thin lines as drawn (the GBA looks).
+  // With a prescale, the frame is kept and redrawn when it is next shown (draw_game), at the size
+  // the window then needs; frames that are never shown (speeding up) cost nothing more.
   void software_frame(const void* data, unsigned width, unsigned height, std::size_t pitch, retro_pixel_format format,
-                      int round_edges = 0);
+                      Prescale prescale = Prescale::None);
   void clear_frame() { frame_w_ = frame_h_ = 0; }
   bool has_frame() const { return frame_w_ > 0; }
 
@@ -72,7 +77,14 @@ class Video {
   unsigned target_w_ = 0, target_h_ = 0;
   GLuint sw_tex_ = 0;
   unsigned sw_w_ = 0, sw_h_ = 0;
-  std::vector<uint8_t> round_a_, round_b_;  // 2x and 4x work buffers
+  void upload_sw(const void* data, unsigned width, unsigned height, std::size_t row_pixels, GLenum fmt, GLenum type);
+  void prescale_for(int out_w, int out_h);
+  // The last software frame as XRGB8888 when it is prescaled, and what was made of it.
+  std::vector<uint32_t> raw_, work_, big_;
+  unsigned raw_w_ = 0, raw_h_ = 0;
+  Prescale raw_prescale_ = Prescale::None;
+  bool raw_dirty_ = false;
+  int raw_factor_ = 0;
   bool frame_is_hw_ = false;
   unsigned frame_w_ = 0, frame_h_ = 0;
 };

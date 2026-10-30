@@ -1,12 +1,16 @@
 Project Prometheus
 Copyright 2026 Wolfsbane Co.
 
-This product is licensed under the Apache License, Version 2.0 (see LICENSE). Under section 4(d)
-of that licence, anyone who redistributes this software or a work based on it must include this
-NOTICE file.
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version (see LICENSE). It is distributed in the hope that
+it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+or FITNESS FOR A PARTICULAR PURPOSE.
 
-"Project Prometheus", "Prometheus 64" and the flame logo are trademarks of Wolfsbane Co. The
-Apache License does not grant permission to use them (section 6). See TRADEMARKS.md.
+Additional terms, under section 7 of the GNU General Public License version 3:
+- (b) Anyone who conveys this program or a work based on it must keep this NOTICE file with it.
+- (e) The licence grants no rights to the names "Project Prometheus" and "Prometheus 64" or the
+  flame logo, which are trademarks of Wolfsbane Co. See TRADEMARKS.md.
 
 Project Prometheus is distributed by Wolfsbane Co. free of charge, only from
 https://github.com/WolfsbaneCo/project-prometheus/releases. Any copy that was sold, or obtained

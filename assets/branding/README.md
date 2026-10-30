@@ -1,6 +1,6 @@
 # Branding
 
-**© Wolfsbane Co., all rights reserved.** The files in this folder are not covered by the repository's Apache License. The names and the flame logo are trademarks of Wolfsbane Co.; what others may and may not do with them is in [`TRADEMARKS.md`](../../TRADEMARKS.md).
+**© Wolfsbane Co., all rights reserved.** The files in this folder are not covered by the repository's GNU GPL. The names and the flame logo are trademarks of Wolfsbane Co.; what others may and may not do with them is in [`TRADEMARKS.md`](../../TRADEMARKS.md).
 
 Project Prometheus has one base mark, the flame. Each app in the project is a variation of it, with its own colour and an acronym.
 

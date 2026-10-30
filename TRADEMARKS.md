@@ -1,12 +1,12 @@
 # The Project Prometheus name and logo
 
-The code in this repository is open source under the [Apache License 2.0](LICENSE). The name and the logo are not. Section 6 of the licence says it gives no permission to use them, and this page says what is and isn't allowed.
+The code in this repository is open source under the [GNU General Public License, version 3 or later](LICENSE). The name and the logo are not: the licence's additional terms in [`NOTICE`](NOTICE) (section 7(e)) grant no rights to them, and this page says what is and isn't allowed.
 
 **What's covered:**
 - the names **Project Prometheus** and **Prometheus 64**;
 - the flame logo and app icons in [`assets/branding/`](assets/branding/), in every colour and variation.
 
-The files in `assets/branding/` are © Wolfsbane Co., all rights reserved. The Apache License covers the rest of the repository, not them.
+The files in `assets/branding/` are © Wolfsbane Co., all rights reserved. The GNU GPL covers the rest of the repository, not them.
 
 ## Allowed
 

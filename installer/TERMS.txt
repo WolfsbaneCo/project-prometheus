@@ -31,8 +31,8 @@ implied. To the extent the law allows, Wolfsbane Co. and the contributors are no
 damages arising from its use, including lost or damaged saves. Keep backups of saves that matter.
 
 6. LICENCES
-The app is licensed under the Apache License 2.0. The names "Project Prometheus" and
-"Prometheus 64" and the flame logo are trademarks of Wolfsbane Co. and are not covered by that
-licence. The emulator cores and other components keep their own licences (GPL-2.0 for the
+The app is licensed under the GNU General Public License, version 3 or later. The names
+"Project Prometheus" and "Prometheus 64" and the flame logo are trademarks of Wolfsbane Co. and
+are not covered by that licence. The emulator cores and other components keep their own licences (GPL-2.0 for the
 emulator cores). All licences, and where to get the cores' source code, are in the "licenses"
 folder where the app is installed.

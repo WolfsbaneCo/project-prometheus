@@ -23,6 +23,11 @@ file(READ "${PROJECT_SOURCE_DIR}/relay/src/index.js" P64_RELAY_JS)
 configure_file(src/relay_script.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/relay_script.hpp" @ONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/relay/src/index.js")
 
+# xBRZ (Zenju, GNU GPL version 3), the GBA Smooth look's filter: VBA-M's vectorised version of
+# 1.9, kept as it is in third_party/xbrz (see its README). Its own warnings, not this project's.
+add_library(p64_xbrz STATIC third_party/xbrz/xbrz.cpp)
+target_include_directories(p64_xbrz PUBLIC third_party/xbrz)
+
 add_executable(prometheus64 WIN32
   src/app.cpp
   src/archive.cpp
@@ -58,7 +63,7 @@ target_compile_definitions(prometheus64 PRIVATE P64_GOOGLE_CLIENT_ID="${P64_GOOG
                            P64_GOOGLE_CLIENT_SECRET="${P64_GOOGLE_CLIENT_SECRET}")
 target_include_directories(prometheus64 PRIVATE src third_party/libretro third_party/stb
                            "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_archive p64_curl p64_warnings)
+target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_archive p64_curl p64_xbrz p64_warnings)
 # The GBA core is built with the app and goes in "cores" next to it (the N64 core is put there by
 # tools/build-core-windows.sh, or by hand on other systems).
 if(TARGET gpsp_libretro)

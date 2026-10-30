@@ -65,7 +65,7 @@ GBA games don't play in lockstep like N64 games: each player plays their own gam
 
 | Look | |
 |---|---|
-| Smooth (default) | Rounded edges, as if redrawn in HD (xBR); small sprites and text can look a little bent |
+| Smooth (default) | Smooth, clean edges, as if redrawn in HD (xBRZ, the filter VBA-M offers), keeping small details and text |
 | Clean | Crisp, with jagged staircase edges rounded off |
 | Sharp | Crisp pixels, every one the same size at any screen size, in the game's own colours |
 | Handheld | The GBA's own screen: its muted colours, pixel grid and the slight ghosting some games relied on for transparency |
@@ -160,7 +160,7 @@ Game files, saves, save states and credentials never go into this repository (se
   - Modified versions must use their own name and icons, and must not suggest they come from us.
 - **No games, no BIOS.** The app contains no games, BIOS or system files of any console maker, and never downloads, finds or shares them. Use it only with games you own and copied yourself, as the law where you live allows. Don't ask for, post or link to game files in issues or discussions: they will be deleted.
 - **Not affiliated.** Project Prometheus is not affiliated with, endorsed or sponsored by Nintendo, The Pokémon Company, Game Freak, Google or Cloudflare. Their names and trademarks belong to them and appear here only to say what the app works with.
-- **No warranty.** The app is provided "as is", without warranty of any kind, and the authors aren't liable for any damage from its use, including lost saves (Apache License 2.0, sections 7 and 8). Keep backups of saves that matter.
+- **No warranty.** The app is provided "as is", without warranty of any kind, and the authors aren't liable for any damage from its use, including lost saves (GNU GPL version 3, sections 15 and 16). Keep backups of saves that matter.
 - **Your accounts, your data.** Online play runs through a relay on the group owner's own Cloudflare account, and backups go to your own Google Drive. Wolfsbane Co. receives none of your games, saves or data. Each player is responsible for following the terms of the services they connect. Read the [privacy policy](https://wolfsbanecompany.com/apps/privacy/) and [terms](https://wolfsbanecompany.com/apps/terms/).
-- **Licences.** The app's code is under the [Apache License 2.0](LICENSE); redistributions must keep the [`NOTICE`](NOTICE) file. The emulator cores (GPL-2.0) and other components keep their own licences, listed with where to get their source in [`installer/THIRD-PARTY-NOTICES.txt`](installer/THIRD-PARTY-NOTICES.txt). The installer asks you to accept these terms ([`installer/TERMS.txt`](installer/TERMS.txt)) and installs every licence in its `licenses` folder.
+- **Licences.** The app's code is under the [GNU General Public License, version 3 or later](LICENSE): anyone may share and change it, and copies and changed versions must stay under the same licence, with their source. Redistributions must keep the [`NOTICE`](NOTICE) file, whose additional terms reserve the name and logo. The emulator cores (GPL-2.0) and other components keep their own licences, listed with where to get their source in [`installer/THIRD-PARTY-NOTICES.txt`](installer/THIRD-PARTY-NOTICES.txt). The installer asks you to accept these terms ([`installer/TERMS.txt`](installer/TERMS.txt)) and installs every licence in its `licenses` folder.
 - **Reporting.** To report a copy being sold, a copyright concern or a takedown request, open an issue on this repository.

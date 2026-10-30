@@ -86,9 +86,11 @@ std::string load_into(Core& core, const Game& game) {
 
 const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 
-// GBA pictures: 240x160 pixel art on a big screen. Smooth, the default (the owner's choice):
-// xBR-lv2 rounds the edges as if redrawn in HD. Clean is MMPX at 4x with crisp one-pixel edges:
-// rounded staircases, with text and thin lines kept as drawn; Sharp keeps every pixel a square. gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen:
+// GBA pictures: 240x160 pixel art on a big screen. Smooth, the default, is xBRZ, the filter the
+// owner knew from VBA-M: smooth, clean edges without melting small details or text (xBR, used
+// before, rounded a whole game pixel at a time and did). Clean is MMPX at 4x with crisp one-pixel
+// edges: rounded staircases, with text and thin lines kept as drawn; Sharp keeps every pixel a
+// square. gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen:
 // Handheld is that screen on purpose, with its pixel grid and slight ghosting. Pixel-perfect is
 // Sharp at a whole-number size, as emulators like VBA size their window. (Settings keep the index:
 // new looks go at the end.)
@@ -98,15 +100,18 @@ struct GbaLookDef {
   Look::Pixels pixels;
   float grid;
   bool colour_correction, ghosting, whole_pixels;
-  int round;  // the frame enlarged first with MMPX: 0, 2 or 4 times (Video::software_frame)
+  Prescale prescale;  // redrawn bigger on the CPU first (Video::software_frame)
 };
 const GbaLookDef kGbaLooks[] = {
-    {"Sharp", "Crisp pixels filling the screen, in the game's own colours", Look::Pixels::Sharp, 0.0f, false, false, false, 0},
-    {"Smooth", "Rounded edges, as if redrawn in HD", Look::Pixels::Xbr, 0.0f, false, false, false, 0},
-    {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false, 0},
+    {"Sharp", "Crisp pixels filling the screen, in the game's own colours", Look::Pixels::Sharp, 0.0f, false, false, false,
+     Prescale::None},
+    {"Smooth", "Smooth, clean edges, as if redrawn in HD (xBRZ)", Look::Pixels::Plain, 0.0f, false, false, false,
+     Prescale::Xbrz},
+    {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false,
+     Prescale::None},
     {"Pixel-perfect", "Every pixel exactly the same size, at a whole-number scale", Look::Pixels::Sharp, 0.0f, false, false,
-     true, 0},
-    {"Clean", "Crisp, with jagged edges rounded off", Look::Pixels::Sharp, 0.0f, false, false, false, 4},
+     true, Prescale::None},
+    {"Clean", "Crisp, with jagged edges rounded off", Look::Pixels::Sharp, 0.0f, false, false, false, Prescale::Mmpx4},
 };
 constexpr int kGbaLookDefault = 1;  // Smooth
 constexpr int kGbaLookCount = static_cast<int>(std::size(kGbaLooks));
@@ -231,8 +236,9 @@ bool App::init(std::string& error) {
     if (data == RETRO_HW_FRAME_BUFFER_VALID) {
       video_.hardware_frame(w, h);
     } else {
-      const int round = game_ && game_->system == System::GBA ? kGbaLooks[gba_look(settings_, game_->id)].round : 0;
-      video_.software_frame(data, w, h, pitch, core_.pixel_format(), round);
+      const Prescale prescale =
+          game_ && game_->system == System::GBA ? kGbaLooks[gba_look(settings_, game_->id)].prescale : Prescale::None;
+      video_.software_frame(data, w, h, pitch, core_.pixel_format(), prescale);
     }
   };
   core_.hooks.audio = [this](const int16_t* d, std::size_t n) {
