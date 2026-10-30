@@ -295,51 +295,95 @@ void Video::hardware_frame(unsigned width, unsigned height) {
 
 namespace {
 
-// Scale2x (AdvanceMAME's EPX): each pixel becomes 2x2, and a corner takes a neighbour's colour
-// only where two neighbours that meet there match and the line doesn't continue, which turns
-// one-pixel staircases into smooth diagonals. It only copies colours, never mixes them, and leaves
-// straight edges and single-pixel strokes alone. Twice gives Scale4x.
+// MMPX, "Style-Preserving Pixel Art Magnification" (Morgan McGuire and Mara Gagiu, JCGT 2021):
+// each pixel becomes 2x2, rounding staircases into curves and diagonals while keeping single-pixel
+// details, text and thin lines as drawn. It only copies colours, never mixes them. Twice gives 4x.
+// Ported from the authors' published rules:
+//   Copyright 2020 Morgan McGuire & Mara Gagiu.
+//   Provided under the Open Source MIT license https://opensource.org/licenses/MIT
+uint32_t luma(uint16_t c) { return ((c >> 11) & 31u) * 8u + ((c >> 5) & 63u) * 4u + (c & 31u) * 8u + 1u; }  // RGB565
+uint32_t luma(uint32_t c) { return ((c >> 16) & 255u) + ((c >> 8) & 255u) + (c & 255u) + 1u; }               // XRGB8888
+
 template <typename Px>
-void scale2x(const Px* src, std::size_t src_stride, unsigned w, unsigned h, Px* dst) {
+void mmpx2x(const Px* src, std::size_t stride, int w, int h, Px* dst) {
+  auto at = [&](int x, int y) { return src[static_cast<std::size_t>(std::clamp(y, 0, h - 1)) * stride + std::clamp(x, 0, w - 1)]; };
+  auto all2 = [](Px b, Px a0, Px a1) { return b == a0 && b == a1; };
+  auto all3 = [](Px b, Px a0, Px a1, Px a2) { return b == a0 && b == a1 && b == a2; };
+  auto all4 = [](Px b, Px a0, Px a1, Px a2, Px a3) { return b == a0 && b == a1 && b == a2 && b == a3; };
+  auto any3 = [](Px b, Px a0, Px a1, Px a2) { return b == a0 || b == a1 || b == a2; };
+  auto none2 = [](Px b, Px a0, Px a1) { return b != a0 && b != a1; };
+  auto none4 = [](Px b, Px a0, Px a1, Px a2, Px a3) { return b != a0 && b != a1 && b != a2 && b != a3; };
   const std::size_t out = 2 * static_cast<std::size_t>(w);
-  for (unsigned y = 0; y < h; ++y) {
-    const Px* row = src + y * src_stride;
-    const Px* up = y > 0 ? row - src_stride : row;
-    const Px* down = y + 1 < h ? row + src_stride : row;
-    Px* o0 = dst + 2 * y * out;
-    Px* o1 = o0 + out;
-    for (unsigned x = 0; x < w; ++x) {
-      const unsigned l = x > 0 ? x - 1 : x, r = x + 1 < w ? x + 1 : x;
-      const Px B = up[x], D = row[l], E = row[x], F = row[r], H = down[x];
-      Px e0 = E, e1 = E, e2 = E, e3 = E;
-      if (B != H && D != F) {
-        if (D == B) e0 = D;
-        if (B == F) e1 = F;
-        if (D == H) e2 = D;
-        if (H == F) e3 = F;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const Px A = at(x - 1, y - 1), B = at(x, y - 1), C = at(x + 1, y - 1);
+      const Px D = at(x - 1, y), E = at(x, y), F = at(x + 1, y);
+      const Px G = at(x - 1, y + 1), H = at(x, y + 1), I = at(x + 1, y + 1);
+      Px J = E, K = E, L = E, M = E;
+      if (!(A == E && B == E && C == E && D == E && F == E && G == E && H == E && I == E)) {
+        const Px P = at(x, y - 2), S = at(x, y + 2), Q = at(x - 2, y), R = at(x + 2, y);
+        const uint32_t Bl = luma(B), Dl = luma(D), El = luma(E), Fl = luma(F), Hl = luma(H);
+        // 1:1 slopes
+        if ((D == B && D != H && D != F) && (El >= Dl || E == A) && any3(E, A, C, G) && (El < Dl || A != D || E != P || E != Q)) J = D;
+        if ((B == F && B != D && B != H) && (El >= Bl || E == C) && any3(E, A, C, I) && (El < Bl || C != B || E != P || E != R)) K = B;
+        if ((H == D && H != F && H != B) && (El >= Hl || E == G) && any3(E, A, G, I) && (El < Hl || G != H || E != S || E != Q)) L = H;
+        if ((F == H && F != B && F != D) && (El >= Fl || E == I) && any3(E, C, G, I) && (El < Fl || I != H || E != R || E != S)) M = F;
+        // Intersections
+        if ((E != F && all4(E, C, I, D, Q) && all2(F, B, H)) && F != at(x + 3, y)) K = M = F;
+        if ((E != D && all4(E, A, G, F, R) && all2(D, B, H)) && D != at(x - 3, y)) J = L = D;
+        if ((E != H && all4(E, G, I, B, P) && all2(H, D, F)) && H != at(x, y + 3)) L = M = H;
+        if ((E != B && all4(E, A, C, H, S) && all2(B, D, F)) && B != at(x, y - 3)) J = K = B;
+        if (Bl < El && all4(E, G, H, I, S) && none4(E, A, D, C, F)) J = K = B;
+        if (Hl < El && all4(E, A, B, C, P) && none4(E, D, G, I, F)) L = M = H;
+        if (Fl < El && all4(E, A, D, G, Q) && none4(E, B, C, I, H)) K = M = F;
+        if (Dl < El && all4(E, C, F, I, R) && none4(E, B, A, G, H)) J = L = D;
+        // 2:1 slopes
+        if (H != B) {
+          if (H != A && H != E && H != C) {
+            if (all3(H, G, F, R) && none2(H, D, at(x + 2, y - 1))) L = M;
+            if (all3(H, I, D, Q) && none2(H, F, at(x - 2, y - 1))) M = L;
+          }
+          if (B != I && B != G && B != E) {
+            if (all3(B, A, F, R) && none2(B, D, at(x + 2, y + 1))) J = K;
+            if (all3(B, C, D, Q) && none2(B, F, at(x - 2, y + 1))) K = J;
+          }
+        }
+        if (F != D) {
+          if (D != I && D != E && D != C) {
+            if (all3(D, A, H, S) && none2(D, B, at(x + 1, y + 2))) J = L;
+            if (all3(D, G, B, P) && none2(D, H, at(x + 1, y - 2))) L = J;
+          }
+          if (F != E && F != A && F != G) {
+            if (all3(F, C, H, S) && none2(F, B, at(x - 1, y + 2))) K = M;
+            if (all3(F, I, B, P) && none2(F, H, at(x - 1, y - 2))) M = K;
+          }
+        }
       }
-      o0[2 * x] = e0;
-      o0[2 * x + 1] = e1;
-      o1[2 * x] = e2;
-      o1[2 * x + 1] = e3;
+      Px* o = dst + 2 * static_cast<std::size_t>(y) * out + 2 * static_cast<std::size_t>(x);
+      o[0] = J;
+      o[1] = K;
+      o[out] = L;
+      o[out + 1] = M;
     }
   }
 }
 
 template <typename Px>
-const void* scale4x(const void* data, std::size_t pitch, unsigned w, unsigned h, std::vector<uint8_t>& a,
-                    std::vector<uint8_t>& b) {
+const void* round_up(const void* data, std::size_t pitch, unsigned w, unsigned h, std::vector<uint8_t>& a,
+                     std::vector<uint8_t>& b, bool four) {
   a.resize(static_cast<std::size_t>(w) * h * 4 * sizeof(Px));
   b.resize(static_cast<std::size_t>(w) * h * 16 * sizeof(Px));
-  scale2x(static_cast<const Px*>(data), pitch / sizeof(Px), w, h, reinterpret_cast<Px*>(a.data()));
-  scale2x(reinterpret_cast<const Px*>(a.data()), 2 * static_cast<std::size_t>(w), 2 * w, 2 * h, reinterpret_cast<Px*>(b.data()));
+  const int iw = static_cast<int>(w), ih = static_cast<int>(h);
+  mmpx2x(static_cast<const Px*>(data), pitch / sizeof(Px), iw, ih, reinterpret_cast<Px*>(a.data()));
+  if (!four) return a.data();
+  mmpx2x(reinterpret_cast<const Px*>(a.data()), 2 * static_cast<std::size_t>(w), 2 * iw, 2 * ih, reinterpret_cast<Px*>(b.data()));
   return b.data();
 }
 
 }  // namespace
 
 void Video::software_frame(const void* data, unsigned width, unsigned height, std::size_t pitch,
-                           retro_pixel_format format, bool round_edges) {
+                           retro_pixel_format format, int round_edges) {
   gl::glBindTexture(GL_TEXTURE_2D, sw_tex_);
   GLenum fmt = GL_BGRA, type = GL_UNSIGNED_INT_8_8_8_8_REV;
   unsigned bpp = 4;
@@ -352,11 +396,12 @@ void Video::software_frame(const void* data, unsigned width, unsigned height, st
     type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
     bpp = 2;
   }
-  if (round_edges) {
-    data = bpp == 2 ? scale4x<uint16_t>(data, pitch, width, height, round_a_, round_b_)
-                    : scale4x<uint32_t>(data, pitch, width, height, round_a_, round_b_);
-    width *= 4;
-    height *= 4;
+  if (round_edges == 2 || round_edges == 4) {
+    const bool four = round_edges == 4;
+    data = bpp == 2 ? round_up<uint16_t>(data, pitch, width, height, round_a_, round_b_, four)
+                    : round_up<uint32_t>(data, pitch, width, height, round_a_, round_b_, four);
+    width *= round_edges;
+    height *= round_edges;
     pitch = static_cast<std::size_t>(width) * bpp;
   }
   if (width > sw_w_ || height > sw_h_) {

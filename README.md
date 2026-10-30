@@ -65,9 +65,9 @@ GBA games don't play in lockstep like N64 games: each player plays their own gam
 
 | Look | |
 |---|---|
-| Clean (default) | The balance: jagged staircase edges rounded off and softened by one pixel, while text, faces and colours keep the game's own shapes |
+| Smooth (default) | Smooth, as if redrawn in HD, while text, eyes and small details keep the shapes the game drew |
+| Clean | Crisp, with jagged staircase edges rounded off |
 | Sharp | Crisp pixels, every one the same size at any screen size, in the game's own colours |
-| Smooth | Rounded edges, as if redrawn in HD (xBR); small sprites and text can look a little bent |
 | Handheld | The GBA's own screen: its muted colours, pixel grid and the slight ghosting some games relied on for transparency |
 | Pixel-perfect | Every pixel exactly the same whole number of screen pixels (6x on a 1080p screen, 9x on 1440p), as other GBA emulators size their window: nothing blended at all, with a little more border |
 
