@@ -52,7 +52,8 @@ The owner asked for reminders on the days the two luck events of Emerald would p
 - **Addresses** (English Emerald): `gSaveBlock1Ptr` 0x03005D8C, `gPokemonStoragePtr` 0x03005D94, `gPlayerPartyCount` 0x020244E9, `gPlayerParty` 0x020244EC; the game's own code refers to them 829, 30, 41 and 1,091 times.
 - **In the app:** checked every 5 seconds of play; each lucky day is told once (the keys are kept per game, `hints_seen`), as a 10-second message. Off during link play, online play and events. **Daily hints** in the in-game menu turns them off.
 - **Checked** with the test bench on Emerald memory (`hints` command): nothing on an ordinary day; Mirage Island when the number matches; Max Revive for 4 digits on a party Pokémon, Master Ball for 5 on a PC one; no lottery hint once the ticket is drawn.
-- **Ruby and Sapphire** have both events too (different addresses: the pret Ruby decompilation and the games are needed). FireRed and LeafGreen have neither.
+- **Ruby and Sapphire** (2026-10-30): the same rules and variables (pret's pokeruby). Their save block and PC sit at fixed addresses (`gSaveBlock1` 0x02025734, `gPokemonStorage` 0x020300A0), the party in IWRAM (`gPlayerParty` 0x03004360, count 0x03004350), flags at 0x1220 and vars at 0x1340 in the save block, `FLAG_DAILY_PICKED_LOTTO_TICKET` 0x8CA; the same in Ruby 1.0 and Sapphire 1.2 (the games' code refers to them 339, 23, 697 and 60 times). Checked against planted memory in both games, with the same six cases as Emerald.
+- FireRed and LeafGreen have neither event.
 
 ## Altering Cave (2026-10-30)
 
@@ -76,4 +77,4 @@ FireRed and LeafGreen (English, `BPRE`, `BPGE`) receive Mystery Gift exactly as 
 - **Altering Cave** on Six Island: the same eight other sets, in the same order, through `VAR_ALTERING_CAVE_WILD_SET` (0x4024 in these games).
 - Mystery Gift is unlocked by the same questionnaire phrase, in any Poké Mart.
 
-**Checked** with LeafGreen (test bench; a new game, Mystery Gift switched on in a test copy and the player placed upstairs in Viridian City's Pokémon Center): each card received over the Wireless Adapter and saved; the deliveryman's text; the Aurora Ticket in the Key Items pocket with 0x2A7 and 0x84B set; the Mystic Ticket with 0x2A8 and 0x84A set; Altering Cave set to Smeargle's (8). FireRed runs the same code; not yet tried with a FireRed game.
+**Checked** with LeafGreen (test bench; a new game, Mystery Gift switched on in a test copy and the player placed upstairs in Viridian City's Pokémon Center): each card received over the Wireless Adapter and saved; the deliveryman's text; the Aurora Ticket in the Key Items pocket with 0x2A7 and 0x84B set; the Mystic Ticket with 0x2A8 and 0x84A set; Altering Cave set to Smeargle's (8). **FireRed** (1.1, the owner's copy; the same RAM addresses as LeafGreen 1.0): the same test, Aurora Ticket received and handed over, its flags set.

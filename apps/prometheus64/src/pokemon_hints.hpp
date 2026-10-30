@@ -1,13 +1,13 @@
 // Daily hints for the Pokémon games' luck events: the app reads the running game, the way a guide
 // would, and says so on the days the player would be lucky. It never writes to the game or its
 // save, and never changes the odds.
-//   - Mirage Island (Emerald): seen from Route 130 on days when a daily number matches the low
-//     half of a party Pokémon's personality value (time_events.c, IsMirageIslandPresent).
-//   - Lottery Corner (Emerald, Lilycove Department Store): the day's number against each
+//   - Mirage Island (Ruby, Sapphire, Emerald): seen from Route 130 on days when a daily number
+//     matches the low half of a party Pokémon's personality value (IsMirageIslandPresent).
+//   - Lottery Corner (the same games, Lilycove Department Store): the day's number against each
 //     Pokémon's trainer ID, party and PC, last digits first (lottery_corner.c,
 //     PickLotteryCornerTicket); 2 digits or more win, and only one ticket a day.
-// Written from the pret decompilation of Emerald (English, BPEE); addresses checked against the
-// game's own code, which refers to them.
+// Written from the pret decompilations of Emerald and Ruby/Sapphire (English: BPEE, AXVE, AXPE);
+// addresses checked against the games' own code, which refers to them.
 #pragma once
 
 #include <cstddef>

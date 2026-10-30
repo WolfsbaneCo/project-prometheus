@@ -6,20 +6,33 @@ namespace p64 {
 
 namespace {
 
-// Pokémon Emerald (English) in memory.
-constexpr uint32_t kSaveBlock1Ptr = 0x03005D8C;    // gSaveBlock1Ptr
-constexpr uint32_t kStoragePtr = 0x03005D94;       // gPokemonStoragePtr
-constexpr uint32_t kPartyCount = 0x020244E9;       // gPlayerPartyCount
-constexpr uint32_t kParty = 0x020244EC;            // gPlayerParty: 6 x struct Pokemon (100 bytes)
-constexpr uint32_t kFlagsOffset = 0x1270;          // SaveBlock1.flags
-constexpr uint32_t kVarsOffset = 0x139C;           // SaveBlock1.vars, from VARS_START (0x4000)
-constexpr uint16_t kVarMirageRndH = 0x4024;
+// Where each game keeps what the hints read. Emerald moves its save blocks around in memory and
+// points to them; Ruby and Sapphire keep them at fixed addresses (the same in Ruby 1.0 and
+// Sapphire 1.2, checked against both games' code).
+struct Layout {
+  bool pointers;           // save block 1 and the PC through pointers (Emerald) or at fixed addresses
+  uint32_t save_block1;    // gSaveBlock1Ptr, or gSaveBlock1
+  uint32_t storage;        // gPokemonStoragePtr, or gPokemonStorage
+  uint32_t party_count;    // gPlayerPartyCount
+  uint32_t party;          // gPlayerParty: 6 x struct Pokemon (100 bytes)
+  uint32_t flags, vars;    // SaveBlock1.flags, .vars (from VARS_START, 0x4000)
+  uint16_t lottery_flag;   // FLAG_DAILY_PICKED_LOTO(TO)_TICKET
+};
+constexpr Layout kEmerald = {true, 0x03005D8C, 0x03005D94, 0x020244E9, 0x020244EC, 0x1270, 0x139C, 0x92A};
+constexpr Layout kRubySapphire = {false, 0x02025734, 0x020300A0, 0x03004350, 0x03004360, 0x1220, 0x1340, 0x8CA};
+constexpr uint16_t kVarMirageRndH = 0x4024;        // the same in all three
 constexpr uint16_t kVarLotteryRnd1 = 0x404B;       // the low half: the number drawn against
-constexpr uint16_t kFlagPickedLotteryTicket = 0x92A;  // FLAG_DAILY_PICKED_LOTO_TICKET
 constexpr int kBoxes = 14, kBoxSlots = 30;
+
+const Layout* layout_for(const std::string& game_code) {
+  if (game_code == "BPEE") return &kEmerald;
+  if (game_code == "AXVE" || game_code == "AXPE") return &kRubySapphire;
+  return nullptr;
+}
 constexpr uint32_t kPartyMonSize = 100, kBoxMonSize = 80;
 
 bool in_ewram(uint32_t address, uint32_t size) { return address >= 0x02000000 && address + size <= 0x02040000; }
+bool in_iwram(uint32_t address, uint32_t size) { return address >= 0x03000000 && address + size <= 0x03008000; }
 
 uint32_t read32(const GbaMemory& memory, uint32_t address) {
   uint32_t v = 0;
@@ -71,27 +84,32 @@ int matching_digits(uint32_t win, uint32_t id) {
 
 }  // namespace
 
-bool has_daily_hints(const std::string& game_code) { return game_code == "BPEE"; }
+bool has_daily_hints(const std::string& game_code) { return layout_for(game_code) != nullptr; }
 
 std::vector<DailyHint> daily_hints(const std::string& game_code, const GbaMemory& memory) {
   std::vector<DailyHint> out;
-  if (!has_daily_hints(game_code)) return out;
-  const uint32_t sb1 = read32(memory, kSaveBlock1Ptr), storage = read32(memory, kStoragePtr);
-  const uint8_t* count_p = memory(kPartyCount, 1);
-  if (!in_ewram(sb1, kVarsOffset + 0x200) || !in_ewram(storage, 4 + kBoxes * kBoxSlots * kBoxMonSize) || !count_p) return out;
+  const Layout* l = layout_for(game_code);
+  if (!l) return out;
+  const uint32_t sb1 = l->pointers ? read32(memory, l->save_block1) : l->save_block1;
+  const uint32_t storage = l->pointers ? read32(memory, l->storage) : l->storage;
+  const uint8_t* count_p = memory(l->party_count, 1);
+  if (!in_ewram(sb1, l->vars + 0x200) || !in_ewram(storage, 4 + kBoxes * kBoxSlots * kBoxMonSize) || !count_p ||
+      !(in_ewram(l->party, 6 * kPartyMonSize) || in_iwram(l->party, 6 * kPartyMonSize))) {
+    return out;
+  }
   const int party_count = *count_p <= 6 ? *count_p : 0;
   auto var = [&](uint16_t id) -> uint16_t {
     uint16_t v = 0;
-    if (const uint8_t* p = memory(sb1 + kVarsOffset + 2u * (id - 0x4000u), 2)) std::memcpy(&v, p, 2);
+    if (const uint8_t* p = memory(sb1 + l->vars + 2u * (id - 0x4000u), 2)) std::memcpy(&v, p, 2);
     return v;
   };
   auto flag = [&](uint16_t id) {
-    const uint8_t* p = memory(sb1 + kFlagsOffset + id / 8u, 1);
+    const uint8_t* p = memory(sb1 + l->flags + id / 8u, 1);
     return p && ((*p >> (id % 8)) & 1);
   };
 
   std::vector<MonHead> party;
-  for (int i = 0; i < party_count; ++i) party.push_back(read_mon(memory, kParty + i * kPartyMonSize));
+  for (int i = 0; i < party_count; ++i) party.push_back(read_mon(memory, l->party + i * kPartyMonSize));
 
   // Mirage Island: any party Pokémon (eggs too, as the game checks only the species).
   const uint16_t mirage = var(kVarMirageRndH);
@@ -105,7 +123,7 @@ std::vector<DailyHint> daily_hints(const std::string& game_code, const GbaMemory
   }
 
   // Lottery Corner: the best match among the party and the PC, not eggs; one ticket a day.
-  if (!flag(kFlagPickedLotteryTicket)) {
+  if (!flag(l->lottery_flag)) {
     const uint16_t win = var(kVarLotteryRnd1);
     int best = 0;
     std::string who;
