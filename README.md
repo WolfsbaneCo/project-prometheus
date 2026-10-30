@@ -8,7 +8,7 @@ The app plays games the user already owns and adds themselves. It never download
 
 ## Download and play (Windows 10 or 11, 64-bit)
 
-1. Download `ProjectPrometheus-Setup-<version>.exe` from the **Releases** page. It is one file holding everything: the app, the emulator cores, fonts and licences. (Test builds: the repository's **Actions** tab, latest green **CI** run, same file.)
+1. Download `ProjectPrometheus-Setup-<version>.exe` from the **Releases** page. It is one file holding everything: the app, the emulator cores, fonts and licences. (Test builds: the repository's **Actions** tab, a **CI** run started by hand on a branch, same file.)
 2. Run it. It installs for your user only, with no administrator prompt, and adds a Start menu shortcut.
 3. Press **O** (or **Y** on a controller) and choose the folder that holds your games: N64 games (`.z64`, `.n64`, `.v64`) and GBA games (`.gba`), side by side if you like, or the same packed in `.zip`, `.7z` or `.rar` archives (no need to unpack them; an archive with several games shows each one). You can also drop a game onto the window, or double-click a game file if you ticked that option in the installer.
 4. Pick a game and press **Enter** (or **A**). To have a friend join, they press **Start** on another controller. Press **F1** for every key.
@@ -144,7 +144,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The N64 core is a separate download from its own project, built at a pinned commit by `tools/build-core-windows.sh` (MinGW-w64 on Linux). Put `mupen64plus_next_libretro.dll` in a `cores` folder next to `ProjectPrometheus.exe`. The GBA core (gpSP, also pinned) is built with the app by GCC or Clang and put in `cores` automatically; with Microsoft's compiler, build it apart with `tools/build-gba-core-windows.sh` (MinGW-w64). CI does all of this and builds the installer with Inno Setup (`installer/project-prometheus.iss`). To publish a release, push a tag like `v0.1.0`, or run the CI workflow by hand on `main` (Actions > CI > Run workflow): it tags `main` with the version in `CMakeLists.txt` and attaches the installer.
+The N64 core is a separate download from its own project, built at a pinned commit by `tools/build-core-windows.sh` (MinGW-w64 on Linux). Put `mupen64plus_next_libretro.dll` in a `cores` folder next to `ProjectPrometheus.exe`. The GBA core (gpSP, also pinned) is built with the app by GCC or Clang and put in `cores` automatically; with Microsoft's compiler, build it apart with `tools/build-gba-core-windows.sh` (MinGW-w64). CI does all of this and builds the installer with Inno Setup (`installer/project-prometheus.iss`). CI runs only when started by hand (Actions > CI > Run workflow) or by a version tag, never on ordinary pushes, so the account's Actions minutes go to final builds; run `tools/check-before-push.sh` locally before pushing. To publish a release, push a tag like `v0.1.0`, or run the CI workflow by hand on `main` (Actions > CI > Run workflow): it tags `main` with the version in `CMakeLists.txt` and attaches the installer.
 
 On Linux, SDL needs the X11/Wayland, ALSA/PulseAudio and udev development packages, and online play needs OpenSSL's (see `.github/workflows/ci.yml`). libcurl is downloaded and built automatically; on Windows it uses the system's own TLS. The online relay lives in [`relay/`](relay/README.md).
 

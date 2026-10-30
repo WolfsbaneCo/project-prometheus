@@ -1,9 +1,18 @@
 name: CI
 
+# Builds run only when asked for, to save the account's Actions minutes (Windows runners count
+# double): Actions > CI > Run workflow. On main that publishes a release; on any other branch it
+# builds a test installer. Pushing a version tag (v1.2.3) also builds and publishes. Before each
+# push, run the same checks locally instead: tools/check-before-push.sh.
 on:
   push:
-  pull_request:
+    tags: ['v*']
   workflow_dispatch:
+
+# A second run of the same branch or tag replaces one still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -33,14 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Check tracked files
-        shell: bash
-        run: |
-          bad=$(git ls-files | grep -iE '\.(z64|n64|v64|ndd|d64|sra|srm|eep|fla|mpk|pj[0-9]?|st[0-9]|state[0-9]*)(\.zip)?$' || true)
-          if [ -n "$bad" ]; then
-            echo "These files must not be committed:"
-            echo "$bad"
-            exit 1
-          fi
+        run: CHECK_FILES_ONLY=1 tools/check-before-push.sh
 
   # The emulator cores (N64 and GBA), cross-compiled at the commits pinned in their scripts.
   # Cached on those commits.
