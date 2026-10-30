@@ -151,6 +151,13 @@ bool App::init(std::string& error) {
   }
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
+  if (settings_.get_int("gba_looks", 0) < 2) {
+    // The GBA looks changed while the owner was choosing them (Smooth became xBRZ, Clean MMPX):
+    // choices saved before then start again from the default, Smooth.
+    settings_.clear_game_key("gba_look");
+    settings_.set_int("gba_looks", 2);
+    settings_.save();
+  }
   load_group_key();
   // Saves for every console share one folder: Memories\N64, Memories\GBA.
   // Earlier versions used Documents\N64 Saves; a computer that has it keeps using it (nothing moves).

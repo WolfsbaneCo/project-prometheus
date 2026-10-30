@@ -364,9 +364,11 @@ void Video::prescale_for(int out_w, int out_h) {
   int factor = raw_prescale_ == Prescale::Mmpx2 ? 2 : raw_prescale_ == Prescale::Mmpx4 ? 4 : 0;
   if (raw_prescale_ == Prescale::Xbrz) {
     // The whole number of times that reaches the window's size, so the last step only shrinks a
-    // little (smooth) instead of stretching (soft).
+    // little (sharp) instead of stretching (soft). xBRZ goes from 2x to 6x, then 9x: a 1080p screen
+    // (6.75x) gets 9x shrunk, a 1440p one exactly 9x. About 3 ms a frame either way.
     const double fit = std::min(static_cast<double>(out_w) / raw_w_, static_cast<double>(out_h) / raw_h_);
-    factor = std::clamp(static_cast<int>(std::ceil(fit - 0.01)), 2, 6);
+    factor = std::clamp(static_cast<int>(std::ceil(fit - 0.01)), 2, 9);
+    if (factor > 6) factor = 9;
   }
   if (!raw_dirty_ && factor == raw_factor_) return;
   raw_dirty_ = false;
