@@ -61,3 +61,9 @@ Emerald's Altering Cave (Route 103) has only Zubat, unless the game receives a M
 - **What the app sends:** a Wonder Card and a deliveryman script, like the tickets. The script sets `VAR_ALTERING_CAVE_WILD_SET` to the chosen set (0 = Zubat again), which is what the game reads when it picks the cave's wild Pokémon, and tells the player in our own words.
 - **Choosing:** one row on the Event gifts page, "Altering Cave", with < > to pick the Pokémon. Each set has its own card id (1004-1012), so choosing another set is a new card, which the game offers to swap.
 - **Checked** (test bench, Emerald): the game received the Mareep card through Mystery Gift (swapping out a card whose gift was waiting), saved it; upstairs in the Pokémon Center the deliveryman said our text, and `VAR_ALTERING_CAVE_WILD_SET` went from 0 to 1. Not yet seen: a wild Mareep in the cave (the test save has no Pokémon to walk there with).
+
+## The Surf Pichu egg (2026-10-30)
+
+A Japanese Mystery Gift event: a Pichu egg whose Pichu knows Surf. Emerald still has its script (`data/scripts/gift_pichu.inc`); it was never distributed anywhere else. The app's deliveryman script takes the same steps with our own wording: once per card (`FLAG_MYSTERY_GIFT_DONE`), if the party has room, `giveegg SPECIES_PICHU`, marked as an event Pokémon (`setmodernfatefulencounter`, met location 0xFF "fateful encounter"), Surf as its third move. Game Freak's script sets Surf for party slots 2 to 6 only (a player always had a Pokémon); slot 1 is covered too. Card id 1013.
+
+**Checked** (test bench, Emerald): the card received through Mystery Gift; the deliveryman's text; the egg decoded from the party: Pichu, an egg, met location 0xFF, the fateful-encounter bit, moves ThunderShock, Charm, Surf, valid checksum, both with an empty party (slot 1) and with a Pokémon already in it (slot 2).

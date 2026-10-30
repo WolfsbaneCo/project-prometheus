@@ -45,6 +45,23 @@ class ScriptWriter {
   void waitbuttonpress() { op(0x6D); }
   void setflag(uint16_t flag) { op(0x29), u16(flag); }
   void setvar(uint16_t var, uint16_t value) { op(0x16), u16(var), u16(value); }
+  void specialvar(uint16_t var, uint16_t special) { op(0x26), u16(var), u16(special); }
+  void returnram() { op(0x0C); }
+  void vcall(const std::string& dest) { op(0xBA), ref(dest); }
+  void vgoto_if_unset(uint16_t flag, const std::string& dest) {
+    op(0x2B), u16(flag);           // checkflag
+    op(0xBB), op(0), ref(dest);    // vgoto_if FALSE (not set)
+  }
+  void vgoto_if_var(uint16_t var, uint16_t value, const std::string& dest) {
+    op(0x21), u16(var), u16(value);  // compare_var_to_value
+    op(0xBB), op(1), ref(dest);      // vgoto_if EQUAL
+  }
+  void giveegg(uint16_t species) { op(0x7A), u16(species); }
+  void setmonmove(uint8_t party_index, uint8_t slot, uint16_t move) { op(0x7B), op(party_index), op(slot), u16(move); }
+  void setmodernfatefulencounter(uint16_t slot_var) { op(0xCD), u16(slot_var); }
+  void setmonmetlocation(uint16_t slot_var, uint8_t location) { op(0xD2), u16(slot_var), op(location); }
+  void playfanfare(uint16_t song) { op(0x31), u16(song); }
+  void waitfanfare() { op(0x32); }
   void vmessage(const std::string& text) { op(0xBD), ref(text); }
   void vgoto_if_set(uint16_t flag, const std::string& dest) {
     op(0x2B), u16(flag);           // checkflag
@@ -183,6 +200,74 @@ std::vector<uint8_t> cave_script(const CaveSetDef& c, uint16_t set) {
   return s.finish();
 }
 
+// The Surf Pichu egg: a Japanese Mystery Gift event whose script Emerald still has
+// (data/scripts/gift_pichu.inc); it was never distributed anywhere else. The same steps: once per
+// card (FLAG_MYSTERY_GIFT_DONE), a Pichu egg into the party if it has room, marked as an event
+// Pokémon (fateful encounter, met location 0xFF), its third move Surf. Our own wording.
+void put_text(std::vector<uint8_t>& card, std::size_t at, const std::string& s);
+
+constexpr uint16_t kPichuCardFlag = 1013;
+std::vector<uint8_t> pichu_script() {
+  constexpr uint16_t kFlagMysteryGiftDone = 0x1E4, kVarSlot = 0x40DD;  // VAR_GIFT_PICHU_SLOT
+  constexpr uint16_t kSpecialPartyCount = 0x86;                        // CalculatePlayerPartyCount
+  ScriptWriter s;
+  s.setvaddress();
+  s.vgoto_if_unset(kFlagMysteryGiftDone, "give");
+  s.returnram();  // already given: the deliveryman's own thank-you
+  s.label("give");
+  s.specialvar(kVarSlot, kSpecialPartyCount);
+  s.vgoto_if_var(kVarSlot, 6, "full");
+  s.setflag(kFlagMysteryGiftDone);
+  s.vcall("egg");
+  s.lock();
+  s.faceplayer();
+  s.say("gift");
+  s.playfanfare(370);  // MUS_OBTAIN_ITEM
+  s.waitfanfare();
+  s.release();
+  s.end();
+  s.label("full");
+  s.lock();
+  s.faceplayer();
+  s.say("partyfull");
+  s.release();
+  s.end();
+  // The egg goes to the first free party slot, the party count before it: Surf as its 3rd move.
+  // (Game Freak's script covers slots 2-6, as a player always had a Pokémon; slot 1 is added.)
+  s.label("egg");
+  s.giveegg(172);  // SPECIES_PICHU
+  s.setmodernfatefulencounter(kVarSlot);
+  s.setmonmetlocation(kVarSlot, 0xFF);  // METLOC_FATEFUL_ENCOUNTER
+  for (uint8_t slot = 0; slot <= 5; ++slot) s.vgoto_if_var(kVarSlot, slot, "surf" + std::to_string(slot));
+  s.op(0x03);  // return
+  for (uint8_t slot = 0; slot <= 5; ++slot) {
+    s.label("surf" + std::to_string(slot));
+    s.setmonmove(slot, 2, 57);  // MOVE_SURF
+    s.op(0x03);
+  }
+  s.text("gift", "Thanks for coming to the event,\n{PLAYER}!\fWe have a gift for you, all the\nway from JAPAN: a POKéMON EGG!\f"
+                 "Please raise it with love\nand kindness.");
+  s.text("partyfull", "Oh, your party is full.\fPlease come back after you've\nput a POKéMON in a PC box.");
+  return s.finish();
+}
+
+std::vector<uint8_t> pichu_card(uint32_t id_number) {
+  std::vector<uint8_t> card(332, 0);
+  card[0] = static_cast<uint8_t>(kPichuCardFlag), card[1] = static_cast<uint8_t>(kPichuCardFlag >> 8);
+  card[2] = 172, card[3] = 0;  // Pichu
+  for (int i = 0; i < 4; ++i) card[4 + static_cast<std::size_t>(i)] = static_cast<uint8_t>(id_number >> (8 * i));
+  card[8] = static_cast<uint8_t>(0 | (6 & 0xF) << 2 | 1 << 6);  // gift; background 6; friends may be sent it
+  put_text(card, 10, "POKéMON EGG");
+  put_text(card, 50, "PROJECT PROMETHEUS EVENT");
+  put_text(card, 90, "A POKéMON EGG from an event");
+  put_text(card, 130, "held only in JAPAN. Something");
+  put_text(card, 170, "special hatches from it.");
+  put_text(card, 210, "");
+  put_text(card, 250, "Collect it at any");
+  put_text(card, 290, "POKéMON CENTER.");
+  return card;
+}
+
 void put_text(std::vector<uint8_t>& card, std::size_t at, const std::string& s) {
   std::vector<uint8_t> t = encode_game_text(s);
   if (t.size() > 40) {
@@ -291,6 +376,8 @@ std::vector<EventGift> event_gifts(const std::string& game_code) {
     for (const TicketDef& t : kEmerald) {
       out.push_back({t.key, t.name, t.where, "", "", t.card_flag, ticket_card(t, id++), ticket_script(t)});
     }
+    out.push_back({"pichu", "Pichu Egg", "A Pichu that knows Surf, from an event held only in Japan", "", "",
+                   kPichuCardFlag, pichu_card(id++), pichu_script()});
     // One card id per set, so choosing another set is a new card (the game offers to swap it).
     for (uint16_t i = 0; i < std::size(kAlteringCave); ++i) {
       const CaveSetDef& c = kAlteringCave[i];
