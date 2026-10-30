@@ -67,3 +67,13 @@ Emerald's Altering Cave (Route 103) has only Zubat, unless the game receives a M
 A Japanese Mystery Gift event: a Pichu egg whose Pichu knows Surf. Emerald still has its script (`data/scripts/gift_pichu.inc`); it was never distributed anywhere else. The app's deliveryman script takes the same steps with our own wording: once per card (`FLAG_MYSTERY_GIFT_DONE`), if the party has room, `giveegg SPECIES_PICHU`, marked as an event Pokémon (`setmodernfatefulencounter`, met location 0xFF "fateful encounter"), Surf as its third move. Game Freak's script sets Surf for party slots 2 to 6 only (a player always had a Pokémon); slot 1 is covered too. Card id 1013.
 
 **Checked** (test bench, Emerald): the card received through Mystery Gift; the deliveryman's text; the egg decoded from the party: Pichu, an egg, met location 0xFF, the fateful-encounter bit, moves ThunderShock, Charm, Surf, valid checksum, both with an empty party (slot 1) and with a Pokémon already in it (slot 2).
+
+## FireRed and LeafGreen (2026-10-30)
+
+FireRed and LeafGreen (English, `BPRE`, `BPGE`) receive Mystery Gift exactly as Emerald does, compared in the pret decompilations: the Wonder Distributor serial (0x7F7D), the broadcast's game data (its version field is written but never checked), the client's commands, the link game data, the Wonder Card and the saved RAM script's layout, and all 25 script commands the app's scripts use have the same numbers. So the same station serves them; only the catalog differs:
+
+- **Aurora Ticket** (Birth Island, Deoxys) and **Mystic Ticket** (Navel Rock, Lugia and Ho-Oh), the two events these games had: items 0x173 and 0x172 as in Emerald; their own received flags (0x2A7, 0x2A8), ferry flags (`FLAG_ENABLE_SHIP_BIRTH_ISLAND` 0x84B, `FLAG_ENABLE_SHIP_NAVEL_ROCK` 0x84A) and fought flags (0x2E4; 0x2F2, 0x2F3). The deliveryman sends the player to the Vermilion City harbor, where the Seagallop ferry sails once the Sevii Islands are open.
+- **Altering Cave** on Six Island: the same eight other sets, in the same order, through `VAR_ALTERING_CAVE_WILD_SET` (0x4024 in these games).
+- Mystery Gift is unlocked by the same questionnaire phrase, in any Poké Mart.
+
+**Checked** with LeafGreen (test bench; a new game, Mystery Gift switched on in a test copy and the player placed upstairs in Viridian City's Pokémon Center): each card received over the Wireless Adapter and saved; the deliveryman's text; the Aurora Ticket in the Key Items pocket with 0x2A7 and 0x84B set; the Mystic Ticket with 0x2A8 and 0x84A set; Altering Cave set to Smeargle's (8). FireRed runs the same code; not yet tried with a FireRed game.

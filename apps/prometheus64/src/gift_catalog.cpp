@@ -131,7 +131,18 @@ const TicketDef kEmerald[] = {
      {"A ticket for a ship to SOUTHERN", "ISLAND. Pick it up from the", "deliveryman in any POKéMON", "CENTER."}},
 };
 
-std::vector<uint8_t> ticket_script(const TicketDef& t) {
+// FireRed and LeafGreen (English): the two tickets they were made for, from the Vermilion City
+// harbor's Seagallop ferry once the Sevii Islands are open. Their own flags (pokefirered).
+const TicketDef kFireRedLeafGreen[] = {
+    {"aurora", "Aurora Ticket", "Birth Island, where Deoxys waits", 1000, 0x173, 0x84B, 0x2A7, {0x2E4}, 410, 1,
+     "AURORA TICKET",
+     {"A ticket for a ship to BIRTH", "ISLAND. Pick it up from the", "deliveryman in any POKéMON", "CENTER."}},
+    {"mystic", "Mystic Ticket", "Navel Rock, where Lugia and Ho-Oh rest", 1001, 0x172, 0x84A, 0x2A8, {0x2F2, 0x2F3}, 249,
+     2, "MYSTIC TICKET",
+     {"A ticket for a ship to NAVEL", "ROCK. Pick it up from the", "deliveryman in any POKéMON", "CENTER."}},
+};
+
+std::vector<uint8_t> ticket_script(const TicketDef& t, const std::string& harbor) {
   const std::string item = t.item_caps;
   ScriptWriter s;
   s.setvaddress();
@@ -159,7 +170,7 @@ std::vector<uint8_t> ticket_script(const TicketDef& t) {
   s.release();
   s.end();
   s.text("thanks", "Thanks for coming to the event,\n{PLAYER}!\fWe have something for you:\nthe " + item + ".");
-  s.text("use", "Show it to the sailor at the\nLILYCOVE CITY harbor.\fWhere will it take you?");
+  s.text("use", "Show it to the sailor at the\n" + harbor + " harbor.\fWhere will it take you?");
   s.text("bagfull", "Oh, your BAG has no room for it.\fMake some room in your\nKEY ITEMS POCKET and come back.");
   s.text("again", "Thanks for coming to the event!");
   return s.finish();
@@ -183,20 +194,27 @@ const CaveSetDef kAlteringCave[] = {
     {"stantler", "Stantler", "STANTLER", 234}, {"smeargle", "Smeargle", "SMEARGLE", 235},
     {"zubat", "Zubat (as before)", "ZUBAT", 41},
 };
-constexpr uint16_t kVarAlteringCaveWildSet = 0x403E;
+// Where each game keeps the cave's set (VAR_ALTERING_CAVE_WILD_SET), and where the cave is.
+struct CaveGameDef {
+  uint16_t var;
+  const char* place;       // "ROUTE 103", as the games write it
+  const char* place_name;  // "Route 103"
+};
+const CaveGameDef kEmeraldCave = {0x403E, "ROUTE 103", "Route 103"};
+const CaveGameDef kFireRedLeafGreenCave = {0x4024, "SIX ISLAND", "Six Island"};
 
-std::vector<uint8_t> cave_script(const CaveSetDef& c, uint16_t set) {
+std::vector<uint8_t> cave_script(const CaveSetDef& c, uint16_t set, const CaveGameDef& g) {
   const std::string mon = c.caps;
   ScriptWriter s;
   s.setvaddress();
   s.lock();
   s.faceplayer();
-  s.setvar(kVarAlteringCaveWildSet, set);
+  s.setvar(g.var, set);
   s.say("rumor");
   s.release();
   s.end();
   s.text("rumor", "Thanks for coming to the event,\n{PLAYER}!\fThey say wild " + mon + " have been\nseen in the ALTERING CAVE.\f"
-                  "It's on ROUTE 103. Why not\ngo and take a look?");
+                  "It's on " + std::string(g.place) + ". Why not\ngo and take a look?");
   return s.finish();
 }
 
@@ -293,7 +311,7 @@ std::vector<uint8_t> ticket_card(const TicketDef& t, uint32_t id_number) {
   return c;
 }
 
-std::vector<uint8_t> cave_card(const CaveSetDef& c, uint16_t card_flag, uint32_t id_number) {
+std::vector<uint8_t> cave_card(const CaveSetDef& c, uint16_t card_flag, uint32_t id_number, const CaveGameDef& g) {
   std::vector<uint8_t> card(332, 0);
   card[0] = static_cast<uint8_t>(card_flag), card[1] = static_cast<uint8_t>(card_flag >> 8);
   card[2] = static_cast<uint8_t>(c.species), card[3] = static_cast<uint8_t>(c.species >> 8);
@@ -302,7 +320,7 @@ std::vector<uint8_t> cave_card(const CaveSetDef& c, uint16_t card_flag, uint32_t
   put_text(card, 10, "ALTERING CAVE");
   put_text(card, 50, "PROJECT PROMETHEUS EVENT");
   put_text(card, 90, std::string("Rare POKéMON have been seen in"));
-  put_text(card, 130, "the ALTERING CAVE on ROUTE 103:");
+  put_text(card, 130, std::string("the ALTERING CAVE on ") + g.place + ":");
   put_text(card, 170, std::string("wild ") + c.caps + ".");
   put_text(card, 210, "");
   put_text(card, 250, "Hear more from the deliveryman");
@@ -371,21 +389,28 @@ uint16_t game_crc16(const uint8_t* data, std::size_t size) {
 
 std::vector<EventGift> event_gifts(const std::string& game_code) {
   std::vector<EventGift> out;
-  if (game_code == "BPEE") {
-    uint32_t id = 1;
-    for (const TicketDef& t : kEmerald) {
-      out.push_back({t.key, t.name, t.where, "", "", t.card_flag, ticket_card(t, id++), ticket_script(t)});
-    }
+  const bool emerald = game_code == "BPEE";
+  const bool frlg = game_code == "BPRE" || game_code == "BPGE";
+  if (!emerald && !frlg) return out;
+  uint32_t id = 1;
+  const std::string harbor = emerald ? "LILYCOVE CITY" : "VERMILION CITY";
+  for (const TicketDef& t : emerald ? std::vector<TicketDef>(std::begin(kEmerald), std::end(kEmerald))
+                                    : std::vector<TicketDef>(std::begin(kFireRedLeafGreen), std::end(kFireRedLeafGreen))) {
+    out.push_back({t.key, t.name, t.where, "", "", t.card_flag, ticket_card(t, id++), ticket_script(t, harbor)});
+  }
+  if (emerald) {
     out.push_back({"pichu", "Pichu Egg", "A Pichu that knows Surf, from an event held only in Japan", "", "",
                    kPichuCardFlag, pichu_card(id++), pichu_script()});
-    // One card id per set, so choosing another set is a new card (the game offers to swap it).
-    for (uint16_t i = 0; i < std::size(kAlteringCave); ++i) {
-      const CaveSetDef& c = kAlteringCave[i];
-      const uint16_t set = c.species == 41 ? 0 : static_cast<uint16_t>(i + 1);
-      const uint16_t flag = static_cast<uint16_t>(1004 + i);
-      out.push_back({std::string("altering-") + c.key, "Altering Cave", std::string("Wild ") + c.name + " in the cave on Route 103",
-                     "altering", c.name, flag, cave_card(c, flag, id++), cave_script(c, set)});
-    }
+  }
+  // One card id per set, so choosing another set is a new card (the game offers to swap it).
+  const CaveGameDef& cave = emerald ? kEmeraldCave : kFireRedLeafGreenCave;
+  for (uint16_t i = 0; i < std::size(kAlteringCave); ++i) {
+    const CaveSetDef& c = kAlteringCave[i];
+    const uint16_t set = c.species == 41 ? 0 : static_cast<uint16_t>(i + 1);
+    const uint16_t flag = static_cast<uint16_t>(1004 + i);
+    out.push_back({std::string("altering-") + c.key, "Altering Cave",
+                   std::string("Wild ") + c.name + " in the cave on " + cave.place_name, "altering", c.name, flag,
+                   cave_card(c, flag, id++, cave), cave_script(c, set, cave)});
   }
   return out;
 }

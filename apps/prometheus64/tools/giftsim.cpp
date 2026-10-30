@@ -20,8 +20,11 @@
 //   dumpmem <addr> <len> <file> memory as the console sees it (hex address)
 //   peek8|peek16|peek32 <addr> print memory (hex address)
 //   poke8|poke16|poke32 <addr> <value>
-//   flag <id>                  print an Emerald event flag (hex id), from the save block in RAM
-//   var <id>                   print an Emerald event variable (hex id, 4000-40FF), likewise
+//   flag <id>                  print an event flag (hex id), from the save block in RAM (Emerald,
+//                              FireRed, LeafGreen: by the game's code)
+//   setflag <id>               set an event flag in RAM (a test save's setup)
+//   savepoke <1|2> <off> <byte> write a byte into save block 1 or 2 in RAM (hex offset)
+//   var <id>                   print an event variable (hex id, 4000-40FF), likewise
 //   station <gift> [code]      open the event gift station with this gift (game code: BPEE)
 //   until <text> <frames>      run until the station's log contains the text (or give up)
 //   hints [code]               print today's Pokémon daily hints (pokemon_hints.hpp; code: BPEE)
@@ -86,6 +89,18 @@ struct Bench {
   uint16_t buttons = 0;
   uint64_t frames = 0;
   p64::GiftStation station;
+  std::string code;  // the game's code, from its header ("BPEE")
+
+  // Where the save block's flags and variables are in RAM, for this game.
+  uint8_t* save_block(uint32_t offset, std::size_t size, int block = 1) {
+    const uint32_t ptr = (is_frlg() ? 0x03005008 : 0x03005D8C) + (block == 2 ? 4 : 0);
+    uint32_t sb = 0;
+    if (uint8_t* p = core.memory(ptr, 4)) std::memcpy(&sb, p, 4);
+    return sb ? core.memory(sb + offset, size) : nullptr;
+  }
+  uint8_t* flag_byte(uint32_t id) { return save_block((is_frlg() ? 0xEE0 : 0x1270) + id / 8, 1); }
+  uint8_t* var(uint32_t id) { return save_block((is_frlg() ? 0x1000 : 0x139C) + 2 * (id - 0x4000), 2); }
+  bool is_frlg() const { return code.rfind("BPR", 0) == 0 || code.rfind("BPG", 0) == 0; }
 
   void step(int n) {
     for (int i = 0; i < n; ++i) {
@@ -163,7 +178,9 @@ int main(int argc, char** argv) {
       const auto eq = kv.find('=');
       b.core.set_option(kv.substr(0, eq), kv.substr(eq + 1));
     } else if (cmd == "boot") {
-      if (std::string err = b.core.load_game(rom, read_file(rom), true); !err.empty()) fail(err);
+      const std::vector<uint8_t> rom_data = read_file(rom);
+      if (rom_data.size() > 0xB0) b.code.assign(reinterpret_cast<const char*>(&rom_data[0xAC]), 4);
+      if (std::string err = b.core.load_game(rom, rom_data, true); !err.empty()) fail(err);
       if (!savefile.empty()) {
         const std::vector<uint8_t> save = read_file(savefile);
         if (uint8_t* ram = b.core.save_ram(); ram && !save.empty())
@@ -235,18 +252,26 @@ int main(int argc, char** argv) {
       std::string a;
       ss >> a;
       const uint32_t id = static_cast<uint32_t>(std::stoul(a, nullptr, 16));
-      uint32_t sb1 = 0;
-      if (uint8_t* p = b.core.memory(0x03005D8C, 4)) std::memcpy(&sb1, p, 4);
-      uint8_t* f = b.core.memory(sb1 + 0x1270 + id / 8, 1);
+      uint8_t* f = b.flag_byte(id);
       std::printf("flag %x: %s\n", id, f ? ((*f >> (id % 8)) & 1 ? "set" : "clear") : "?");
+    } else if (cmd == "savepoke") {
+      int block = 1;
+      std::string off, val;
+      ss >> block >> off >> val;
+      if (uint8_t* p = b.save_block(static_cast<uint32_t>(std::stoul(off, nullptr, 16)), 1, block)) {
+        *p = static_cast<uint8_t>(std::stoul(val, nullptr, 0));
+      }
+    } else if (cmd == "setflag") {
+      std::string a;
+      ss >> a;
+      const uint32_t id = static_cast<uint32_t>(std::stoul(a, nullptr, 16));
+      if (uint8_t* f = b.flag_byte(id)) *f = static_cast<uint8_t>(*f | (1u << (id % 8)));
     } else if (cmd == "var") {
       std::string a;
       ss >> a;
       const uint32_t id = static_cast<uint32_t>(std::stoul(a, nullptr, 16));
-      uint32_t sb1 = 0;
-      if (uint8_t* p = b.core.memory(0x03005D8C, 4)) std::memcpy(&sb1, p, 4);
       uint16_t v = 0;
-      if (uint8_t* p = b.core.memory(sb1 + 0x139C + 2 * (id - 0x4000), 2)) std::memcpy(&v, p, 2);
+      if (uint8_t* p = b.var(id)) std::memcpy(&v, p, 2);
       std::printf("var %x: %u\n", id, v);
     } else if (cmd == "station") {
       std::string key, code = "BPEE";

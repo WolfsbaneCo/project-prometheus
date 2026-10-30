@@ -23,8 +23,8 @@ struct EventGift {
   std::vector<uint8_t> script;  // the deliveryman's script
 };
 
-// The gifts a game can receive, by the game code in its header ("BPEE": Emerald, English).
-// Empty for games without wireless Mystery Gift.
+// The gifts a game can receive, by the game code in its header ("BPEE": Emerald, "BPRE" FireRed,
+// "BPGE" LeafGreen; English). Empty for games without wireless Mystery Gift.
 std::vector<EventGift> event_gifts(const std::string& game_code);
 
 // Text in the games' character set (English), with \n a new line and \f a new box. {PLAYER} is
