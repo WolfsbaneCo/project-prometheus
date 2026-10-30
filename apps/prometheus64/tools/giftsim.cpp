@@ -23,6 +23,7 @@
 //   flag <id>                  print an Emerald event flag (hex id), from the save block in RAM
 //   station <gift> [code]      open the event gift station with this gift (game code: BPEE)
 //   until <text> <frames>      run until the station's log contains the text (or give up)
+//   hints [code]               print today's Pokémon daily hints (pokemon_hints.hpp; code: BPEE)
 #include <SDL3/SDL_log.h>
 
 #include <cstdio>
@@ -35,6 +36,7 @@
 
 #include "core.hpp"
 #include "gift_station.hpp"
+#include "pokemon_hints.hpp"
 
 namespace {
 
@@ -247,6 +249,14 @@ int main(int argc, char** argv) {
         }
       }
       if (!found) fail("no such gift: " + key);
+    } else if (cmd == "hints") {
+      std::string code = "BPEE";
+      ss >> code;
+      const p64::GbaMemory memory = [&](uint32_t a, std::size_t n) -> const uint8_t* { return b.core.memory(a, n); };
+      const auto hints = p64::daily_hints(code, memory);
+      if (hints.empty()) std::printf("hints: none\n");
+      for (const auto& h : hints) std::printf("hint %s: %s\n", h.key.c_str(), h.text.c_str());
+      std::fflush(stdout);
     } else if (cmd == "until") {
       std::string text;
       int n = 0;

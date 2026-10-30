@@ -14,6 +14,7 @@
 
 #include "archive.hpp"
 #include "net.hpp"
+#include "pokemon_hints.hpp"
 #include "savekit/formats.hpp"
 #include "savekit/library.hpp"
 #include "savekit/sha256.hpp"
@@ -979,6 +980,32 @@ void App::run_frames() {
 // Whether this computer keeps the game at full speed: game frames are counted over 5-second
 // stretches of play, and if clearly fewer ran than the game's speed, the player hears once (per
 // game) which settings are lighter. Slow settings are the usual cause of a game that drags.
+// Pokémon daily hints: every 5 seconds of play, read the game for Mirage Island and the Lottery
+// Corner, and say so once on a lucky day. Not while linked, online or at an event, where the game
+// belongs to more than this player.
+void App::update_hints() {
+  if (!game_ || game_->system != System::GBA || game_->id.size() < 8 || screen_ != Screen::Playing) return;
+  if (frame_count_ - hints_checked_ < 300 && hints_checked_ <= frame_count_) return;
+  hints_checked_ = frame_count_;
+  const std::string code = game_->id.substr(4, 4);
+  if (!has_daily_hints(code) || !settings_.get_int("daily_hints", 1) || online_game_ || link_.active() || !event_key_.empty()) return;
+  const GbaMemory memory = [this](uint32_t address, std::size_t size) -> const uint8_t* { return core_.memory(address, size); };
+  // The last hints shown for this game, so each lucky day is told once, even across restarts.
+  std::string seen = settings_.game(game_->id, "hints_seen", "");
+  bool changed = false;
+  for (const DailyHint& h : daily_hints(code, memory)) {
+    if (("|" + seen + "|").find("|" + h.key + "|") != std::string::npos) continue;
+    toast(h.text, 10.0);
+    seen = seen.empty() ? h.key : h.key + "|" + seen;
+    changed = true;
+  }
+  if (changed) {
+    if (seen.size() > 200) seen.resize(seen.rfind('|', 200));
+    settings_.set_game(game_->id, "hints_seen", seen);
+    settings_.save();
+  }
+}
+
 void App::check_speed(double fps) {
   if (!opt_.screenshot.empty() || slow_told_) return;
   const uint64_t now = SDL_GetTicksNS();
@@ -1072,6 +1099,7 @@ void App::loop() {
     process_backup();
     if (game_) run_frames();
     update_event();
+    update_hints();
     audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host()) && !link_.active()));
     draw();
     ++frames_drawn;
@@ -1414,6 +1442,7 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers, "F10"},
       {"Controls", "", kControlsItem},
       {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
+      {"Daily hints", settings_.get_int("daily_hints", 1) ? "On" : "Off", kHintsItem},
       {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
       {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
   };
@@ -1424,13 +1453,15 @@ std::vector<App::MenuItem> App::menu_items() const {
     for (MenuItem& it : items) {
       if (it.id == kTextures || it.id == kResolution || it.id == kOverscan) continue;
       if (it.id == kEventsItem && events_for(*game_).empty()) continue;
+      if (it.id == kHintsItem && !has_daily_hints(game_->id.size() >= 8 ? game_->id.substr(4, 4) : "")) continue;
       if (it.id == kPicture) it.value = g.name;
       if (it.id == kFill && look.fill == FillMode::Fit) it.value = "Fit (3:2)";
       gba.push_back(std::move(it));
     }
     return gba;
   }
-  items.erase(std::remove_if(items.begin(), items.end(), [](const MenuItem& it) { return it.id == kEventsItem; }), items.end());
+  items.erase(std::remove_if(items.begin(), items.end(), [](const MenuItem& it) { return it.id == kEventsItem || it.id == kHintsItem; }),
+              items.end());
   return items;
 }
 
@@ -1556,6 +1587,13 @@ void App::menu_change(int id, int dir) {
         online_page_ = OnlinePage::Events;
       }
       break;
+    case kHintsItem: {
+      const bool on = !settings_.get_int("daily_hints", 1);
+      settings_.set_int("daily_hints", on ? 1 : 0);
+      toast(on ? "Daily hints on: you'll hear when Mirage Island is out or the lottery would pay, nothing else"
+               : "Daily hints off");
+      break;
+    }
     case kReset:
       if (dir == 0) {
         core_.reset();

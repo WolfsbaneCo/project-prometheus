@@ -209,6 +209,7 @@ class App {
   void rescan();
   void set_fullscreen(bool on);
   void toast(const std::string& text, double seconds = 3.0);
+  void update_hints();  // Pokémon daily hints (pokemon_hints.hpp), every few seconds of play
   void take_screenshot(const std::filesystem::path& file);
   std::vector<MenuItem> menu_items() const;
   void menu_change(int id, int direction);
@@ -308,6 +309,7 @@ class App {
   int out_w_ = 0, out_h_ = 0;
   uint64_t last_ns_ = 0, acc_ns_ = 0;
   uint64_t frame_count_ = 0;
+  uint64_t hints_checked_ = 0;  // frame_count_ at the last daily-hints check
   std::deque<Toast> toasts_;
   std::vector<uint8_t> last_saved_ram_;
   std::vector<uint8_t> pending_ram_;

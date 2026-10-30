@@ -77,3 +77,4 @@ Checked with Pokémon Emerald (USA, Europe) in the test bench and in the app: th
 Checked against the stand-in for Google with two Linux "computers" and Pokémon Emerald: the laptop had save A; the PC moved on to save B and backed up; the laptop started Emerald (with no other sync running) and its library and the running game both had save B within the boot; starting again changed nothing.
 
 - [ ] A newer save arriving after the 15-second window (left alone, message shown, picked up on quitting), against real Google Drive and a slow connection.
+- **Daily hints in the real game (Emerald).** The rules were checked against planted memory, not yet on a day when the real game's numbers came up. Check that a hint appears with a save whose Mirage number or lottery number matches, and that the island and the prize are really there.

@@ -42,3 +42,14 @@ The pret decompilation of Emerald (`src/librfu_rfu.c`, `src/link_rfu_2.c`, `src/
 - **FireRed and LeafGreen** (Aurora and Mystic Tickets): the same machine, with FRLG's flags, items and script commands; needs one of those games to test with.
 - **Ruby and Sapphire** (Eon Ticket): they received it as an e-Reader Mystery Event over the link cable, a different path.
 - **Other Emerald languages:** the same flags and items, but untested.
+
+## Daily hints (2026-10-30)
+
+The owner asked for reminders on the days the two luck events of Emerald would pay, since the odds are close to zero otherwise: Mirage Island (about 1 in 65,536 per party Pokémon per day) and the Lilycove Lottery Corner (5 matching digits for the Master Ball: about 1 in 100,000). `src/pokemon_hints.cpp` reads the running game, as a guide would, and never writes to it, so the odds stay the game's:
+
+- **Mirage Island:** `VAR_MIRAGE_RND_H` against the low 16 bits of each party Pokémon's personality value (`IsMirageIslandPresent`).
+- **Lottery:** `VAR_POKELOT_RND1` against each party and PC Pokémon's trainer ID, matching decimal digits from the right, eggs left out, nothing when `FLAG_DAILY_PICKED_LOTO_TICKET` says today's ticket is drawn (`PickLotteryCornerTicket`). 2 to 5 digits: PP Up, Exp. Share, Max Revive, Master Ball.
+- **Addresses** (English Emerald): `gSaveBlock1Ptr` 0x03005D8C, `gPokemonStoragePtr` 0x03005D94, `gPlayerPartyCount` 0x020244E9, `gPlayerParty` 0x020244EC; the game's own code refers to them 829, 30, 41 and 1,091 times.
+- **In the app:** checked every 5 seconds of play; each lucky day is told once (the keys are kept per game, `hints_seen`), as a 10-second message. Off during link play, online play and events. **Daily hints** in the in-game menu turns them off.
+- **Checked** with the test bench on Emerald memory (`hints` command): nothing on an ordinary day; Mirage Island when the number matches; Max Revive for 4 digits on a party Pokémon, Master Ball for 5 on a PC one; no lottery hint once the ticket is drawn.
+- **Ruby and Sapphire** have both events too (different addresses: the pret Ruby decompilation and the games are needed). FireRed and LeafGreen have neither.
