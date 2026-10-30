@@ -1,10 +1,10 @@
 # Project Prometheus
 
-**Project Prometheus** is a modern desktop player for N64 and GBA games: keeping classic games playable, and their saves alive, instead of letting them fade into oblivion. It is built on proven emulator cores and adds its own sharper picture for big screens, simpler controls, couch and online multiplayer, GBA link play (trading and battling Pokémon) and a save library that keeps every save safe.
+**Project Prometheus** is a free desktop player for the N64 and GBA games you own: a sharp picture on big screens, simple controls, couch and online multiplayer, GBA link play, and a save library backed up to your own Google Drive.
 
-One app plays both: it tells from inside each game file which console it is for and starts the right emulator, whatever the file is called.
+It contains no games and never downloads, finds or shares them.
 
-The app plays games the user already owns and adds themselves. It never downloads, finds or distributes games (brief section 2).
+> **Project Prometheus is free, and the only official download is this repository's [Releases](https://github.com/WolfsbaneCo/project-prometheus/releases) page.** If you paid for it, or got it anywhere else, it didn't come from us. See [Legal](#legal).
 
 ## Download and play (Windows 10 or 11, 64-bit)
 
@@ -36,7 +36,7 @@ The quick menu shows each item's shortcut next to it, and the shortcuts work whi
 
 **GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger.
 
-**The cartridge clock** (Pokémon Ruby, Sapphire and Emerald: berries, tides, daily events) runs on your computer's real time, so time passes while the app is closed, as it did with the cartridge's battery.
+**The cartridge clock** (for GBA games with one: growing berries, daily events) runs on your computer's real time, so time passes while the app is closed, as it did with the cartridge's battery.
 
 **Saves** go into `Documents\Memories\N64` and `Documents\Memories\GBA`, one folder per game (a computer that already had `Documents\N64 Saves` from an earlier version keeps using it), with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file (GBA: `.sav`, `.srm`, `.sa1`, `.fla` or `.eep`). The emulator's original file is only read, never changed.
 
@@ -60,17 +60,6 @@ GBA games don't play in lockstep like N64 games: each player plays their own gam
 - **Joining:** your friend picks their own GBA game, presses N, then **Join a link** and types the code.
 - In Pokémon Ruby, Sapphire, Emerald, FireRed and LeafGreen, walk into a Pokémon Center and go upstairs to the Cable Club to trade or battle, as with a real link cable. FireRed, LeafGreen and Emerald can use the Wireless Adapter instead (**Link: cable / wireless** on the Play online page); both players need the same choice, and the app says so if they differ.
 - Both players need the group's key file, as for online play above. The games don't have to be the same: Ruby trades with FireRed, as on real consoles.
-
-### Event gifts: the tickets from Pokémon's old events
-
-Pokémon Emerald's event islands (Birth Island for Deoxys, Navel Rock for Lugia and Ho-Oh, Faraway Island for Mew, Southern Island for Latias or Latios) open with tickets that Nintendo handed out at events and stores, years ago. The app plays the event's distribution machine, so your game receives them the way players did then, with no cheats and no save editing: your game's own Mystery Gift receives a Wonder Card, and the deliveryman in a Pokémon Center hands over the ticket.
-
-1. **Once:** unlock Mystery Gift in your game. In any Poké Mart, fill in the questionnaire on the counter with **LINK TOGETHER WITH ALL** (you need your Pokédex), then save.
-2. **Save your game**, press **Esc** for the menu, then **Event gifts** (or **N**, then **Event gifts**), and **Open event** on the ticket you want. The game restarts at its title screen, with the Wireless Adapter.
-3. In the game: **MYSTERY GIFT**, **WONDER CARDS**, **WIRELESS COMMUNICATION**.
-4. Upstairs in any Pokémon Center, the deliveryman hands you the ticket. Show it at the Lilycove City harbor (after the Hall of Fame).
-
-The games hold one Wonder Card at a time, as they did then: collect a gift before receiving the next. Emerald (English) for now; how it works is in [decision 0008](docs/decisions/0008-event-gifts.md).
 
 ### GBA pictures for big screens
 
@@ -117,7 +106,6 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0005 Online play](docs/decisions/0005-online-play.md)
   - [0006 Google Drive backup](docs/decisions/0006-drive-backup.md)
   - [0007 GBA games](docs/decisions/0007-gba.md)
-  - [0008 Event gifts](docs/decisions/0008-event-gifts.md)
 - **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
 - **Privacy policy and terms of use** (shared by every Wolfsbane app): [wolfsbanecompany.com/apps/privacy](https://wolfsbanecompany.com/apps/privacy/) and [/apps/terms](https://wolfsbanecompany.com/apps/terms/), from the website repository [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company)
 - **Waiting on the owner:** [`docs/open-questions.md`](docs/open-questions.md)
@@ -131,7 +119,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 | 2: Saves | **Working.** In-game saves stored in the library with history; imports from other emulators; `n64save` tool and converters |
 | 3: Google Drive sync | **Working.** Connect in the app, automatic backups (on close, hourly, at start), carrying on across computers with in-game saves, choosing when two computers both saved, offline retries, save states as a per-computer backup. Checked against a stand-in for Google with two Linux computers and a Windows one; waiting for the project's Google registration ([setup](docs/google-drive-setup.md)). Still to come: syncing settings, device-to-device sharing on a home network, optional encryption |
 | 4: Netplay | **Working.** Private groups with a shared key file and a relay on the group owner's free Cloudflare account (set up from inside the app), game codes, lockstep with game and version checks, an input delay that adjusts itself during the game, the host's save. Checked with Harvest Moon 64 and Super Smash Bros. between two copies on Linux and between Linux and Windows; not yet over the internet |
-| GBA | **Working.** gpSP core picked by the game's header, three looks for big screens, saves in the library with imports and Drive backup, link play over the relay (Pokémon link cable and Wireless Adapter), event gifts for Emerald (the four island tickets, through the game's own Mystery Gift). Event gifts checked with Pokémon Emerald from the card to the deliveryman; a real Pokémon trade over the internet is still to be tried |
+| GBA | **Working.** gpSP core picked by the game's header, three looks for big screens, saves in the library with imports and Drive backup, link play over the relay (link cable and Wireless Adapter). A real trade over the internet is still to be tried |
 | 5: Cartridge | Not started |
 
 ## Building from source
@@ -161,3 +149,16 @@ n64save rom-id "<game file>"                               # identify a game by 
 ## Ground rules
 
 Game files, saves, save states and credentials never go into this repository (see `.gitignore`; CI checks it). Tests use synthetic data or public-domain homebrew only.
+
+## Legal
+
+- **Free, always.** Project Prometheus is free of charge. No one is authorised to sell it or charge for it: no paid downloads, paid bundles, paywalls, subscriptions or "donation required" downloads. The only official downloads are on this repository's [Releases](https://github.com/WolfsbaneCo/project-prometheus/releases) page.
+- **The name and logo are reserved.** "Project Prometheus", "Prometheus 64" and the flame logo are trademarks of Wolfsbane Co. The code's licence doesn't cover them ([`TRADEMARKS.md`](TRADEMARKS.md)).
+  - Sharing the unchanged official installer for free is fine.
+  - Modified versions must use their own name and icons, and must not suggest they come from us.
+- **No games, no BIOS.** The app contains no games, BIOS or system files of any console maker, and never downloads, finds or shares them. Use it only with games you own and copied yourself, as the law where you live allows. Don't ask for, post or link to game files in issues or discussions: they will be deleted.
+- **Not affiliated.** Project Prometheus is not affiliated with, endorsed or sponsored by Nintendo, The Pokémon Company, Game Freak, Google or Cloudflare. Their names and trademarks belong to them and appear here only to say what the app works with.
+- **No warranty.** The app is provided "as is", without warranty of any kind, and the authors aren't liable for any damage from its use, including lost saves (Apache License 2.0, sections 7 and 8). Keep backups of saves that matter.
+- **Your accounts, your data.** Online play runs through a relay on the group owner's own Cloudflare account, and backups go to your own Google Drive. Wolfsbane Co. receives none of your games, saves or data. Each player is responsible for following the terms of the services they connect. Read the [privacy policy](https://wolfsbanecompany.com/apps/privacy/) and [terms](https://wolfsbanecompany.com/apps/terms/).
+- **Licences.** The app's code is under the [Apache License 2.0](LICENSE); redistributions must keep the [`NOTICE`](NOTICE) file. The emulator cores (GPL-2.0) and other components keep their own licences, listed with where to get their source in [`installer/THIRD-PARTY-NOTICES.txt`](installer/THIRD-PARTY-NOTICES.txt). The installer asks you to accept these terms ([`installer/TERMS.txt`](installer/TERMS.txt)) and installs every licence in its `licenses` folder.
+- **Reporting.** To report a copy being sold, a copyright concern or a takedown request, open an issue on this repository.

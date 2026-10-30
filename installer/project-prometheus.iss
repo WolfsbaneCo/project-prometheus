@@ -32,6 +32,8 @@ SetupIconFile=..\assets\branding\prometheus\prometheus.ico
 UninstallDisplayIcon={app}\ProjectPrometheus.exe
 UninstallDisplayName=Project Prometheus
 WizardStyle=modern
+; The terms of use: free only, no games included, not affiliated, no warranty. Accepted before installing.
+LicenseFile=TERMS.txt
 Compression=lzma2/max
 SolidCompression=yes
 ChangesAssociations=yes

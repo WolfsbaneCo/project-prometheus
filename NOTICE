@@ -1,0 +1,23 @@
+Project Prometheus
+Copyright 2026 Wolfsbane Co.
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE). Under section 4(d)
+of that licence, anyone who redistributes this software or a work based on it must include this
+NOTICE file.
+
+"Project Prometheus", "Prometheus 64" and the flame logo are trademarks of Wolfsbane Co. The
+Apache License does not grant permission to use them (section 6). See TRADEMARKS.md.
+
+Project Prometheus is distributed by Wolfsbane Co. free of charge, only from
+https://github.com/WolfsbaneCo/project-prometheus/releases. Any copy that was sold, or obtained
+from anywhere else, did not come from Wolfsbane Co.
+
+Project Prometheus contains no games, BIOS or system files of any console maker, and does not
+download, find or share them.
+
+Project Prometheus is not affiliated with, endorsed or sponsored by Nintendo, The Pokémon Company,
+Game Freak, Google or Cloudflare. All other names and trademarks belong to their owners and are
+used only to describe what the software works with.
+
+The emulator cores and other bundled components keep their own licences, listed in
+installer/THIRD-PARTY-NOTICES.txt.

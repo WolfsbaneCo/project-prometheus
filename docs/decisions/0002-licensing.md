@@ -31,3 +31,17 @@
 ## Decision
 
 Load the GPL core as an unmodified separate DLL. The repository stays Apache-2.0 for now. **Open decision for the project owner:** before the first build is distributed, relicense the host as GPL-3.0-or-later (the safe course above), or get legal advice that Apache-2.0 is acceptable. Changing `LICENSE` is deliberately not done here.
+
+## Owner's choice: free only, name and logo reserved (2026-10-30)
+
+Before the repository can go public, the owner asked to stop people charging for the app. No open source licence can forbid selling, including Apache-2.0 and the cores' GPL, and README wording alone can't take that right away. The owner chose to keep an open licence for the code and reserve the name and logo instead:
+
+- [`TRADEMARKS.md`](../../TRADEMARKS.md): "Project Prometheus", "Prometheus 64" and the flame logo are Wolfsbane Co.'s trademarks. Apache-2.0 section 6 grants no rights to them. The files in `assets/branding/` are all rights reserved. The unchanged official installer may be shared free of charge. Selling under the name or logo, and modified versions under them, are not allowed.
+- [`NOTICE`](../../NOTICE): Apache-2.0 section 4(d) makes redistributors keep it. It states the official source, that the app is free, that it contains no games or BIOS, and that it isn't affiliated with any console maker.
+- `installer/TERMS.txt`: terms of use the installer asks the player to accept (free only, no games included, not affiliated, no warranty, the player's own accounts).
+- The README's **Legal** section says the same for visitors.
+
+**Limit:** someone can still sell a renamed build with other icons, as every open source licence allows. Stopping that would take a non-commercial licence for the app's own code, which the owner declined.
+
+**Still open:** relicensing the host under GPL-3.0-or-later (above) before the first public release.
+

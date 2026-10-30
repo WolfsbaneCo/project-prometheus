@@ -148,7 +148,7 @@ jobs:
           Copy-Item core/CORE-SOURCE.txt stage/cores/
           Copy-Item core/gpsp_libretro.dll stage/cores/
           Copy-Item core/GBA-CORE-SOURCE.txt stage/cores/
-          Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, installer/libarchive-COPYING.txt, LICENSE stage/licenses/
+          Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, installer/libarchive-COPYING.txt, installer/TERMS.txt, LICENSE, NOTICE, TRADEMARKS.md stage/licenses/
           Get-ChildItem -Recurse stage | Select-Object FullName, Length
       - name: Version
         id: version
