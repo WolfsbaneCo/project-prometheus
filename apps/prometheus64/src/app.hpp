@@ -20,6 +20,7 @@
 #include "core.hpp"
 #include "input.hpp"
 #include "library.hpp"
+#include "cable_station.hpp"
 #include "gift_station.hpp"
 #include "link.hpp"
 #include "netplay.hpp"
@@ -253,9 +254,13 @@ class App {
   // Online play.
   Netplay net_;
   Link link_;
-  GiftStation gifts_;
+  GiftStation gifts_;   // Wonder Cards over the Wireless Adapter (Emerald, FireRed, LeafGreen)
+  CableStation cable_;  // Mystery Events over the link cable, as the e-Reader (Ruby, Sapphire)
   std::string event_key_;  // the open event's gift ("aurora"); empty when none
+  bool event_cable_ = false;  // the open event goes over the cable
   GiftStation::Stage event_stage_ = GiftStation::Stage::Closed;
+  GiftStation::Stage event_station_stage() const;  // the open station's stage, as GiftStation's
+  std::string event_station_status() const;
   OnlinePage online_page_ = OnlinePage::Main;
   std::map<std::string, int> event_choice_;  // Event gifts page: the choice picked in each group
   TextField text_field_ = TextField::None;

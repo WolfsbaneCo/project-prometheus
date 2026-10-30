@@ -20,11 +20,14 @@ struct EventGift {
   std::string group, choice;
   uint16_t card_flag;  // the Wonder Card's id in the game (1000 + its gift slot)
   std::vector<uint8_t> card;    // struct WonderCard, 332 bytes
-  std::vector<uint8_t> script;  // the deliveryman's script
+  std::vector<uint8_t> script;  // the deliveryman's script; for a cable event, the event's data
+  // Ruby and Sapphire: a Mystery Event, sent over the link cable as the e-Reader did
+  // (cable_station.hpp), instead of a Wonder Card over the Wireless Adapter.
+  bool cable = false;
 };
 
 // The gifts a game can receive, by the game code in its header ("BPEE": Emerald, "BPRE" FireRed,
-// "BPGE" LeafGreen; English). Empty for games without wireless Mystery Gift.
+// "BPGE" LeafGreen, "AXVE" Ruby, "AXPE" Sapphire; English). Empty for other games.
 std::vector<EventGift> event_gifts(const std::string& game_code);
 
 // Text in the games' character set (English), with \n a new line and \f a new box. {PLAYER} is

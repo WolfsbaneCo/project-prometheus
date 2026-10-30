@@ -61,6 +61,10 @@ class ScriptWriter {
   void setmodernfatefulencounter(uint16_t slot_var) { op(0xCD), u16(slot_var); }
   void setmonmetlocation(uint16_t slot_var, uint8_t location) { op(0xD2), u16(slot_var), op(location); }
   void playfanfare(uint16_t song) { op(0x31), u16(song); }
+  void checkpcitem(uint16_t item) { op(0x4A), u16(item), u16(1); }
+  void killscript() { op(0x0D); }  // a RAM script: done, forget it
+  void vloadptr(const std::string& text) { op(0xBE), ref(text); }  // the Mystery Event's message
+  void setmysteryeventstatus(uint8_t status) { op(0x0E), op(status); }
   void waitfanfare() { op(0x32); }
   void vmessage(const std::string& text) { op(0xBD), ref(text); }
   void vgoto_if_set(uint16_t flag, const std::string& dest) {
@@ -387,8 +391,112 @@ uint16_t game_crc16(const uint8_t* data, std::size_t size) {
   return static_cast<uint16_t>(~crc);
 }
 
+// Ruby and Sapphire: the Eon Ticket came from an e-Reader card, read into the game's Mystery Event
+// menu over the link cable. The event data is a Mystery Event script (pokeruby,
+// mystery_event_script.c), laid out as Game Freak's own test event for it
+// (data/debug_mystery_event_scripts.s): a compatibility check, a CRC over the rest, a script put
+// on DAD in the Petalburg City Gym (who hands the ticket over), the ticket as a record mixing
+// gift, and a check run at once that sets the message the game shows. Our own wording.
+std::vector<uint8_t> eon_ticket_event() {
+  constexpr uint16_t kEonTicket = 275, kFlagHasEonTicket = 0x853, kFlagMetLati = 0xCE;
+  // DAD's script, kept in the save until it has handed the ticket over.
+  ScriptWriter dad;
+  dad.setvaddress();
+  dad.checkitem(kEonTicket);
+  dad.vgoto_if_result(1, "done");
+  dad.checkpcitem(kEonTicket);
+  dad.vgoto_if_result(1, "done");
+  dad.vgoto_if_set(kFlagMetLati, "done");
+  dad.lock();
+  dad.faceplayer();
+  dad.say("letter");
+  dad.checkitemspace(kEonTicket);
+  dad.vgoto_if_result(0, "full");
+  dad.giveitem(kEonTicket);
+  dad.setflag(kFlagHasEonTicket);
+  dad.say("ticket");
+  dad.release();
+  dad.label("done");
+  dad.killscript();
+  dad.label("full");
+  dad.say("bagfull");
+  dad.release();
+  dad.end();
+  dad.text("letter", "DAD: {PLAYER}! Good to see you!\nA letter came for you, {PLAYER}.");
+  dad.text("ticket", "DAD: It looks like a ferry TICKET,\nbut not one I've ever seen.\f"
+                     "Why not ask about it at the\nLILYCOVE CITY harbor?");
+  dad.text("bagfull", "DAD: {PLAYER}, the KEY ITEMS POCKET\nof your BAG is full.\f"
+                      "Put some key items in your PC,\nthen come and see me.");
+  const std::vector<uint8_t> dad_script = dad.finish();
+
+  // Run as the event loads: the message, and whether it may load (once per game).
+  ScriptWriter now;
+  now.setvaddress();
+  now.checkitem(kEonTicket);
+  now.vgoto_if_result(1, "once");
+  now.checkpcitem(kEonTicket);
+  now.vgoto_if_result(1, "once");
+  now.vgoto_if_set(kFlagMetLati, "once");
+  now.checkitemspace(kEonTicket);
+  now.vgoto_if_result(0, "full");
+  now.vloadptr("ok");
+  now.setmysteryeventstatus(2);  // MEVENT_STATUS_SUCCESS: the game saves
+  now.end();
+  now.label("once");
+  now.vloadptr("again");
+  now.setmysteryeventstatus(3);
+  now.end();
+  now.label("full");
+  now.vloadptr("bagfull");
+  now.setmysteryeventstatus(3);
+  now.end();
+  now.text("ok", "Go and see your DAD at the GYM\nin PETALBURG CITY.");
+  now.text("again", "This EVENT can be loaded only once.");
+  now.text("bagfull", "Your BAG's KEY ITEMS POCKET is full.");
+  const std::vector<uint8_t> now_script = now.finish();
+
+  // The event script. Its pointers assume it sits at kBase (checkcompat says so).
+  constexpr uint32_t kBase = 0x02000000;
+  std::vector<uint8_t> e;
+  auto u8 = [&](uint32_t v) { e.push_back(static_cast<uint8_t>(v)); };
+  auto u16 = [&](uint32_t v) { u8(v & 0xFF), u8(v >> 8); };
+  auto u32 = [&](uint32_t v) { u16(v & 0xFFFF), u16(v >> 16); };
+  auto put32 = [&](std::size_t at, uint32_t v) {
+    for (int i = 0; i < 4; ++i) e[at + static_cast<std::size_t>(i)] = static_cast<uint8_t>(v >> (8 * i));
+  };
+  u8(1), u32(kBase), u16(1 << 1), u32(1 << 1), u16(0x4), u32((1 << 7) | (1 << 8));  // checkcompat: English, Ruby, Sapphire
+  const std::size_t crc_at = e.size();
+  u8(16), u32(0), u32(0), u32(0);  // crc, from, to: filled in below
+  const std::size_t body = e.size();
+  u8(6), u8(8), u8(1), u8(1);      // initramscript MAP_PETALBURG_CITY_GYM (8, 1), DAD (object 1)
+  const std::size_t dad_ptrs = e.size();
+  u32(0), u32(0);
+  u8(11), u8(1), u8(5), u16(kEonTicket);  // setrecordmixinggift: friends can get it by mixing records
+  u8(5);                                  // runscript
+  const std::size_t now_ptr = e.size();
+  u32(0);
+  u8(2);  // end
+  const std::size_t dad_at = e.size();
+  e.insert(e.end(), dad_script.begin(), dad_script.end());
+  const std::size_t now_at = e.size();
+  e.insert(e.end(), now_script.begin(), now_script.end());
+  put32(dad_ptrs, kBase + static_cast<uint32_t>(dad_at));
+  put32(dad_ptrs + 4, kBase + static_cast<uint32_t>(now_at));
+  put32(now_ptr, kBase + static_cast<uint32_t>(now_at));
+  put32(crc_at + 5, kBase + static_cast<uint32_t>(body));
+  put32(crc_at + 9, kBase + static_cast<uint32_t>(e.size()));
+  put32(crc_at + 1, game_crc16(e.data() + body, e.size() - body));
+  return e;
+}
+
 std::vector<EventGift> event_gifts(const std::string& game_code) {
   std::vector<EventGift> out;
+  if (game_code == "AXVE" || game_code == "AXPE") {
+    EventGift eon{"eon", "Eon Ticket", "Southern Island, where Latias or Latios lives", "", "", 0, {}, eon_ticket_event()};
+    eon.cable = true;
+    out.push_back(std::move(eon));
+    return out;
+  }
   const bool emerald = game_code == "BPEE";
   const bool frlg = game_code == "BPRE" || game_code == "BPGE";
   if (!emerald && !frlg) return out;

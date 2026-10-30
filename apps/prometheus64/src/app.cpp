@@ -435,7 +435,7 @@ void App::apply_core_options(const Game& game) {
     set("gpsp_rtc_time_source", "system");  // follows the real time, as a cartridge's battery clock does
     // Link play: the cable or the Wireless Adapter (link_mode); other games' links as gpSP knows them.
     // An open event needs the Wireless Adapter: that's how the game reaches a distribution machine.
-    const std::string link = event_key_.empty() ? link_mode(game) : "wireless";
+    const std::string link = event_key_.empty() ? link_mode(game) : event_cable_ ? "cable" : "wireless";
     set("gpsp_serial", link == "cable" ? "mul_poke" : link == "wireless" ? "rfu" : "auto");
     set("gpsp_rumble", "1");
     set("gpsp_frameskip", "disabled");
@@ -628,6 +628,7 @@ void App::restart_game_keep_progress() {
   }
   if (uint8_t* r = core_.save_ram(); r && ram.size() == core_.save_ram_size()) std::memcpy(r, ram.data(), ram.size());
   if (gifts_.is_open()) gifts_.attach(core_.netpacket());
+  if (cable_.is_open()) cable_.attach(core_.netpacket());
   core_.run();  // let the core settle before restoring
   if (!core_.load_state(state)) toast("Picture changed. The game restarted from your last save");
 }

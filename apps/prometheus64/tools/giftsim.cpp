@@ -22,10 +22,12 @@
 //   poke8|poke16|poke32 <addr> <value>
 //   flag <id>                  print an event flag (hex id), from the save block in RAM (Emerald,
 //                              FireRed, LeafGreen: by the game's code)
-//   setflag <id>               set an event flag in RAM (a test save's setup)
+//   setflag <id>, clearflag <id> set or clear an event flag in RAM (a test save's setup)
 //   savepoke <1|2> <off> <byte> write a byte into save block 1 or 2 in RAM (hex offset)
 //   var <id>                   print an event variable (hex id, 4000-40FF), likewise
 //   station <gift> [code]      open the event gift station with this gift (game code: BPEE)
+//   cable <gift> [code]        open the e-Reader on the link cable (Ruby, Sapphire: AXVE, AXPE)
+//   log                        print the stations' logs
 //   until <text> <frames>      run until the station's log contains the text (or give up)
 //   hints [code]               print today's Pokémon daily hints (pokemon_hints.hpp; code: BPEE)
 #include <SDL3/SDL_log.h>
@@ -39,6 +41,7 @@
 #include <vector>
 
 #include "core.hpp"
+#include "cable_station.hpp"
 #include "gift_station.hpp"
 #include "pokemon_hints.hpp"
 
@@ -89,23 +92,30 @@ struct Bench {
   uint16_t buttons = 0;
   uint64_t frames = 0;
   p64::GiftStation station;
+  p64::CableStation cable;
   std::string code;  // the game's code, from its header ("BPEE")
 
   // Where the save block's flags and variables are in RAM, for this game.
+  // Emerald and FireRed/LeafGreen point to their save blocks; Ruby and Sapphire keep them fixed.
   uint8_t* save_block(uint32_t offset, std::size_t size, int block = 1) {
+    if (is_rs()) return core.memory((block == 2 ? 0x02024EA4 : 0x02025734) + offset, size);
     const uint32_t ptr = (is_frlg() ? 0x03005008 : 0x03005D8C) + (block == 2 ? 4 : 0);
     uint32_t sb = 0;
     if (uint8_t* p = core.memory(ptr, 4)) std::memcpy(&sb, p, 4);
     return sb ? core.memory(sb + offset, size) : nullptr;
   }
-  uint8_t* flag_byte(uint32_t id) { return save_block((is_frlg() ? 0xEE0 : 0x1270) + id / 8, 1); }
-  uint8_t* var(uint32_t id) { return save_block((is_frlg() ? 0x1000 : 0x139C) + 2 * (id - 0x4000), 2); }
+  uint8_t* flag_byte(uint32_t id) { return save_block((is_rs() ? 0x1220 : is_frlg() ? 0xEE0 : 0x1270) + id / 8, 1); }
+  uint8_t* var(uint32_t id) {
+    return save_block((is_rs() ? 0x1340 : is_frlg() ? 0x1000 : 0x139C) + 2 * (id - 0x4000), 2);
+  }
   bool is_frlg() const { return code.rfind("BPR", 0) == 0 || code.rfind("BPG", 0) == 0; }
+  bool is_rs() const { return code.rfind("AXV", 0) == 0 || code.rfind("AXP", 0) == 0; }
 
   void step(int n) {
     for (int i = 0; i < n; ++i) {
       core.run();
       station.update();
+      cable.update();
       ++frames;
     }
   }
@@ -186,7 +196,10 @@ int main(int argc, char** argv) {
         if (uint8_t* ram = b.core.save_ram(); ram && !save.empty())
           std::memcpy(ram, save.data(), std::min(save.size(), b.core.save_ram_size()));
       }
-      if (const auto* np = b.core.netpacket()) b.station.attach(np);
+      if (const auto* np = b.core.netpacket()) {
+        b.station.attach(np);
+        b.cable.attach(np);
+      }
     } else if (cmd == "run") {
       int n = 0;
       ss >> n;
@@ -261,6 +274,11 @@ int main(int argc, char** argv) {
       if (uint8_t* p = b.save_block(static_cast<uint32_t>(std::stoul(off, nullptr, 16)), 1, block)) {
         *p = static_cast<uint8_t>(std::stoul(val, nullptr, 0));
       }
+    } else if (cmd == "clearflag") {
+      std::string a;
+      ss >> a;
+      const uint32_t id = static_cast<uint32_t>(std::stoul(a, nullptr, 16));
+      if (uint8_t* f = b.flag_byte(id)) *f = static_cast<uint8_t>(*f & ~(1u << (id % 8)));
     } else if (cmd == "setflag") {
       std::string a;
       ss >> a;
@@ -292,13 +310,28 @@ int main(int argc, char** argv) {
       if (hints.empty()) std::printf("hints: none\n");
       for (const auto& h : hints) std::printf("hint %s: %s\n", h.key.c_str(), h.text.c_str());
       std::fflush(stdout);
+    } else if (cmd == "cable") {
+      std::string key, code = b.code;
+      ss >> key >> code;
+      bool found = false;
+      for (const p64::EventGift& g : p64::event_gifts(code)) {
+        if (g.key == key && g.cable) {
+          b.station.close();
+          b.cable.open(g);
+          found = true;
+        }
+      }
+      if (!found) fail("no such cable event: " + key);
+    } else if (cmd == "log") {
+      std::printf("%s%s", b.station.log().c_str(), b.cable.log().c_str());
+      std::fflush(stdout);
     } else if (cmd == "until") {
       std::string text;
       int n = 0;
       ss >> text >> n;
       b.buttons = 0;
       int i = 0;
-      while (i < n && b.station.log().find(text) == std::string::npos) {
+      while (i < n && b.station.log().find(text) == std::string::npos && b.cable.log().find(text) == std::string::npos) {
         b.step(1);
         ++i;
       }
@@ -309,6 +342,7 @@ int main(int argc, char** argv) {
     }
   }
   b.station.close();
+  b.cable.close();
   b.core.close();
   return 0;
 }

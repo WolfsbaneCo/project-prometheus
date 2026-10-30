@@ -333,40 +333,76 @@ void App::open_event(const EventGift& gift) {
     online_note_ = "End the link first: the game's link port is busy";
     return;
   }
-  // The game starts afresh at its title screen, with the Wireless Adapter in: Mystery Gift is on
-  // the title menu, and the adapter is how the game finds the distribution machine.
+  // The game starts afresh at its title screen, with the Wireless Adapter in (or, for Ruby and
+  // Sapphire, the link cable to the e-Reader): Mystery Gift (Mystery Events) is on the title menu.
   const Game game = *g;
   if (game_) stop_game();
   event_key_ = gift.key;
+  event_cable_ = gift.cable;
   if (!start_game(game)) {
     event_key_.clear();
+    event_cable_ = false;
     return;
   }
-  gifts_.attach(core_.netpacket());
-  gifts_.open(gift);
-  event_stage_ = gifts_.stage();
+  if (event_cable_) {
+    cable_.attach(core_.netpacket());
+    cable_.open(gift);
+  } else {
+    gifts_.attach(core_.netpacket());
+    gifts_.open(gift);
+  }
+  event_stage_ = event_station_stage();
   overlay_ = Overlay::None;
-  toast("Event open: " + gift.name + ". In the game: MYSTERY GIFT, WONDER CARDS, WIRELESS COMMUNICATION", 8);
+  toast("Event open: " + gift.name +
+            (event_cable_ ? ". In the game: MYSTERY EVENTS on the title menu, then press A"
+                          : ". In the game: MYSTERY GIFT, WONDER CARDS, WIRELESS COMMUNICATION"),
+        8);
 }
 
 void App::close_event() {
   if (event_key_.empty()) return;
   gifts_.close();
   gifts_.attach(nullptr);
+  cable_.close();
+  cable_.attach(nullptr);
   event_key_.clear();
+  event_cable_ = false;
   event_stage_ = GiftStation::Stage::Closed;
 }
 
+GiftStation::Stage App::event_station_stage() const {
+  if (!event_cable_) return gifts_.stage();
+  switch (cable_.stage()) {
+    case CableStation::Stage::Closed: return GiftStation::Stage::Closed;
+    case CableStation::Stage::Waiting: return GiftStation::Stage::Waiting;
+    case CableStation::Stage::Linked: return GiftStation::Stage::Linked;
+    case CableStation::Stage::Sending: return GiftStation::Stage::Sending;
+    case CableStation::Stage::Done: return GiftStation::Stage::Done;
+    case CableStation::Stage::Failed: return GiftStation::Stage::Failed;
+  }
+  return GiftStation::Stage::Closed;
+}
+
+std::string App::event_station_status() const { return event_cable_ ? cable_.status() : gifts_.status(); }
+
 void App::update_event() {
-  if (!gifts_.is_open()) return;
-  gifts_.update();
-  const GiftStation::Stage st = gifts_.stage();
+  if (event_cable_ ? !cable_.is_open() : !gifts_.is_open()) return;
+  if (event_cable_) {
+    cable_.update();
+  } else {
+    gifts_.update();
+  }
+  const GiftStation::Stage st = event_station_stage();
   if (st == event_stage_) return;
   event_stage_ = st;
-  if (st == GiftStation::Stage::Done) {
+  if (st == GiftStation::Stage::Done && event_cable_) {
+    toast("The event went across. After your game restarts, go and see your Dad at the Petalburg City Gym", 10);
+  } else if (st == GiftStation::Stage::Done) {
     toast("Your game has the WONDER CARD. Collect the gift from the deliveryman upstairs in any Pokemon Center", 10);
   } else if (st == GiftStation::Stage::Failed) {
-    toast("Event: " + gifts_.status() + ". Close Mystery Gift in the game and try again", 8);
+    toast("Event: " + event_station_status() +
+              (event_cable_ ? ". Leave Mystery Events in the game and try again" : ". Close Mystery Gift in the game and try again"),
+          8);
   }
 }
 
@@ -914,8 +950,8 @@ void App::draw_online() {
   if (online_page_ == OnlinePage::Events) {
     const Game* g = link_game();
     const std::vector<EventGift> gifts = g ? events_for(*g) : std::vector<EventGift>{};
-    title("Event gifts", "Gifts from Pokemon's old events, received the way players did: your game's own Mystery Gift, "
-                         "from a distribution machine the app plays.");
+    title("Event gifts", "Gifts from Pokemon's old events, received the way players did: your game's own Mystery Gift "
+                         "(Ruby and Sapphire: Mystery Events), from a distribution machine or e-Reader the app plays.");
     const auto rows = event_rows(gifts);
     for (std::size_t r = 0; r < rows.size(); ++r) {
       const std::vector<std::size_t>& row = rows[r];
@@ -958,7 +994,17 @@ void App::draw_online() {
     } else {
       y += 8 * s;
     }
-    const char* steps[] = {
+    const bool ruby_sapphire = g && g->id.size() >= 8 && (g->id.substr(4, 3) == "AXV" || g->id.substr(4, 3) == "AXP");
+    const char* steps_ruby_sapphire[] = {
+        "1.  Once: join the Mystery Event Club. Once you have 5 badges, talk to the man in any Pokemon Center who asks "
+        "for your profile, and give it as MYSTERY EVENT IS EXCITING. Then save.",
+        "2.  Save your game, then open the event here: the game restarts at its title screen, linked by cable to an "
+        "e-Reader the app plays, as players did with an e-Reader card.",
+        "3.  In the game: MYSTERY EVENTS, then press A. The game loads the event, saves and restarts.",
+        "4.  Your Dad at the Petalburg City Gym hands you the ticket. Show it at the Lilycove City harbor (after the Hall "
+        "of Fame).",
+    };
+    const char* steps_wireless[] = {
         "1.  Once: unlock Mystery Gift in your game. In any Poke Mart, fill in the questionnaire on the counter with "
         "LINK TOGETHER WITH ALL (in Emerald, once you have your Pokedex), then save.",
         "2.  Save your game, then open an event here: the game restarts at its title screen, with the Wireless Adapter.",
@@ -967,7 +1013,7 @@ void App::draw_online() {
         "names (Emerald: after the Hall of Fame; FireRed and LeafGreen: once the Sevii Islands are open). Altering "
         "Cave: its Pokemon change once he has told you. One card at a time.",
     };
-    for (const char* step : steps) {
+    for (const char* step : ruby_sapphire ? steps_ruby_sapphire : steps_wireless) {
       for (const auto& line : wrap(ui_, step, 18 * s, inner, false, 3)) {
         ui_.text(x, y, line, 18 * s, kDim);
         y += 26 * s;
@@ -1174,7 +1220,9 @@ void App::draw_online_status() {
   const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_);
   if (!event_key_.empty() && game_ && event_stage_ != GiftStation::Stage::Done) {
     // An open event: what to do in the game, until the card has gone across.
-    const std::string t = "Event open  -  " + gifts_.status() + "  -  in the game: MYSTERY GIFT, WONDER CARDS, WIRELESS COMMUNICATION";
+    const std::string t = "Event open  -  " + event_station_status() +
+                          (event_cable_ ? "  -  in the game: MYSTERY EVENTS on the title menu, then press A"
+                                        : "  -  in the game: MYSTERY GIFT, WONDER CARDS, WIRELESS COMMUNICATION");
     const float w = ui_.measure(t, 20 * s) + 48 * s, h = 46 * s;
     ui_.rect((W - w) / 2, 24 * s, w, h, rgb(0x121214, 0.85f), 14 * s);
     ui_.text(W / 2, 24 * s + 12 * s, t, 20 * s, kText, false, Align::Center);
