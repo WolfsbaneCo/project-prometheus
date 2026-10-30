@@ -302,6 +302,7 @@ class App {
   uint64_t last_swap_ns_ = 0, refreshes_ = 0;
   int unlocked_for_ = 0;  // refreshes left before pacing locks to the screen again after a slow patch
   uint64_t speed_since_ns_ = 0, speed_frames_ = 0;  // keeping up: frames run since then
+  bool fast_ = false;  // a GBA game sped up (the speed key held): its sound is left out meanwhile
   int slow_spans_ = 0;      // slow 5-second stretches in a row (one alone may be the game loading)
   bool slow_told_ = false;  // said once this game that the computer can't keep up
   int out_w_ = 0, out_h_ = 0;

@@ -25,6 +25,7 @@ namespace {
 
 constexpr std::size_t kSrmSize = 0x48800;  // Mupen64Plus-Next save memory layout
 constexpr const char* kOpt = "mupen64plus-";
+constexpr int kFastForward = 4;  // GBA games with the speed key held: four times the game's speed
 
 
 struct PresetDef {
@@ -246,7 +247,7 @@ bool App::init(std::string& error) {
       }
       frames += n;
     }
-    audio_.push(d, n);
+    if (!fast_) audio_.push(d, n);
   };
   core_.hooks.input_poll = [] {};
   core_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) {
@@ -904,6 +905,28 @@ void App::run_frames() {
     speed_since_ns_ = 0;
     return;
   }
+  // Speeding up (GBA, the speed key held): kFastForward times the game's speed, by the clock.
+  // Not while linked or at an event, where the other side expects the game's own pace. Its sound
+  // is left out (sped-up sound only stutters) and starts again cleanly afterwards.
+  const bool fast = game_ && game_->system == System::GBA && !link_.active() && event_key_.empty() &&
+                    overlay_ == Overlay::None && input_.speed_held();
+  if (fast != fast_) {
+    fast_ = fast;
+    audio_.clear();
+    acc_ns_ = 0;
+    speed_since_ns_ = 0;
+  }
+  if (fast) {
+    acc_ns_ = opt_.screenshot.empty() ? acc_ns_ + elapsed * (kFastForward - 1) : kFastForward * frame_ns;
+    for (int runs = 0; acc_ns_ >= frame_ns && runs < 2 * kFastForward; ++runs) {
+      core_.run();
+      acc_ns_ -= frame_ns;
+      ++frame_count_;
+      if (frame_count_ % 30 == 0) sync_game_save(false);
+    }
+    acc_ns_ = std::min(acc_ns_, frame_ns);  // a slow computer runs as fast as it can, without catching up later
+    return;
+  }
   if (!opt_.screenshot.empty()) acc_ns_ = frame_ns;  // test mode: one game frame per drawn frame, so runs repeat exactly
   // When the screen's refresh lines up with the game (it nearly always does: 60 Hz), run exactly
   // one frame every n refreshes. Going by the clock instead, the two drift across each other and
@@ -1545,6 +1568,14 @@ void App::draw() {
     const float s = out_h_ / 1080.0f;
     draw_button(out_w_ - 32 * s, 28 * s, "Menu", s, false, false, kHitMenuButton, 0, true);
   }
+  if (playing && fast_) {
+    // Sped up: a small sign in the corner, so a game running fast is never a surprise.
+    const float s = out_h_ / 1080.0f;
+    const std::string t = std::to_string(kFastForward) + "x speed";
+    const float w = ui_.measure(t, 20 * s, true) + 36 * s;
+    ui_.rect(24 * s, 24 * s, w, 42 * s, rgb(0x121214, 0.8f), 12 * s);
+    ui_.text(24 * s + w / 2, 24 * s + 10 * s, t, 20 * s, kText, true, Align::Center);
+  }
   drawing_overlay_ = true;
   if (overlay_ == Overlay::Menu) draw_menu();
   if (overlay_ == Overlay::Seating) draw_seating();
@@ -1814,8 +1845,9 @@ void App::draw_help() {
   column(px + pw / 3 + 20 * s, "Controller", pad, 7);
   column(px + 2 * pw / 3, "Shortcuts", hotkeys, 7);
   ui_.text(px + 40 * s, py + ph - 154 * s,
-           "GBA games: A, B, L, R and Start as above, Select on Z, the +Control Pad on the D-pad or the stick.", 18 * s,
-           kText);
+           "GBA games: A, B, L, R and Start as above, Select on Z, the +Control Pad on the D-pad or the stick. Hold " +
+               k(kSpeed) + " to speed the game up.",
+           18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 122 * s,
            "Change any key or button on the Controls screen: press C in the library, or Menu > Controls.", 18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 90 * s,
@@ -1963,8 +1995,8 @@ std::vector<App::ControlsEntry> App::controls_entries() const {
   std::vector<ControlsEntry> out;
   int row = 0;
   if (controls_tab_ < Input::kKeyLayouts) {
-    for (int c : std::initializer_list<int>{kStickUp, kStickDown, kStickLeft, kStickRight, kWalk, kDUp, kDDown, kDLeft,
-                                            kDRight}) {
+    for (int c : std::initializer_list<int>{kStickUp, kStickDown, kStickLeft, kStickRight, kWalk, kSpeed, kDUp, kDDown,
+                                            kDLeft, kDRight}) {
       out.push_back({c, 0, row++});
     }
   } else {

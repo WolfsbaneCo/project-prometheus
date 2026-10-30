@@ -14,19 +14,21 @@ namespace {
 
 // Default keys for each keyboard layout. Layout 0 uses the whole keyboard (one player); 1 and 2
 // split it in two. Order follows Control: A, B, Z, Start, L, R, C-Up, C-Down, C-Left, C-Right,
-// D-pad up/down/left/right, then stick up/down/left/right and walk.
+// D-pad up/down/left/right, then stick up/down/left/right, walk and speed.
 using KeySet = std::array<SDL_Scancode, kControlCount>;
 const KeySet kDefaultKeys[Input::kKeyLayouts] = {
     {SDL_SCANCODE_X, SDL_SCANCODE_C, SDL_SCANCODE_Z, SDL_SCANCODE_RETURN, SDL_SCANCODE_A, SDL_SCANCODE_S,
      SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L, SDL_SCANCODE_T, SDL_SCANCODE_G, SDL_SCANCODE_F,
-     SDL_SCANCODE_H, SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_LSHIFT},
+     SDL_SCANCODE_H, SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_LSHIFT,
+     SDL_SCANCODE_SPACE},
     {SDL_SCANCODE_F, SDL_SCANCODE_G, SDL_SCANCODE_Q, SDL_SCANCODE_TAB, SDL_SCANCODE_R, SDL_SCANCODE_E,
      SDL_SCANCODE_T, SDL_SCANCODE_B, SDL_SCANCODE_V, SDL_SCANCODE_N, SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3,
-     SDL_SCANCODE_4, SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_LSHIFT},
+     SDL_SCANCODE_4, SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_LSHIFT,
+     SDL_SCANCODE_SPACE},
     {SDL_SCANCODE_PERIOD, SDL_SCANCODE_COMMA, SDL_SCANCODE_M, SDL_SCANCODE_RETURN, SDL_SCANCODE_O,
      SDL_SCANCODE_SLASH, SDL_SCANCODE_P, SDL_SCANCODE_SEMICOLON, SDL_SCANCODE_L, SDL_SCANCODE_APOSTROPHE,
      SDL_SCANCODE_HOME, SDL_SCANCODE_END, SDL_SCANCODE_DELETE, SDL_SCANCODE_PAGEDOWN, SDL_SCANCODE_UP,
-     SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_RSHIFT},
+     SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_SPACE},
 };
 const char* const kLayoutNames[Input::kKeyLayouts] = {"Keyboard", "Keyboard (left side)", "Keyboard (right side)"};
 
@@ -300,11 +302,21 @@ void Input::test_press(int player, const std::string& button, bool down) {
       return;
     }
   }
+  if (button == "SPEED") test_speed_ = down;
   const float v = down ? 1.0f : 0.0f;
   if (button == "UP") test_y_[player] = -v;
   if (button == "DOWN") test_y_[player] = v;
   if (button == "LEFT") test_x_[player] = -v;
   if (button == "RIGHT") test_x_[player] = v;
+}
+
+bool Input::speed_held() const {
+  if (test_speed_) return true;
+  const bool* keys = SDL_GetKeyboardState(nullptr);
+  for (const KeySet& l : keys_) {
+    if (l[kSpeed] != SDL_SCANCODE_UNKNOWN && keys[l[kSpeed]]) return true;
+  }
+  return false;
 }
 
 int16_t Input::retro_state(unsigned port, unsigned device, unsigned index, unsigned id) const {
@@ -367,7 +379,7 @@ namespace {
 // Names used in the settings file; they must never change.
 const char* const kControlIds[kControlCount] = {"a",   "b",     "z",     "start", "l",  "r",    "cup",
                                                 "cdown", "cleft", "cright", "dup", "ddown", "dleft", "dright",
-                                                "up",  "down",  "left",  "right", "walk"};
+                                                "up",  "down",  "left",  "right", "walk", "speed"};
 
 std::string encode(const std::vector<PadInput>& list) {
   std::string out;
@@ -426,7 +438,7 @@ const char* Input::control_name(int control) {
   static const char* const names[kControlCount] = {
       "A",        "B",          "Z",          "Start",       "L",          "R",           "C-Up",
       "C-Down",   "C-Left",     "C-Right",    "D-pad up",    "D-pad down", "D-pad left",  "D-pad right",
-      "Stick up", "Stick down", "Stick left", "Stick right", "Walk (hold)"};
+      "Stick up", "Stick down", "Stick left", "Stick right", "Walk (hold)", "Speed up GBA (hold)"};
   return control >= 0 && control < kControlCount ? names[control] : "";
 }
 
@@ -546,6 +558,13 @@ void Input::load_bindings(const Settings& settings) {
     for (int c = 0; c < kControlCount; ++c) {
       const int v = settings.get_int("keys." + std::to_string(l) + "." + kControlIds[c], -1);
       if (v > 0 && v < SDL_SCANCODE_COUNT) keys_[l][c] = static_cast<SDL_Scancode>(v);
+    }
+    // Speed came later than the other controls: where a player already gave its default key
+    // (Space) to something else, speed starts with no key rather than taking it.
+    for (int c = 0; c < kSpeed; ++c) {
+      if (keys_[l][c] == keys_[l][kSpeed] && settings.get_int("keys." + std::to_string(l) + ".speed", -1) <= 0) {
+        keys_[l][kSpeed] = SDL_SCANCODE_UNKNOWN;
+      }
     }
   }
   pad_ = default_pad();
