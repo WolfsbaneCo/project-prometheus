@@ -1,7 +1,8 @@
 // The event gifts the station can hand out: for each one, the Wonder Card the game shows and keeps,
-// and the script its Pokémon Center deliveryman runs to hand over the item. Both are written here,
+// and the script its Pokémon Center deliveryman runs to hand over the gift. Both are written here,
 // in the games' own formats and character set, with the app's own wording; the effect is what the
-// events did (the item, and the ship to the island it opens).
+// events did (the item, and the ship to the island it opens), or what the games were made to
+// receive but never did outside Japan (the Altering Cave's other Pokémon).
 #pragma once
 
 #include <cstdint>
@@ -11,9 +12,12 @@
 namespace p64 {
 
 struct EventGift {
-  std::string key;     // "aurora", "mystic", "oldseamap", "eon"
+  std::string key;     // "aurora", "mystic", "oldseamap", "eon", "altering-mareep"...
   std::string name;    // "Aurora Ticket"
   std::string where;   // what it opens: "Birth Island (Deoxys)"
+  // Gifts that are choices of one event share a group, shown as one row with the choice to pick
+  // ("Altering Cave": "Mareep", "Pineco"...). Empty for a gift of its own.
+  std::string group, choice;
   uint16_t card_flag;  // the Wonder Card's id in the game (1000 + its gift slot)
   std::vector<uint8_t> card;    // struct WonderCard, 332 bytes
   std::vector<uint8_t> script;  // the deliveryman's script

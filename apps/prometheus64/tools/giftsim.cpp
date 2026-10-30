@@ -21,6 +21,7 @@
 //   peek8|peek16|peek32 <addr> print memory (hex address)
 //   poke8|poke16|poke32 <addr> <value>
 //   flag <id>                  print an Emerald event flag (hex id), from the save block in RAM
+//   var <id>                   print an Emerald event variable (hex id, 4000-40FF), likewise
 //   station <gift> [code]      open the event gift station with this gift (game code: BPEE)
 //   until <text> <frames>      run until the station's log contains the text (or give up)
 //   hints [code]               print today's Pokémon daily hints (pokemon_hints.hpp; code: BPEE)
@@ -238,6 +239,15 @@ int main(int argc, char** argv) {
       if (uint8_t* p = b.core.memory(0x03005D8C, 4)) std::memcpy(&sb1, p, 4);
       uint8_t* f = b.core.memory(sb1 + 0x1270 + id / 8, 1);
       std::printf("flag %x: %s\n", id, f ? ((*f >> (id % 8)) & 1 ? "set" : "clear") : "?");
+    } else if (cmd == "var") {
+      std::string a;
+      ss >> a;
+      const uint32_t id = static_cast<uint32_t>(std::stoul(a, nullptr, 16));
+      uint32_t sb1 = 0;
+      if (uint8_t* p = b.core.memory(0x03005D8C, 4)) std::memcpy(&sb1, p, 4);
+      uint16_t v = 0;
+      if (uint8_t* p = b.core.memory(sb1 + 0x139C + 2 * (id - 0x4000), 2)) std::memcpy(&v, p, 2);
+      std::printf("var %x: %u\n", id, v);
     } else if (cmd == "station") {
       std::string key, code = "BPEE";
       ss >> key >> code;

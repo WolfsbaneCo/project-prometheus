@@ -29,8 +29,22 @@ enum OnlineButton {
   kObHost, kObJoin, kObSetup, kObClose, kObBack, kObSignup, kObTokenPage, kObPasteToken, kObInstall, kObFixPage,
   kObPasteCode, kObJoinGo, kObCopyCode, kObStart, kObLeave, kObDelayDown, kObDelayUp, kObDone, kObAddKey, kObSaveKey,
   kObRemoveKey, kObLinkHost, kObLinkMode, kObLinkEnd, kObCopyLinkCode, kObEvents, kObEventClose,
-  kObEventFirst  // kObEventFirst + i opens the i-th event of the game
+  kObEventFirst  // kObEventFirst + i opens the i-th event of the game; + kObEventPrev/Next + row picks a choice
 };
+constexpr int kObEventPrev = 100, kObEventNext = 200;
+
+// The Event gifts page's rows: a gift of its own, or the gifts of one group (picked with < >).
+std::vector<std::vector<std::size_t>> event_rows(const std::vector<EventGift>& gifts) {
+  std::vector<std::vector<std::size_t>> rows;
+  for (std::size_t i = 0; i < gifts.size(); ++i) {
+    if (!gifts[i].group.empty() && !rows.empty() && gifts[rows.back()[0]].group == gifts[i].group) {
+      rows.back().push_back(i);
+    } else {
+      rows.push_back({i});
+    }
+  }
+  return rows;
+}
 
 // Pokemon Ruby, Sapphire, Emerald, FireRed and LeafGreen (any region) by game code. They all
 // trade and battle over the link cable; FireRed, LeafGreen and Emerald also over the Wireless
@@ -902,20 +916,41 @@ void App::draw_online() {
     const std::vector<EventGift> gifts = g ? events_for(*g) : std::vector<EventGift>{};
     title("Event gifts", "Gifts from Pokemon's old events, received the way players did: your game's own Mystery Gift, "
                          "from a distribution machine the app plays.");
-    for (std::size_t i = 0; i < gifts.size(); ++i) {
-      const EventGift& e = gifts[i];
-      const bool open = e.key == event_key_;
-      ui_.rect(x, y, inner, 78 * s, open ? kTile.with_alpha(1.0f) : kTile, 14 * s);
-      if (open) ui_.outline(x, y, inner, 78 * s, kRed, 14 * s, 2 * s);
-      ui_.text(x + 24 * s, y + 12 * s, e.name, 23 * s, kText, true);
-      ui_.text(x + 24 * s, y + 44 * s, ui_.fit(e.where, 18 * s, inner - 300 * s), 18 * s, kDim);
-      if (open) {
-        online_button(x + inner - 20 * s, y + 13 * s, "Close event", s, false, kObEventClose, true);
-      } else {
-        online_button(x + inner - 20 * s, y + 13 * s, "Open event", s, false, kObEventFirst + static_cast<int>(i), true,
-                      !link_.active());
+    const auto rows = event_rows(gifts);
+    for (std::size_t r = 0; r < rows.size(); ++r) {
+      const std::vector<std::size_t>& row = rows[r];
+      std::size_t pick = row[0];
+      if (row.size() > 1) {
+        const auto it = event_choice_.find(gifts[row[0]].group);
+        pick = row[static_cast<std::size_t>(std::clamp(it == event_choice_.end() ? 0 : it->second, 0, static_cast<int>(row.size()) - 1))];
       }
-      y += 88 * s;
+      for (std::size_t i : row) {
+        if (gifts[i].key == event_key_) pick = i;  // the open one
+      }
+      const EventGift& e = gifts[pick];
+      const bool open = e.key == event_key_;
+      const float h = 70 * s;
+      ui_.rect(x, y, inner, h, open ? kTile.with_alpha(1.0f) : kTile, 14 * s);
+      if (open) ui_.outline(x, y, inner, h, kRed, 14 * s, 2 * s);
+      ui_.text(x + 24 * s, y + 9 * s, e.name, 22 * s, kText, true);
+      ui_.text(x + 24 * s, y + 39 * s, ui_.fit(e.where, 17 * s, inner - 520 * s), 17 * s, kDim);
+      float right = x + inner - 20 * s;
+      if (open) {
+        right -= online_button(right, y + 9 * s, "Close event", s, false, kObEventClose, true);
+      } else {
+        right -= online_button(right, y + 9 * s, "Open event", s, false, kObEventFirst + static_cast<int>(pick), true,
+                               !link_.active());
+      }
+      if (row.size() > 1 && !open) {
+        // The choice: < Mareep >
+        right -= 14 * s;
+        right -= online_button(right, y + 9 * s, ">", s, false, kObEventFirst + kObEventNext + static_cast<int>(r), true);
+        const float box = std::max(ui_.measure(e.choice, 19 * s, true), 150 * s) + 20 * s;
+        ui_.text(right - box / 2, y + 21 * s, e.choice, 19 * s, kText, true, Align::Center);
+        right -= box;
+        online_button(right, y + 9 * s, "<", s, false, kObEventFirst + kObEventPrev + static_cast<int>(r), true);
+      }
+      y += h + 8 * s;
     }
     if (!event_key_.empty()) {
       ui_.text(x, y + 4 * s, "Event open: " + gifts_.status(), 20 * s, kRed, true);
@@ -928,8 +963,8 @@ void App::draw_online() {
         "LINK TOGETHER WITH ALL (you need your Pokedex), then save.",
         "2.  Save your game, then open an event here: the game restarts at its title screen, with the Wireless Adapter.",
         "3.  In the game: MYSTERY GIFT, then WONDER CARDS, then WIRELESS COMMUNICATION.",
-        "4.  Upstairs in any Pokemon Center, the deliveryman hands you the gift. Show it at the Lilycove City harbor "
-        "(after the Hall of Fame). One card at a time: collect a gift before receiving the next.",
+        "4.  Upstairs in any Pokemon Center, the deliveryman hands you the gift. Tickets: show them at the Lilycove City "
+        "harbor (after the Hall of Fame). Altering Cave: its Pokemon change once he has told you. One card at a time.",
     };
     for (const char* step : steps) {
       for (const auto& line : wrap(ui_, step, 18 * s, inner, false, 3)) {
@@ -1173,8 +1208,19 @@ void App::online_click(int id) {
   if (id >= kObEventFirst) {
     if (const Game* g = link_game()) {
       const std::vector<EventGift> gifts = events_for(*g);
-      const std::size_t i = static_cast<std::size_t>(id - kObEventFirst);
-      if (i < gifts.size()) open_event(gifts[i]);
+      const int n = id - kObEventFirst;
+      if (n >= kObEventPrev) {
+        // A group's choice, one step back or on.
+        const auto rows = event_rows(gifts);
+        const std::size_t r = static_cast<std::size_t>(n % 100);
+        if (r < rows.size() && rows[r].size() > 1) {
+          const int count = static_cast<int>(rows[r].size());
+          int& c = event_choice_[gifts[rows[r][0]].group];
+          c = (c + (n >= kObEventNext ? 1 : -1) + count) % count;
+        }
+      } else if (static_cast<std::size_t>(n) < gifts.size()) {
+        open_event(gifts[static_cast<std::size_t>(n)]);
+      }
     }
     return;
   }

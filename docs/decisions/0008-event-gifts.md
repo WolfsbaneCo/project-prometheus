@@ -53,3 +53,11 @@ The owner asked for reminders on the days the two luck events of Emerald would p
 - **In the app:** checked every 5 seconds of play; each lucky day is told once (the keys are kept per game, `hints_seen`), as a 10-second message. Off during link play, online play and events. **Daily hints** in the in-game menu turns them off.
 - **Checked** with the test bench on Emerald memory (`hints` command): nothing on an ordinary day; Mirage Island when the number matches; Max Revive for 4 digits on a party Pokémon, Master Ball for 5 on a PC one; no lottery hint once the ticket is drawn.
 - **Ruby and Sapphire** have both events too (different addresses: the pret Ruby decompilation and the games are needed). FireRed and LeafGreen have neither.
+
+## Altering Cave (2026-10-30)
+
+Emerald's Altering Cave (Route 103) has only Zubat, unless the game receives a Mystery Gift that moves it to one of eight other sets of wild Pokémon from Johto: Mareep, Pineco, Houndour, Teddiursa, Aipom, Shuckle, Stantler, Smeargle (`gAlteringCave2`-`9`). The game still contains Game Freak's script for it (`data/scripts/gift_altering_cave.inc`, which moves to the next set each time); it was never distributed outside Japan.
+
+- **What the app sends:** a Wonder Card and a deliveryman script, like the tickets. The script sets `VAR_ALTERING_CAVE_WILD_SET` to the chosen set (0 = Zubat again), which is what the game reads when it picks the cave's wild Pokémon, and tells the player in our own words.
+- **Choosing:** one row on the Event gifts page, "Altering Cave", with < > to pick the Pokémon. Each set has its own card id (1004-1012), so choosing another set is a new card, which the game offers to swap.
+- **Checked** (test bench, Emerald): the game received the Mareep card through Mystery Gift (swapping out a card whose gift was waiting), saved it; upstairs in the Pokémon Center the deliveryman said our text, and `VAR_ALTERING_CAVE_WILD_SET` went from 0 to 1. Not yet seen: a wild Mareep in the cave (the test save has no Pokémon to walk there with).

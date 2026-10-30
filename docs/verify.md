@@ -78,3 +78,4 @@ Checked against the stand-in for Google with two Linux "computers" and Pokémon 
 
 - [ ] A newer save arriving after the 15-second window (left alone, message shown, picked up on quitting), against real Google Drive and a slow connection.
 - **Daily hints in the real game (Emerald).** The rules were checked against planted memory, not yet on a day when the real game's numbers came up. Check that a hint appears with a save whose Mirage number or lottery number matches, and that the island and the prize are really there.
+- **Altering Cave's other Pokémon in the real cave (Emerald).** The cave's setting is checked; walk into the Altering Cave on Route 103 after the deliveryman and check that the chosen Pokémon appears.

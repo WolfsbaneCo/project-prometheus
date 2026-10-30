@@ -257,6 +257,7 @@ class App {
   std::string event_key_;  // the open event's gift ("aurora"); empty when none
   GiftStation::Stage event_stage_ = GiftStation::Stage::Closed;
   OnlinePage online_page_ = OnlinePage::Main;
+  std::map<std::string, int> event_choice_;  // Event gifts page: the choice picked in each group
   TextField text_field_ = TextField::None;
   std::string name_input_, token_input_, code_input_, online_note_;
   bool confirm_remove_key_ = false;  // "Remove key" asks once more before forgetting the group
