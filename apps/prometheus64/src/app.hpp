@@ -289,6 +289,10 @@ class App {
   bool test_synced_ = false;
   bool backup_was_working_ = false;
   uint64_t next_backup_ns_ = 0;  // the hourly backup
+  // Two ways: a game that starts is checked against Drive at once, in the background.
+  std::string drive_check_key_;    // the game to check next ("GBA/<game>" or the N64 game's folder)
+  uint64_t game_started_ns_ = 0;
+  bool session_saved_ = false;     // the running game has saved since it started
   int slot_ = 1;
   bool running_ = true;
   bool fullscreen_ = false;

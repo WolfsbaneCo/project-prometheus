@@ -85,6 +85,7 @@ The games hold one Wonder Card at a time, as they did then: collect a gift befor
 Press **B** in the library (or click **Back up**), then **Connect Google Drive** and sign in in your browser. Your saves go into **Memories › N64** and **Memories › GBA** in your Google Drive, quietly, when you close Project Prometheus and every hour while it's open. Only saves go up, never games. Project Prometheus can only see those folders, nothing else in your Drive.
 
 - **Carry on on another computer:** connect the same Google account there, and your in-game saves come down by themselves. Save states are backed up too, but they stay with the computer that made them.
+- **Both ways, every time you play:** when you start a game, the app checks Google Drive for that game in the background. If another computer has played since, its save comes down while the game boots, and the game starts again with it on its first screens (only if this computer hasn't saved since). If it arrives later, the running game is left alone and the newer save comes down when you quit.
 - **Saved on two computers in between?** The Backup screen asks which one to keep, and the other stays in history. Nothing is ever overwritten without asking.
 - **Offline?** Saves stay on the computer and go up when the connection returns.
 - **Move or rename the folders** in Drive if you like: backups keep going to them, and other computers find them too. Only if they're deleted does the app start new ones. An "N64 Saves" folder from an earlier version is moved into place as Memories › N64, history included.

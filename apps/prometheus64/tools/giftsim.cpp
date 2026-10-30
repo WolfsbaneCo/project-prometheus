@@ -15,6 +15,8 @@
 //   shot <file.ppm>            the current picture
 //   state save|load <file>     a save state
 //   writesave <file>           the cartridge save as it is now
+//   putsave <file>             put a cartridge save in while the game runs
+//   reset                      the console's reset
 //   dumpmem <addr> <len> <file> memory as the console sees it (hex address)
 //   peek8|peek16|peek32 <addr> print memory (hex address)
 //   poke8|poke16|poke32 <addr> <value>
@@ -199,6 +201,14 @@ int main(int argc, char** argv) {
       const uint8_t* p = b.core.memory(static_cast<uint32_t>(std::stoul(a, nullptr, 16)), len);
       if (!p) fail("address not mapped: " + a);
       write_file(path, p, len);
+    } else if (cmd == "putsave") {
+      std::string path;
+      ss >> path;
+      const std::vector<uint8_t> save = read_file(path);
+      if (uint8_t* ram = b.core.save_ram(); ram && !save.empty())
+        std::memcpy(ram, save.data(), std::min(save.size(), b.core.save_ram_size()));
+    } else if (cmd == "reset") {
+      b.core.reset();
     } else if (cmd == "writesave") {
       std::string path;
       ss >> path;

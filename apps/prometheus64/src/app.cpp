@@ -508,6 +508,11 @@ bool App::start_game(const Game& game) {
     return false;
   }
   game_ = game;
+  game_started_ns_ = SDL_GetTicksNS();
+  session_saved_ = false;
+  // Its progress may be newer on Google Drive (another computer played since): check now, in the
+  // background, while the game boots.
+  if (!guest_session_ && !online_game_) drive_check_key_ = (game.system == System::GBA ? "GBA/" : "") + game.internal_name;
   if (core_.hardware_rendering()) {
     video_.prepare_target(core_.av().geometry.max_width, core_.av().geometry.max_height);
     core_.context_reset();
@@ -541,6 +546,10 @@ bool App::start_game(const Game& game) {
 void App::stop_game() {
   if (!game_) return;
   close_event();  // an event belongs to the game too
+  if (!guest_session_ && !online_game_) {
+    // Anything newer on Drive that had to wait while the game ran comes down now.
+    drive_check_key_ = (game_->system == System::GBA ? "GBA/" : "") + game_->internal_name;
+  }
   if (link_.active()) {
     link_.leave();  // the link belongs to the game
     toast("Link ended");
@@ -714,7 +723,10 @@ void App::sync_game_save(bool force) {
       last_saved_ram_ = now;
       return;
     }
-    if (savekit::store_current(o).changed) toast("Progress saved", 2);
+    if (savekit::store_current(o).changed) {
+      toast("Progress saved", 2);
+      session_saved_ = true;
+    }
     last_saved_ram_ = now;
     pending_ram_.clear();
   } catch (const std::exception& e) {

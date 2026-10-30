@@ -320,7 +320,22 @@ void Backup::sync(bool include_states) {
     state_ = State::Working;
     progress_ = "Checking Google Drive...";
   }
-  worker_ = std::thread(&Backup::run_sync, this, include_states);
+  worker_ = std::thread(&Backup::run_sync, this, include_states, std::string());
+}
+
+bool Backup::check(const std::string& key) {
+  if (token_.empty()) return true;  // not connected: nothing to check
+  if (busy_) return false;
+  join();
+  cancel_ = false;
+  busy_ = true;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    state_ = State::Working;
+    progress_ = "Checking Google Drive...";
+  }
+  worker_ = std::thread(&Backup::run_sync, this, false, key);
+  return true;
 }
 
 void Backup::wait(int timeout_ms) {
@@ -336,7 +351,7 @@ void Backup::set_problem(const std::string& text, int kind) {
   problem_kind_ = kind;
 }
 
-void Backup::run_sync(bool include_states) {
+void Backup::run_sync(bool include_states, std::string only) {
   std::string token, root, gba_root;
   fs::path library, gba_library;
   std::map<std::string, GameState> games;
@@ -358,7 +373,16 @@ void Backup::run_sync(bool include_states) {
   };
   const auto finish = [&](bool ok) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (ok) {
+    if (ok && !only.empty()) {
+      // One game: only its own state and question change.
+      if (games.count(only)) games_[only] = games[only];
+      conflicts_.erase(std::remove_if(conflicts_.begin(), conflicts_.end(), [&](const Conflict& c) { return c.key == only; }),
+                       conflicts_.end());
+      for (auto& c : conflicts) conflicts_.push_back(std::move(c));
+      for (auto& dl : downloads) downloads_.push_back(std::move(dl));
+      problem_.clear();
+      problem_kind_ = 0;
+    } else if (ok) {
       games_ = games;
       conflicts_ = conflicts;
       for (auto& dl : downloads) downloads_.push_back(std::move(dl));
@@ -422,6 +446,7 @@ void Backup::run_sync(bool include_states) {
     static const LocalGame kNone;
     const LocalGame& lg = local.count(game) ? local.at(game) : kNone;
     const std::string key = gba ? std::string("GBA/") + game : game;  // N64 games keep their earlier keys
+    if (!only.empty() && key != only) continue;
     GameState& gs = games[key];
     std::string folder = folders.count(game) ? folders[game] : std::string();
     if (folder.empty()) {

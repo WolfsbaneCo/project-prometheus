@@ -63,6 +63,9 @@ class Backup {
   void cancel_connect();
   void disconnect();
   void sync(bool include_states);    // in the background, unless it is already running
+  // Only one game (its key), without save states: quick, for a game that is starting.
+  // Returns false when a sync is already running (try again once it is Idle).
+  bool check(const std::string& key);
   void wait(int timeout_ms);         // for the last backup when the app closes
   void choose(const std::string& game, bool keep_here);  // answer a conflict
   void applied(const std::string& game, const std::string& id);  // a Download is now the current save
@@ -85,7 +88,7 @@ class Backup {
     std::string last_id;  // the save this device and Drive last agreed on
     std::string choice;   // "here" or "there" after a conflict was answered
   };
-  void run_sync(bool include_states);
+  void run_sync(bool include_states, std::string only);
   void run_sign_in(bool fetch);
   void load_state();
   void save_state() const;  // under mutex_

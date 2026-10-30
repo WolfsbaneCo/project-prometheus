@@ -71,3 +71,9 @@ Checked with Pokémon Emerald (USA, Europe) in the test bench and in the app: th
 - [ ] The Lilycove City harbor sailing to each island with each ticket, on a save past the Hall of Fame.
 - [ ] Mystery Gift unlocked in a real playthrough with the questionnaire (the test save had the flag set directly).
 - [ ] Sending a received card to a friend (the cards allow it), and other Emerald languages.
+
+## Added by two-way Drive sync
+
+Checked against the stand-in for Google with two Linux "computers" and Pokémon Emerald: the laptop had save A; the PC moved on to save B and backed up; the laptop started Emerald (with no other sync running) and its library and the running game both had save B within the boot; starting again changed nothing.
+
+- [ ] A newer save arriving after the 15-second window (left alone, message shown, picked up on quitting), against real Google Drive and a slow connection.
