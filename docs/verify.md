@@ -54,3 +54,35 @@ Checked against a stand-in for Google's sign-in and Drive API (the same requests
 - [ ] The whole flow against real Google, once the project is registered: the sign-in page, the token exchange (a forum report says Desktop clients need the client secret even with PKCE; the app sends it when the build has one), `about` with only `drive.file`, multipart uploads and the 7-day question after publishing.
 - [ ] Windows Credential Manager on a real Windows PC (checked under Wine), and that the browser's return to `127.0.0.1` raises no firewall prompt.
 - [ ] Brief 9.5 (settings sync), section 10 (sharing on a home network) and optional encryption: not built yet.
+
+## Added by GBA games (see [0007](decisions/0007-gba.md))
+
+Checked with homebrew test ROMs (jsmolka gba-tests, a hello-world) on Linux and Windows builds, link sessions between two copies through a local relay, and GBA saves through the Drive stand-in on two computers.
+
+- [ ] A real Pokémon trade and battle between two computers over the internet, with the link cable mode (Ruby/Sapphire/Emerald/FireRed/LeafGreen) and with the Wireless Adapter (FireRed/LeafGreen/Emerald). The test ROMs don't use the link port, so no link message has travelled yet.
+- [ ] Trading between different games (Ruby with FireRed) and between regions.
+- [ ] Saves imported from other emulators (mGBA, VBA-M) for each save type: SRAM, flash 64 and 128 KB, EEPROM.
+- [x] The real-time clock in Ruby, Sapphire and Emerald (berries, tides) follows the computer's clock. Checked with Emerald in the test bench, with the system clock shifted by a test-only shim: the cartridge clock the game reads (2026-10-29 23:15:14) and its own day count and time (day 9799, 23:15) both moved by exactly the shift (1 day, 1 hour, 1 minute, 1 second), so time passes while the app is closed. Ruby, Sapphire, FireRed and LeafGreen carry the same clock flag in gpSP's game list.
+
+## Added by event gifts (see [0008](decisions/0008-event-gifts.md))
+
+Checked with Pokémon Emerald (USA, Europe) in the test bench and in the app: the card received and saved for each path (no card, the same card, another card replaced), and the Aurora Ticket handed over by the deliveryman with the ship flag set.
+
+- [ ] The Lilycove City harbor sailing to each island with each ticket, on a save past the Hall of Fame.
+- [ ] Mystery Gift unlocked in a real playthrough with the questionnaire (the test save had the flag set directly).
+- [ ] Sending a received card to a friend (the cards allow it), and other Emerald languages.
+
+## Added by two-way Drive sync
+
+Checked against the stand-in for Google with two Linux "computers" and Pokémon Emerald: the laptop had save A; the PC moved on to save B and backed up; the laptop started Emerald (with no other sync running) and its library and the running game both had save B within the boot; starting again changed nothing.
+
+- [ ] A newer save arriving after the 15-second window (left alone, message shown, picked up on quitting), against real Google Drive and a slow connection.
+- **Daily hints in the real game (Emerald).** The rules were checked against planted memory, not yet on a day when the real game's numbers came up. Check that a hint appears with a save whose Mirage number or lottery number matches, and that the island and the prize are really there.
+- **Altering Cave's other Pokémon in the real cave (Emerald).** The cave's setting is checked; walk into the Altering Cave on Route 103 after the deliveryman and check that the chosen Pokémon appears.
+- **Island trips.** Every ticket is checked up to the item and the ferry flags; sail with each (Emerald and Ruby/Sapphire from Lilycove after the Hall of Fame, FireRed/LeafGreen from Vermilion once the Sevii Islands are open) and meet the island's Pokémon.
+- **Battle e-Cards in the Battle Tower (Ruby, Sapphire).** The trainer is in the save and kept by the game's own check; start a new challenge at its level after the Hall of Fame and battle them.
+- **The Visiting Trainer in Sootopolis City (Emerald).** The trainer arrives in the save; walk into the Mystery Events House and battle them.
+- **A Battle Card's three wins (Emerald),** between two friends' games over link play.
+- **The Enigma Berry tree.** Plant the berry and check it grows over about four days and bears Enigma Berries with our picture.
+- **Jirachi traded to Emerald, FireRed or LeafGreen** with two games linked on one computer (Cable Club trade), and a Cable Club trade in general between two linked games.
+- **Two linked games on Windows:** the second copy of gpSP loads beside the first.

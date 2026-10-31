@@ -1,9 +1,18 @@
 name: CI
 
+# Builds run only when asked for, to save the account's Actions minutes (Windows runners count
+# double): Actions > CI > Run workflow. On main that publishes a release; on any other branch it
+# builds a test installer. Pushing a version tag (v1.2.3) also builds and publishes. Before each
+# push, run the same checks locally instead: tools/check-before-push.sh.
 on:
   push:
-  pull_request:
+    tags: ['v*']
   workflow_dispatch:
+
+# A second run of the same branch or tag replaces one still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -33,42 +42,40 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Check tracked files
-        shell: bash
-        run: |
-          bad=$(git ls-files | grep -iE '\.(z64|n64|v64|ndd|d64|sra|srm|eep|fla|mpk|pj[0-9]?|st[0-9]|state[0-9]*)(\.zip)?$' || true)
-          if [ -n "$bad" ]; then
-            echo "These files must not be committed:"
-            echo "$bad"
-            exit 1
-          fi
+        run: CHECK_FILES_ONLY=1 tools/check-before-push.sh
 
-  # The emulator core, cross-compiled at the commit pinned in the script. Cached on that commit.
+  # The emulator cores (N64 and GBA), cross-compiled at the commits pinned in their scripts.
+  # Cached on those commits.
   core-windows:
-    name: Emulator core (Windows)
+    name: Emulator cores (Windows)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - name: Find the pinned core commit
         id: pin
-        run: echo "commit=$(grep -oP '^CORE_COMMIT=\K[0-9a-f]+' tools/build-core-windows.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "commit=$(grep -oP '^CORE_COMMIT=\K[0-9a-f]+' tools/build-core-windows.sh)" >> "$GITHUB_OUTPUT"
+          echo "gba=$(grep -oP 'P64_GPSP_COMMIT \K[0-9a-f]+' apps/prometheus64/third_party/gpsp/CMakeLists.txt)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         id: cache
         with:
           path: core
-          key: core-windows-${{ steps.pin.outputs.commit }}-${{ hashFiles('tools/build-core-windows.sh') }}
+          key: core-windows-${{ steps.pin.outputs.commit }}-${{ steps.pin.outputs.gba }}-${{ hashFiles('tools/build-core-windows.sh', 'tools/build-gba-core-windows.sh', 'tools/mingw-w64.cmake', 'apps/prometheus64/third_party/gpsp/CMakeLists.txt') }}
       - name: Install MinGW-w64
         if: steps.cache.outputs.cache-hit != 'true'
         run: sudo apt-get update && sudo apt-get install -y mingw-w64 nasm
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
-        run: tools/build-core-windows.sh core
+        run: |
+          tools/build-core-windows.sh core
+          tools/build-gba-core-windows.sh core
       - uses: actions/upload-artifact@v7
         with:
           name: core-windows
           path: core/
 
   app-linux:
-    name: Prometheus 64 (Linux build)
+    name: Project Prometheus (Linux build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -109,7 +116,7 @@ jobs:
 
   # The download for players: one installer that holds the app, the core, fonts and licences.
   app-windows:
-    name: Prometheus 64 (Windows installer)
+    name: Project Prometheus (Windows installer)
     runs-on: windows-latest
     needs: core-windows
     outputs:
@@ -135,11 +142,13 @@ jobs:
         run: |
           $app = "build/apps/prometheus64/Release"
           New-Item -ItemType Directory -Force stage/cores, stage/licenses | Out-Null
-          Copy-Item "$app/Prometheus64.exe" stage/
+          Copy-Item "$app/ProjectPrometheus.exe" stage/
           Copy-Item -Recurse "$app/assets" stage/
           Copy-Item core/mupen64plus_next_libretro.dll stage/cores/
           Copy-Item core/CORE-SOURCE.txt stage/cores/
-          Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, installer/libarchive-COPYING.txt, LICENSE stage/licenses/
+          Copy-Item core/gpsp_libretro.dll stage/cores/
+          Copy-Item core/GBA-CORE-SOURCE.txt stage/cores/
+          Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, installer/libarchive-COPYING.txt, installer/TERMS.txt, LICENSE, NOTICE, TRADEMARKS.md stage/licenses/
           Get-ChildItem -Recurse stage | Select-Object FullName, Length
       - name: Version
         id: version
@@ -155,12 +164,12 @@ jobs:
           if (-not (Test-Path $iscc)) {
             choco install innosetup -y --no-progress
           }
-          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$PWD\stage" installer\prometheus64.iss
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$PWD\stage" installer\project-prometheus.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # Uploaded as the bare .exe (not zipped), so the download is the installer itself.
       - uses: actions/upload-artifact@v7
         with:
-          path: dist/Prometheus64-Setup-${{ steps.version.outputs.version }}.exe
+          path: dist/ProjectPrometheus-Setup-${{ steps.version.outputs.version }}.exe
           archive: false
 
   # Publishes the installer as a GitHub release: push a tag like v0.1.0, or run this workflow by
@@ -175,11 +184,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: Prometheus64-Setup-*
+          pattern: ProjectPrometheus-Setup-*
           path: dist
           merge-multiple: true
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.app-windows.outputs.version }}
-        run: gh release create "$TAG" $(find dist -type f -name '*.exe') --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Prometheus 64 ${TAG#v}" --generate-notes
+        run: gh release create "$TAG" $(find dist -type f -name '*.exe') --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Project Prometheus ${TAG#v}" --generate-notes

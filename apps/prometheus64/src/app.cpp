@@ -14,6 +14,7 @@
 
 #include "archive.hpp"
 #include "net.hpp"
+#include "pokemon_hints.hpp"
 #include "savekit/formats.hpp"
 #include "savekit/library.hpp"
 #include "savekit/sha256.hpp"
@@ -25,6 +26,7 @@ namespace {
 
 constexpr std::size_t kSrmSize = 0x48800;  // Mupen64Plus-Next save memory layout
 constexpr const char* kOpt = "mupen64plus-";
+constexpr int kFastForward = 4;  // GBA games with the speed key held: four times the game's speed
 
 
 struct PresetDef {
@@ -55,6 +57,17 @@ const PresetDef kPresets[] = {
 
 
 // A Controller Pak holds a game's data when its note table (pages 3-4) names a game.
+// Games whose 2D parts (text, text boxes, fades) are drawn for a 4:3 screen, so the widescreen
+// trick, which widens only the 3D world, cuts and misplaces them. Harvest Moon 64: a fade covers
+// only the middle, letters go missing from the yes/no choices. By the name in the game's header.
+bool widescreen_breaks(const std::string& internal_name) {
+  static const char* const kNames[] = {"HARVESTMOON64"};
+  for (const char* n : kNames) {
+    if (internal_name == n) return true;
+  }
+  return false;
+}
+
 bool pak_has_notes(const savekit::Bytes& pak) {
   for (std::size_t at = 0x300; at + 32 <= 0x500 && at + 32 <= pak.size(); at += 32) {
     if (pak[at] || pak[at + 1] || pak[at + 2] || pak[at + 3]) return true;
@@ -67,20 +80,54 @@ std::string load_into(Core& core, const Game& game) {
   std::vector<uint8_t> data;
   if (std::string err = load_game_data(game, data); !err.empty()) return err;
   const fs::path name = game.entry.empty() ? game.path : game.path.parent_path() / from_utf8(game.entry).filename();
-  return core.load_game(name, std::move(data));
+  return core.load_game(name, std::move(data), game.entry.empty());
 }
 
 }  // namespace
 
 const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 
+// GBA pictures: 240x160 pixel art on a big screen. Smooth, the default, is xBRZ, the filter the
+// owner knew from VBA-M: smooth, clean edges without melting small details or text (xBR, used
+// before, rounded a whole game pixel at a time and did). Clean is MMPX at 4x with crisp one-pixel
+// edges: rounded staircases, with text and thin lines kept as drawn; Sharp keeps every pixel a
+// square. gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen:
+// Handheld is that screen on purpose, with its pixel grid and slight ghosting. Pixel-perfect is
+// Sharp at a whole-number size, as emulators like VBA size their window. (Settings keep the index:
+// new looks go at the end.)
+struct GbaLookDef {
+  const char* name;
+  const char* blurb;
+  Look::Pixels pixels;
+  float grid;
+  bool colour_correction, ghosting, whole_pixels;
+  Prescale prescale;  // redrawn bigger on the CPU first (Video::software_frame)
+};
+const GbaLookDef kGbaLooks[] = {
+    {"Sharp", "Crisp pixels filling the screen, in the game's own colours", Look::Pixels::Sharp, 0.0f, false, false, false,
+     Prescale::None},
+    {"Smooth", "Smooth, clean edges, as if redrawn in HD (xBRZ)", Look::Pixels::Plain, 0.0f, false, false, false,
+     Prescale::Xbrz},
+    {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false,
+     Prescale::None},
+    {"Pixel-perfect", "Every pixel exactly the same size, at a whole-number scale", Look::Pixels::Sharp, 0.0f, false, false,
+     true, Prescale::None},
+    {"Clean", "Crisp, with jagged edges rounded off", Look::Pixels::Sharp, 0.0f, false, false, false, Prescale::Mmpx4},
+};
+constexpr int kGbaLookDefault = 1;  // Smooth
+constexpr int kGbaLookCount = static_cast<int>(std::size(kGbaLooks));
+// The look chosen for a GBA game. Its own setting ("gba_look"), so N64 presets never carry over.
+int gba_look(const Settings& settings, const std::string& id) {
+  return std::clamp(settings.game_int(id, "gba_look", kGbaLookDefault), 0, kGbaLookCount - 1);
+}
+
 App::App(Options options) : opt_(std::move(options)) {}
 
 int App::run() {
   std::string error;
   if (!init(error)) {
-    SDL_Log("Prometheus 64 could not start: %s", error.c_str());
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Prometheus 64", error.c_str(), window_);
+    SDL_Log("Project Prometheus could not start: %s", error.c_str());
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Project Prometheus", error.c_str(), window_);
     shutdown();
     return 1;
   }
@@ -90,21 +137,30 @@ int App::run() {
 }
 
 bool App::init(std::string& error) {
-  SDL_SetAppMetadata("Prometheus 64", "0.1.1", "org.projectprometheus.prometheus64");
+  SDL_SetAppMetadata("Project Prometheus", P64_VERSION, "org.projectprometheus.app");
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
     error = SDL_GetError();
     return false;
   }
   user_event_ = SDL_RegisterEvents(1);
 
+  // The app was called Prometheus 64 at first: its settings, online key and backup state stay in
+  // that folder, so they carry over.
   if (char* pref = SDL_GetPrefPath("Project Prometheus", "Prometheus 64")) {
     pref_dir_ = from_utf8(pref);
     SDL_free(pref);
   }
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
+  if (settings_.get_int("gba_looks", 0) < 2) {
+    // The GBA looks changed while the owner was choosing them (Smooth became xBRZ, Clean MMPX):
+    // choices saved before then start again from the default, Smooth.
+    settings_.clear_game_key("gba_look");
+    settings_.set_int("gba_looks", 2);
+    settings_.save();
+  }
   load_group_key();
-  // Saves for every console share one folder: Memories\N64 now, Memories\GBA later.
+  // Saves for every console share one folder: Memories\N64, Memories\GBA.
   // Earlier versions used Documents\N64 Saves; a computer that has it keeps using it (nothing moves).
   const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
   const fs::path docs_dir = docs ? from_utf8(docs) : pref_dir_;
@@ -112,6 +168,11 @@ bool App::init(std::string& error) {
   const fs::path default_library = fs::is_directory(docs_dir / "N64 Saves", lib_ec) ? docs_dir / "N64 Saves"
                                                                                      : docs_dir / "Memories" / "N64";
   library_dir_ = from_utf8(settings_.get("library", utf8(default_library)));
+  // GBA saves sit next to the N64 ones (Memories\GBA), or in Documents\Memories\GBA when the N64
+  // library is somewhere else (the earlier N64 Saves folder).
+  const fs::path default_gba = library_dir_.filename() == "N64" ? library_dir_.parent_path() / "GBA"
+                                                                 : docs_dir / "Memories" / "GBA";
+  gba_library_dir_ = from_utf8(settings_.get("gba_library", utf8(default_gba)));
   slot_ = std::clamp(settings_.get_int("state_slot", 1), 1, 10);
 
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -120,7 +181,7 @@ bool App::init(std::string& error) {
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
   SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-  window_ = SDL_CreateWindow("Prometheus 64", opt_.width, opt_.height,
+  window_ = SDL_CreateWindow("Project Prometheus", opt_.width, opt_.height,
                              SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
   if (!window_) {
     error = std::string("could not open a window: ") + SDL_GetError();
@@ -138,7 +199,7 @@ bool App::init(std::string& error) {
     return false;
   }
   SDL_GL_SetSwapInterval(1);
-  if (!video_.init(error) || !ui_.init(assets_dir_, error)) return false;
+  if (!video_.init(error) || !video2_.init(error) || !ui_.init(assets_dir_, error)) return false;
   if (SDL_Surface* icon = SDL_LoadPNG(utf8(assets_dir_ / "icon.png").c_str())) {
     SDL_SetWindowIcon(window_, icon);
     SDL_DestroySurface(icon);
@@ -147,20 +208,22 @@ bool App::init(std::string& error) {
   // The emulator core.
   core_.system_dir = pref_dir_ / "system";
   core_.save_dir = pref_dir_ / "core";
+  core_.unpack_dir = pref_dir_ / "unpacked";
   std::error_code ec;
   fs::create_directories(core_.system_dir, ec);
   fs::create_directories(core_.save_dir, ec);
-  fs::path core_path = opt_.core;
-  if (core_path.empty()) {
-    const fs::path base = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "");
+  // One emulator core per console, in "cores" next to the program.
+  const fs::path base = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "");
 #if defined(_WIN32)
-    core_path = base / "cores" / "mupen64plus_next_libretro.dll";
+  const char* ext = ".dll";
 #elif defined(__APPLE__)
-    core_path = base / "cores" / "mupen64plus_next_libretro.dylib";
+  const char* ext = ".dylib";
 #else
-    core_path = base / "cores" / "mupen64plus_next_libretro.so";
+  const char* ext = ".so";
 #endif
-  }
+  n64_core_path_ = opt_.core.empty() ? base / "cores" / (std::string("mupen64plus_next_libretro") + ext) : opt_.core;
+  gba_core_path_ = base / "cores" / (std::string("gpsp_libretro") + ext);
+  const fs::path core_path = n64_core_path_;
   core_.hooks.video = [this](const void* data, unsigned w, unsigned h, std::size_t pitch) {
     static const bool debug = SDL_getenv("P64_DEBUG") != nullptr;
     static int logged = 0;
@@ -181,30 +244,36 @@ bool App::init(std::string& error) {
     if (data == RETRO_HW_FRAME_BUFFER_VALID) {
       video_.hardware_frame(w, h);
     } else {
-      video_.software_frame(data, w, h, pitch, core_.pixel_format());
+      const Prescale prescale =
+          game_ && game_->system == System::GBA ? kGbaLooks[gba_look(settings_, game_->id)].prescale : Prescale::None;
+      video_.software_frame(data, w, h, pitch, core_.pixel_format(), prescale);
     }
   };
   core_.hooks.audio = [this](const int16_t* d, std::size_t n) {
     static const bool debug = SDL_getenv("P64_DEBUG") != nullptr;
     if (debug) {
       static uint64_t frames = 0, loud = 0, peak = 0;
+      static double low = 1e9, high = 0;
+      low = std::min(low, audio_.queued_seconds());
+      high = std::max(high, audio_.queued_seconds());
       for (std::size_t i = 0; i < n * 2; ++i) {
         const uint64_t a = static_cast<uint64_t>(std::abs(static_cast<int>(d[i])));
         peak = std::max(peak, a);
         loud += a > 512;
       }
       if (frames == 0 || (frames + n) / 44100 != frames / 44100) {
-        SDL_Log("audio: %llu frames so far, %llu loud samples, peak %llu, queued %.3fs",
-                static_cast<unsigned long long>(frames + n), static_cast<unsigned long long>(loud),
-                static_cast<unsigned long long>(peak), audio_.queued_seconds());
+        SDL_Log("audio: %llu frames so far, %llu loud samples, peak %llu, queued %.3f-%.3fs", static_cast<unsigned long long>(frames + n),
+                static_cast<unsigned long long>(loud), static_cast<unsigned long long>(peak), low, high);
+        low = 1e9;
+        high = 0;
       }
       frames += n;
     }
-    audio_.push(d, n);
+    if (!fast_ && !focus2_) audio_.push(d, n);
   };
   core_.hooks.input_poll = [] {};
-  core_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) {
-    return input_.retro_state(port, dev, idx, id);
+  core_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) -> int16_t {
+    return focus2_ ? 0 : input_.retro_state(port, dev, idx, id);  // with two games here, the one in focus
   };
   core_.hooks.rumble = [this](unsigned port, retro_rumble_effect effect, uint16_t strength) {
     if (net_.running() && online_game_) {
@@ -225,10 +294,30 @@ bool App::init(std::string& error) {
   core_.hooks.geometry_changed = [this] {
     video_.prepare_target(core_.av().geometry.max_width, core_.av().geometry.max_height);
   };
-  core_path_ = core_path;
+  // The second game of a local link: its own picture; sound and controls while it has the focus.
+  core2_.system_dir = core_.system_dir;
+  core2_.save_dir = pref_dir_ / "core2";
+  core2_.unpack_dir = pref_dir_ / "unpacked2";
+  fs::create_directories(core2_.save_dir, ec);
+  core2_.hooks.video = [this](const void* data, unsigned w, unsigned h, std::size_t pitch) {
+    if (!data || data == RETRO_HW_FRAME_BUFFER_VALID || !game2_) return;
+    video2_.software_frame(data, w, h, pitch, core2_.pixel_format(), kGbaLooks[gba_look(settings_, game2_->id)].prescale);
+  };
+  core2_.hooks.audio = [this](const int16_t* d, std::size_t n) {
+    if (focus2_) audio_.push(d, n);
+  };
+  core2_.hooks.input_poll = [] {};
+  core2_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) -> int16_t {
+    return focus2_ ? input_.retro_state(port, dev, idx, id) : 0;
+  };
+  core2_.hooks.rumble = [this](unsigned port, retro_rumble_effect effect, uint16_t strength) {
+    return focus2_ && input_.rumble(port, effect == RETRO_RUMBLE_STRONG, strength);
+  };
+  core2_.hooks.message = [this](const std::string& m) { toast(m); };
+  loaded_system_ = System::N64;
   error = core_.open(core_path);
   if (!error.empty()) {
-    error += "\n\nExpected the emulator core at:\n" + utf8(core_path) + "\n\nReinstalling Prometheus 64 fixes this.";
+    error += "\n\nExpected the emulator core at:\n" + utf8(core_path) + "\n\nReinstalling Project Prometheus fixes this.";
     return false;
   }
 
@@ -250,7 +339,19 @@ bool App::init(std::string& error) {
       error = why.empty() ? "No N64 game found in " + utf8(opt_.rom) : "Could not read " + utf8(opt_.rom) + ": " + why;
       return false;
     }
-    if (opt_.online_host) {
+    if (opt_.link_host || !opt_.link_join.empty()) {
+      // Test mode: play it and link it.
+      games_ = found;
+      selected_ = 0;
+      open_online();
+      if (opt_.link_host) {
+        host_link();
+      } else {
+        code_input_ = opt_.link_join;
+        join_link();
+      }
+      overlay_ = Overlay::None;
+    } else if (opt_.online_host) {
       hosted_game_ = found.front();  // test mode: host it online instead of playing it here
       if (games_.empty()) games_ = found;
       open_online();
@@ -258,6 +359,14 @@ bool App::init(std::string& error) {
     } else if (!start_game(found.front())) {
       error = "could not start " + utf8(opt_.rom);
       return false;
+    } else if (!opt_.second.empty()) {
+      // Test mode: link a second game to it, here.
+      auto second = read_games(opt_.second, &why);
+      if (second.empty()) {
+        error = "Could not read " + utf8(opt_.second) + ": " + why;
+        return false;
+      }
+      start_local_link(second.front());
     }
   }
   if (!opt_.save_key.empty()) save_key_file(opt_.save_key);
@@ -286,6 +395,7 @@ void App::shutdown() {
   if (gl_) {
     ui_.shutdown();
     video_.shutdown();
+    video2_.shutdown();
   }
   audio_.close();
   if (gl_) SDL_GL_DestroyContext(gl_);
@@ -344,9 +454,36 @@ int App::texture_look(const std::string& id) const {
   return t >= 0 && t < kTexCount ? t : p.textures;
 }
 
-void App::apply_core_options(const Game& game) {
+void App::apply_core_options(const Game& game, Core* target) {
+  if (game.system == System::GBA) {
+    Core& core = target ? *target : core_;
+    auto set = [&](const char* key, const std::string& value) { core.set_option(key, value); };
+    set("gpsp_bios", "auto");        // the player's own gba_bios.bin in the system folder, else the open BIOS
+    set("gpsp_boot_mode", "game");   // straight into the game, like inserting a cartridge
+    set("gpsp_drc", "enabled");
+    set("gpsp_rtc", "auto");         // the cartridge clock, for the games that have one
+    set("gpsp_rtc_time_source", "system");  // follows the real time, as a cartridge's battery clock does
+    // Link play: the cable or the Wireless Adapter (link_mode); other games' links as gpSP knows them.
+    // An open event needs the Wireless Adapter: that's how the game reaches a distribution machine.
+    // Two games linked here use the same link (start_local_link).
+    const std::string link = !local_mode_.empty() ? local_mode_
+                             : event_key_.empty()  ? link_mode(game)
+                             : event_cable_        ? "cable"
+                                                   : "wireless";
+    set("gpsp_serial", link == "cable" ? "mul_poke" : link == "wireless" ? "rfu" : "auto");
+    set("gpsp_rumble", "1");
+    set("gpsp_frameskip", "disabled");
+    const GbaLookDef& look = kGbaLooks[gba_look(settings_, game.id)];
+    set("gpsp_color_correction", look.colour_correction ? "enabled" : "disabled");
+    set("gpsp_frame_mixing", look.ghosting ? "enabled" : "disabled");
+    for (const auto& o : opt_.core_options) {  // test mode: "--option key=value" overrides
+      const auto eq = o.find('=');
+      if (eq != std::string::npos) set(o.substr(0, eq).c_str(), o.substr(eq + 1));
+    }
+    return;
+  }
   const PresetDef& p = kPresets[std::clamp(settings_.game_int(game.id, "preset", 0), 0, 3)];
-  const bool widescreen = settings_.game(game.id, "fill", "") == std::to_string(static_cast<int>(FillMode::Widescreen));
+  const bool widescreen = fill_mode(&game) == static_cast<int>(FillMode::Widescreen);
   auto set = [&](const char* key, const std::string& value) { core_.set_option(std::string(kOpt) + key, value); };
   set("rdp-plugin", settings_.get("renderer", p.rdp));
   set("rsp-plugin", settings_.get("renderer", p.rdp) == std::string("gliden64") ? "hle" : p.rsp);
@@ -399,8 +536,28 @@ void App::apply_core_options(const Game& game) {
   }
 }
 
+std::string App::use_core(System system) {
+  if (system == loaded_system_ && core_.info().library_name) return {};
+  core_.close();
+  const fs::path& path = system == System::GBA ? gba_core_path_ : n64_core_path_;
+  std::string err = core_.open(path);
+  if (!err.empty()) {
+    // Put the previous core back, so the app stays usable.
+    core_.open(loaded_system_ == System::GBA ? gba_core_path_ : n64_core_path_);
+    return std::string("the ") + system_name(system) + " emulator core is missing (" + utf8(path) +
+           "). Reinstalling Project Prometheus fixes this";
+  }
+  loaded_system_ = system;
+  return {};
+}
+
 bool App::start_game(const Game& game) {
   if (game_) stop_game();
+  if (const std::string err = use_core(game.system); !err.empty()) {
+    toast("Could not start " + game.title + ": " + err, 8);
+    return false;
+  }
+  input_.set_gba(game.system == System::GBA);
   apply_core_options(game);
   const std::string err = load_into(core_, game);
   if (!err.empty()) {
@@ -408,6 +565,11 @@ bool App::start_game(const Game& game) {
     return false;
   }
   game_ = game;
+  game_started_ns_ = SDL_GetTicksNS();
+  session_saved_ = false;
+  // Its progress may be newer on Google Drive (another computer played since): check now, in the
+  // background, while the game boots.
+  if (!guest_session_ && !online_game_) drive_check_key_ = (game.system == System::GBA ? "GBA/" : "") + game.internal_name;
   if (core_.hardware_rendering()) {
     video_.prepare_target(core_.av().geometry.max_width, core_.av().geometry.max_height);
     core_.context_reset();
@@ -429,6 +591,9 @@ bool App::start_game(const Game& game) {
   overlay_ = Overlay::None;
   acc_ns_ = 0;
   last_ns_ = SDL_GetTicksNS();
+  speed_since_ns_ = 0;
+  slow_spans_ = 0;
+  slow_told_ = false;
   settings_.set("last_game", utf8(game.path));
   if (!online_game_) toast(game.title + "  -  Esc, right-click or Back on a controller opens the menu", 5);
   if (input_.keyboard_shared()) toast("Two players share the keyboard: gamepads work better", 5);
@@ -437,13 +602,27 @@ bool App::start_game(const Game& game) {
 
 void App::stop_game() {
   if (!game_) return;
+  stop_local_link();  // the second game goes with the first
+  close_event();  // an event belongs to the game too
+  if (!guest_session_ && !online_game_) {
+    // Anything newer on Drive that had to wait while the game ran comes down now.
+    drive_check_key_ = (game_->system == System::GBA ? "GBA/" : "") + game_->internal_name;
+  }
+  if (link_.active()) {
+    link_.leave();  // the link belongs to the game
+    toast("Link ended");
+  }
+  link_.attach(nullptr);
   sync_game_save(true);
   guest_session_ = false;
   online_game_ = false;
   guest_save_.clear();
   core_.context_destroy();
   core_.close();
-  if (const std::string err = core_.open(core_path_); !err.empty()) toast(err, 8);
+  // Between games the N64 core is loaded (a core can't start a second game in one session).
+  loaded_system_ = System::N64;
+  if (const std::string err = core_.open(n64_core_path_); !err.empty()) toast(err, 8);
+  input_.set_gba(false);
   audio_.close();
   video_.clear_frame();
   game_.reset();
@@ -457,6 +636,8 @@ void App::restart_game_keep_progress() {
   // Graphics options are read when a game starts, so restart it and put everything back exactly
   // where it was with a save state taken in memory.
   const Game game = *game_;
+  const bool relink = local_.active();
+  local_.stop();  // the link holds the old core's callbacks: joined again below
   const std::vector<uint8_t> state = core_.save_state();
   std::vector<uint8_t> ram;
   if (uint8_t* r = core_.save_ram()) ram.assign(r, r + core_.save_ram_size());
@@ -465,7 +646,7 @@ void App::restart_game_keep_progress() {
   // This core cannot start a second game in one session, so reload the core library itself
   // (as RetroArch does when it restarts a core).
   core_.close();
-  if (!core_.open(core_path_).empty()) {
+  if (!core_.open(game.system == System::GBA ? gba_core_path_ : n64_core_path_).empty()) {
     toast("Could not restart the emulator core");
     game_.reset();
     screen_ = Screen::Home;
@@ -483,15 +664,25 @@ void App::restart_game_keep_progress() {
     core_.context_reset();
   }
   if (uint8_t* r = core_.save_ram(); r && ram.size() == core_.save_ram_size()) std::memcpy(r, ram.data(), ram.size());
+  if (gifts_.is_open()) gifts_.attach(core_.netpacket());
+  if (cable_.is_open()) cable_.attach(core_.netpacket());
+  if (relink) local_.start(core_.netpacket(), core2_.netpacket());
   core_.run();  // let the core settle before restoring
   if (!core_.load_state(state)) toast("Picture changed. The game restarted from your last save");
+}
+
+int App::fill_mode(const Game* game) const {
+  const int f = std::clamp(settings_.game_int(game ? game->id : "", "fill", 0), 0, static_cast<int>(FillMode::Count) - 1);
+  const bool breaks = game && (game->system == System::GBA || widescreen_breaks(game->internal_name));
+  return f == static_cast<int>(FillMode::Widescreen) && breaks ? static_cast<int>(FillMode::Fit) : f;
 }
 
 Look App::current_look() const {
   Look l;
   const std::string id = game_ ? game_->id : "";
+  if (game_ && game_->system == System::GBA) return gba_look_for(*game_, core_);
   const PresetDef& p = kPresets[std::clamp(settings_.game_int(id, "preset", 0), 0, 3)];
-  l.fill = static_cast<FillMode>(std::clamp(settings_.game_int(id, "fill", 0), 0, static_cast<int>(FillMode::Count) - 1));
+  l.fill = static_cast<FillMode>(fill_mode(game_ ? &*game_ : nullptr));
   l.overscan = std::clamp(settings_.game_int(id, "overscan", 0), 0, 8) / 100.0f;
   l.sharpen = p.sharpen;
   l.scanlines = p.scanlines;
@@ -504,10 +695,39 @@ Look App::current_look() const {
 // ---------------------------------------------------------------------------------------------
 // Saves
 
+Look App::gba_look_for(const Game& game, const Core& core) const {
+  Look l;
+  const GbaLookDef& g = kGbaLooks[gba_look(settings_, game.id)];
+  l.fill = static_cast<FillMode>(fill_mode(&game));
+  l.pixels = g.pixels;
+  l.grid = g.grid;
+  l.whole_pixels = g.whole_pixels;
+  l.lines = 160;
+  const float a = core.av().geometry.aspect_ratio;
+  l.aspect = a > 0 ? a : 3.0f / 2.0f;
+  return l;
+}
+
 void App::load_game_save() {
   last_saved_ram_.clear();
   pending_ram_.clear();
   uint8_t* ram = core_.save_ram();
+  if (game_->system == System::GBA) {
+    if (!ram || core_.save_ram_size() != savekit::kGbaSaveSize) return;
+    try {
+      if (auto saved = savekit::load_current(gba_library_dir_, game_->internal_name)) {
+        auto it = saved->memories.find(savekit::Memory::GbaSave);
+        if (it != saved->memories.end() && it->second.size() == savekit::kGbaSaveSize) {
+          std::memcpy(ram, it->second.data(), savekit::kGbaSaveSize);
+          toast("Loaded your saved progress");
+        }
+      }
+    } catch (const std::exception& e) {
+      toast(std::string("Could not load the save: ") + e.what(), 6);
+    }
+    last_saved_ram_.assign(ram, ram + savekit::kGbaSaveSize);
+    return;
+  }
   if (!ram || core_.save_ram_size() != kSrmSize) return;
   try {
     if (auto saved = savekit::load_current(library_dir_, game_->internal_name)) {
@@ -530,8 +750,10 @@ void App::load_game_save() {
 void App::sync_game_save(bool force) {
   if (guest_session_) return;  // the host keeps the save of an online game
   uint8_t* ram = core_.save_ram();
-  if (!game_ || !ram || core_.save_ram_size() != kSrmSize) return;
-  std::vector<uint8_t> now(ram, ram + kSrmSize);
+  const bool gba = game_ && game_->system == System::GBA;
+  const std::size_t size = gba ? savekit::kGbaSaveSize : kSrmSize;
+  if (!game_ || !ram || core_.save_ram_size() != size) return;
+  std::vector<uint8_t> now(ram, ram + size);
   if (now == last_saved_ram_) {
     pending_ram_.clear();
     return;
@@ -545,9 +767,18 @@ void App::sync_game_save(bool force) {
   if (!force && frame_count_ - pending_since_frame_ < 60) return;
   try {
     savekit::StoreOptions o;
-    o.library = library_dir_;
+    o.library = library_for(game_->system);
     o.game = game_->internal_name;
-    o.save = savekit::decode(savekit::Format::RetroArchMupen64PlusNext, {{".srm", savekit::Bytes(now)}}).save;
+    if (gba) {
+      // Never written (all 0xFF, as the core starts it): nothing to keep.
+      if (std::all_of(now.begin(), now.end(), [](uint8_t b) { return b == 0xFF; })) {
+        last_saved_ram_ = now;
+        return;
+      }
+      o.save.memories[savekit::Memory::GbaSave] = savekit::Bytes(now);
+    } else {
+      o.save = savekit::decode(savekit::Format::RetroArchMupen64PlusNext, {{".srm", savekit::Bytes(now)}}).save;
+    }
     // The core formats every Controller Pak; only keep the ones that hold notes.
     for (auto m : {savekit::Memory::ControllerPak1, savekit::Memory::ControllerPak2, savekit::Memory::ControllerPak3,
                    savekit::Memory::ControllerPak4}) {
@@ -558,7 +789,10 @@ void App::sync_game_save(bool force) {
       last_saved_ram_ = now;
       return;
     }
-    if (savekit::store_current(o).changed) toast("Progress saved", 2);
+    if (savekit::store_current(o).changed) {
+      toast("Progress saved", 2);
+      session_saved_ = true;
+    }
     last_saved_ram_ = now;
     pending_ram_.clear();
   } catch (const std::exception& e) {
@@ -567,7 +801,7 @@ void App::sync_game_save(bool force) {
 }
 
 fs::path App::state_path(int slot) const {
-  return library_dir_ / game_->internal_name / "states" / ("slot" + std::to_string(slot) + ".state");
+  return library_for(game_->system) / game_->internal_name / "states" / ("slot" + std::to_string(slot) + ".state");
 }
 
 void App::save_state() {
@@ -620,9 +854,11 @@ void App::choose_games_folder() {
 
 void App::choose_save_to_import() {
   if (games_.empty()) return;
-  static const SDL_DialogFileFilter filters[] = {{"N64 save files", "srm;sra;eep;fla;mpk"}};
+  static const SDL_DialogFileFilter n64[] = {{"N64 save files", "srm;sra;eep;fla;mpk"}};
+  static const SDL_DialogFileFilter gba[] = {{"GBA save files", "sav;srm;sa1;fla;eep"}};
+  const bool is_gba = games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)].system == System::GBA;
   auto* info = new std::pair<uint32_t, int>(user_event_, kSaveChosen);
-  SDL_ShowOpenFileDialog(dialog_done, info, window_, filters, 1, nullptr, false);
+  SDL_ShowOpenFileDialog(dialog_done, info, window_, is_gba ? gba : n64, 1, nullptr, false);
 }
 
 void App::import_save(const fs::path& file) {
@@ -633,6 +869,23 @@ void App::import_save(const fs::path& file) {
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     std::ifstream in(file, std::ios::binary);
     savekit::Bytes data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (g.system == System::GBA) {
+      // GBA saves are the cartridge's memory as it is (VisualBoyAdvance-M, mGBA and RetroArch all
+      // write them that way): 512 bytes to 128 KB, filled out with 0xFF to gpSP's 128 KB block.
+      if (data.empty() || data.size() > savekit::kGbaSaveSize) {
+        toast("That isn't a GBA save file (GBA saves are 128 KB or smaller)", 6);
+        return;
+      }
+      data.resize(savekit::kGbaSaveSize, 0xFF);
+      savekit::StoreOptions o;
+      o.library = gba_library_dir_;
+      o.game = g.internal_name;
+      o.save.memories[savekit::Memory::GbaSave] = data;
+      o.source = "imported save file";
+      savekit::store_current(o);
+      toast("Save imported for " + g.title + ". Your previous save is kept in history", 5);
+      return;
+    }
     // Recognise the file by its type and size; other emulators' files share these layouts.
     savekit::Decoded d;
     if (ext == ".srm") {
@@ -681,9 +934,22 @@ void App::take_screenshot(const fs::path& file) {
 // ---------------------------------------------------------------------------------------------
 // Main loop
 
+// How many screen refreshes make one game frame when the two line up (a 60 Hz screen: 1, 120 Hz:
+// 2), or 0 when they don't (75 Hz, 144 Hz) or the screen isn't keeping up.
+int App::refreshes_per_frame(double fps) const {
+  if (!vsync_working_ || refresh_ns_ <= 0 || unlocked_for_ > 0) return 0;
+  const double per = 1e9 / fps / refresh_ns_;
+  const int n = static_cast<int>(std::lround(per));
+  return n >= 1 && n <= 4 && std::abs(per / n - 1.0) < 0.02 ? n : 0;
+}
+
 void App::run_frames() {
   const uint64_t now = SDL_GetTicksNS();
-  acc_ns_ += now - last_ns_;
+  uint64_t elapsed = now - last_ns_;
+  // With vsync, count whole refreshes rather than the clock's jitter, so frames come at an even
+  // rhythm (on a 144 Hz screen: the same pattern of 2 and 3 refreshes per frame, always).
+  if (vsync_working_ && refresh_ns_ > 0 && elapsed < refresh_ns_ * 1.5) elapsed = static_cast<uint64_t>(refresh_ns_);
+  acc_ns_ += elapsed;
   last_ns_ = now;
   const double fps = core_.av().timing.fps > 1 ? core_.av().timing.fps : 60.0;
   const uint64_t frame_ns = static_cast<uint64_t>(1e9 / fps);
@@ -693,20 +959,117 @@ void App::run_frames() {
     return;
   }
   if (net_.running() && online_game_) {
+    audio_.set_speed(1.0);  // online games keep the N64's own clock, the same on every computer
     run_online_frames(frame_ns);  // the host's menu pauses everyone, so it decides
     return;
   }
-  if (screen_ != Screen::Playing || overlay_ != Overlay::None) {
+  // A linked GBA game keeps running behind the menus: the others' games are waiting on its link.
+  const bool linked = link_.active() && game_ && game_->system == System::GBA;
+  if (screen_ != Screen::Playing || (overlay_ != Overlay::None && !linked)) {
     acc_ns_ = 0;
+    speed_since_ns_ = 0;
+    return;
+  }
+  // Speeding up (GBA, the speed key held): kFastForward times the game's speed, by the clock.
+  // Not while linked or at an event, where the other side expects the game's own pace. Its sound
+  // is left out (sped-up sound only stutters) and starts again cleanly afterwards.
+  const bool fast = game_ && game_->system == System::GBA && !link_.active() && !local_.active() && event_key_.empty() &&
+                    overlay_ == Overlay::None && input_.speed_held();
+  if (fast != fast_) {
+    fast_ = fast;
+    audio_.clear();
+    acc_ns_ = 0;
+    speed_since_ns_ = 0;
+  }
+  if (fast) {
+    acc_ns_ = opt_.screenshot.empty() ? acc_ns_ + elapsed * (kFastForward - 1) : kFastForward * frame_ns;
+    for (int runs = 0; acc_ns_ >= frame_ns && runs < 2 * kFastForward; ++runs) {
+      run_one_frame();
+      acc_ns_ -= frame_ns;
+      ++frame_count_;
+      if (frame_count_ % 30 == 0) sync_game_save(false);
+    }
+    acc_ns_ = std::min(acc_ns_, frame_ns);  // a slow computer runs as fast as it can, without catching up later
     return;
   }
   if (!opt_.screenshot.empty()) acc_ns_ = frame_ns;  // test mode: one game frame per drawn frame, so runs repeat exactly
+  // When the screen's refresh lines up with the game (it nearly always does: 60 Hz), run exactly
+  // one frame every n refreshes. Going by the clock instead, the two drift across each other and
+  // the game now and then shows a frame twice and then skips one: a small, regular stutter. The
+  // game then runs at the screen's speed (60 Hz against the N64's 59.94: 0.1% faster), and the
+  // sound follows along.
+  if (const int n = opt_.screenshot.empty() ? refreshes_per_frame(fps) : 0) {
+    acc_ns_ = 0;
+    audio_.set_speed(1e9 / (refresh_ns_ * n) / fps);
+    if (++refreshes_ % static_cast<uint64_t>(n) == 0) {
+      run_one_frame();
+      ++frame_count_;
+      if (frame_count_ % 30 == 0) sync_game_save(false);
+    }
+    check_speed(fps);
+    return;
+  }
+  audio_.set_speed(1.0);
   for (int runs = 0; acc_ns_ >= frame_ns && runs < 3; ++runs) {
-    core_.run();
+    run_one_frame();
     acc_ns_ -= frame_ns;
     ++frame_count_;
     if (frame_count_ % 30 == 0) sync_game_save(false);
   }
+  check_speed(fps);
+}
+
+// Whether this computer keeps the game at full speed: game frames are counted over 5-second
+// stretches of play, and if clearly fewer ran than the game's speed, the player hears once (per
+// game) which settings are lighter. Slow settings are the usual cause of a game that drags.
+// Pokémon daily hints: every 5 seconds of play, read the game for Mirage Island and the Lottery
+// Corner, and say so once on a lucky day. Not while linked, online or at an event, where the game
+// belongs to more than this player.
+void App::update_hints() {
+  if (!game_ || game_->system != System::GBA || game_->id.size() < 8 || screen_ != Screen::Playing) return;
+  if (frame_count_ - hints_checked_ < 300 && hints_checked_ <= frame_count_) return;
+  hints_checked_ = frame_count_;
+  const std::string code = game_->id.substr(4, 4);
+  if (!has_daily_hints(code) || !settings_.get_int("daily_hints", 1) || online_game_ || link_.active() || !event_key_.empty()) return;
+  const GbaMemory memory = [this](uint32_t address, std::size_t size) -> const uint8_t* { return core_.memory(address, size); };
+  // The last hints shown for this game, so each lucky day is told once, even across restarts.
+  std::string seen = settings_.game(game_->id, "hints_seen", "");
+  bool changed = false;
+  for (const DailyHint& h : daily_hints(code, memory)) {
+    if (("|" + seen + "|").find("|" + h.key + "|") != std::string::npos) continue;
+    toast(h.text, 10.0);
+    seen = seen.empty() ? h.key : h.key + "|" + seen;
+    changed = true;
+  }
+  if (changed) {
+    if (seen.size() > 200) seen.resize(seen.rfind('|', 200));
+    settings_.set_game(game_->id, "hints_seen", seen);
+    settings_.save();
+  }
+}
+
+void App::check_speed(double fps) {
+  if (!opt_.screenshot.empty() || slow_told_) return;
+  const uint64_t now = SDL_GetTicksNS();
+  if (!speed_since_ns_) {
+    speed_since_ns_ = now;
+    speed_frames_ = frame_count_;
+    return;
+  }
+  const uint64_t span = now - speed_since_ns_;
+  if (span < 5'000'000'000ULL) return;
+  const double expected = fps * static_cast<double>(span) / 1e9;
+  slow_spans_ = static_cast<double>(frame_count_ - speed_frames_) < expected * 0.95 ? slow_spans_ + 1 : 0;
+  if (slow_spans_ >= 2) {
+    slow_told_ = true;
+    SDL_Log("speed: %llu frames in %.1f s, expected %.0f", static_cast<unsigned long long>(frame_count_ - speed_frames_),
+            static_cast<double>(span) / 1e9, expected);
+    toast("This computer can't keep the game at full speed with these settings. Menu > Picture: Retro, or "
+          "Textures: Original, is lighter",
+          9);
+  }
+  speed_since_ns_ = now;
+  speed_frames_ = frame_count_;
 }
 
 void App::loop() {
@@ -765,9 +1128,21 @@ void App::loop() {
     input_.update(static_cast<float>(std::min<uint64_t>(t0 - last_ns_, 100'000'000)) / 1e9f);
     for (auto& n : input_.take_notices()) toast(n, 4);
     process_net_events();
+    link_.update();
+    for (auto& m : link_.take_messages()) {
+      SDL_Log("link: %s", m.c_str());
+      toast(m, 5);
+    }
+    if (opt_.link_host && !printed_link_ && !link_.code().empty()) {
+      std::printf("link-invite %s\n", link_.code().c_str());
+      std::fflush(stdout);
+      printed_link_ = true;
+    }
     process_backup();
     if (game_) run_frames();
-    audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host())));
+    update_event();
+    update_hints();
+    audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host()) && !link_.active()));
     draw();
     ++frames_drawn;
 
@@ -798,6 +1173,28 @@ void App::loop() {
     swap_ns_total += SDL_GetTicksNS() - t1;
     // With working vsync the swap paces the loop; otherwise sleep until the next frame is due.
     if (frames_drawn == 30) vsync_working_ = swap_ns_total / 30 > 3'000'000;
+    if (vsync_working_) {
+      // Wait for the picture to be on screen. Otherwise the driver can queue up to 3 frames ahead,
+      // and every one of them is a frame between pressing a button and seeing it happen.
+      gl::glFinish();
+      // Measure the refresh period (a missed refresh, from a slow frame, doesn't count; it
+      // unlocks the pacing for a while instead, so a slow PC keeps the game at full speed).
+      const uint64_t now = SDL_GetTicksNS();
+      const double dt = last_swap_ns_ ? static_cast<double>(now - last_swap_ns_) : 0;
+      last_swap_ns_ = now;
+      if (dt > 0 && refresh_ns_ <= 0) {
+        if (const SDL_DisplayMode* m = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_)); m && m->refresh_rate > 1) {
+          refresh_ns_ = 1e9 / m->refresh_rate;
+        } else {
+          refresh_ns_ = dt;
+        }
+      } else if (dt > 0 && dt < refresh_ns_ * 1.5 && dt > refresh_ns_ * 0.5) {
+        refresh_ns_ += (dt - refresh_ns_) * 0.02;
+        if (unlocked_for_ > 0) --unlocked_for_;
+      } else if (dt >= refresh_ns_ * 1.5) {
+        unlocked_for_ = 120;
+      }
+    }
     if (!vsync_working_) {
       const double fps = game_ && core_.av().timing.fps > 1 ? core_.av().timing.fps : 60.0;
       const uint64_t frame_ns = static_cast<uint64_t>(1e9 / fps);
@@ -894,6 +1291,10 @@ bool App::handle_hotkey(const SDL_Event& e) {
     case SDL_SCANCODE_F1:
       overlay_ = overlay_ == Overlay::Help ? Overlay::None : Overlay::Help;
       return true;
+    case SDL_SCANCODE_F3:
+      if (!game2_) return false;
+      switch_local_focus();
+      return true;
     case SDL_SCANCODE_F10:
       if (overlay_ == Overlay::Seating) {
         input_.stop_seating();
@@ -906,7 +1307,7 @@ bool App::handle_hotkey(const SDL_Event& e) {
     case SDL_SCANCODE_F12:
       if (const char* pics = SDL_GetUserFolder(SDL_FOLDER_PICTURES)) {
         const auto stamp = std::chrono::system_clock::now().time_since_epoch().count();
-        const fs::path f = from_utf8(pics) / "Prometheus 64" / ("screenshot-" + std::to_string(stamp) + ".png");
+        const fs::path f = from_utf8(pics) / "Project Prometheus" / ("screenshot-" + std::to_string(stamp) + ".png");
         take_screenshot(f);
         toast("Screenshot saved to " + utf8(f.parent_path()));
       }
@@ -914,20 +1315,17 @@ bool App::handle_hotkey(const SDL_Event& e) {
     default:
       break;
   }
-  if (!game_ || overlay_ != Overlay::None) return false;
+  // The game's shortcuts work while playing and in its menu (which shows them).
+  if (!game_ || (overlay_ != Overlay::None && overlay_ != Overlay::Menu)) return false;
   switch (e.key.scancode) {
-    case SDL_SCANCODE_F2:
-      menu_change(kFill, 1);
-      return true;
-    case SDL_SCANCODE_F3:
-      if (online_blocks(kPicture)) return true;
-      menu_change(kPicture, 1);
+    case SDL_SCANCODE_F8:
+    case SDL_SCANCODE_F9:
+      menu_change(kVolume, e.key.scancode == SDL_SCANCODE_F9 ? 1 : -1);
+      settings_.save();
+      toast("Volume " + std::to_string(settings_.get_int("volume", 80)) + "%", 2);
       return true;
     case SDL_SCANCODE_F5:
       if (!online_blocks(kSaveState)) save_state();
-      return true;
-    case SDL_SCANCODE_F6:
-      menu_change(kSlot, 1);
       return true;
     case SDL_SCANCODE_F7:
       if (!online_blocks(kLoadState)) load_state();
@@ -1075,23 +1473,50 @@ std::vector<App::MenuItem> App::menu_items() const {
                                                      : "Auto (" + std::to_string(rw) + "x" + std::to_string(rh) + ")";
   const bool gliden = std::string(kPresets[preset].rdp) == "gliden64";
   const bool online = online_game_ && net_.active();
-  return {
-      {"Resume", "", kResume},
-      {"Save state", online ? "off online" : "slot " + std::to_string(slot_), kSaveState},
-      {"Load state", online ? "off online" : "slot " + std::to_string(slot_), kLoadState},
+  std::vector<MenuItem> items = {
+      {"Resume", "", kResume, "Esc"},
+      {"Save state", online ? "off online" : "slot " + std::to_string(slot_), kSaveState, "F5"},
+      {"Load state", online ? "off online" : "slot " + std::to_string(slot_), kLoadState, "F7"},
       {"State slot", std::to_string(slot_), kSlot},
       {"Picture", kPresets[preset].name, kPicture},
       {"Textures", gliden ? kTextureNames[texture_look(id)] : "Set by the picture style", kTextures},
       {"Fill mode", fill_mode_name(look.fill), kFill},
       {"Resolution", res, kResolution},
       {"Overscan crop", std::to_string(static_cast<int>(std::lround(look.overscan * 100))) + "%", kOverscan},
-      {"Volume", std::to_string(settings_.get_int("volume", 80)) + "%", kVolume},
-      {"Fullscreen", fullscreen_ ? "On" : "Off", kFullscreenItem},
-      {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers},
+      {"Volume", std::to_string(settings_.get_int("volume", 80)) + "%", kVolume, "F8/F9"},
+      {"Fullscreen", fullscreen_ ? "On" : "Off", kFullscreenItem, "F11"},
+      {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers, "F10"},
       {"Controls", "", kControlsItem},
-      {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset},
+      {"Link a second game", local_link_value(), kLocalLinkItem},
+      {"Controlling", game2_ && focus2_ ? game2_->title : game_ ? game_->title : "", kLocalFocusItem, "F3"},
+      {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
+      {"Daily hints", settings_.get_int("daily_hints", 1) ? "On" : "Off", kHintsItem},
+      {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
       {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
   };
+  if (game_ && game_->system == System::GBA) {
+    // A GBA game: its own pictures; no textures, resolution or overscan (a sharp 240x160 screen).
+    const GbaLookDef& g = kGbaLooks[gba_look(settings_, id)];
+    std::vector<MenuItem> gba;
+    for (MenuItem& it : items) {
+      if (it.id == kTextures || it.id == kResolution || it.id == kOverscan) continue;
+      if (it.id == kEventsItem && events_for(*game_).empty()) continue;
+      if (it.id == kHintsItem && !has_daily_hints(game_->id.size() >= 8 ? game_->id.substr(4, 4) : "")) continue;
+      if (it.id == kLocalFocusItem && !game2_) continue;
+      if (it.id == kLocalLinkItem && (link_.active() || online_game_)) continue;
+      if (it.id == kPicture) it.value = g.name;
+      if (it.id == kFill && look.fill == FillMode::Fit) it.value = "Fit (3:2)";
+      gba.push_back(std::move(it));
+    }
+    return gba;
+  }
+  items.erase(std::remove_if(items.begin(), items.end(),
+                             [](const MenuItem& it) {
+                               return it.id == kEventsItem || it.id == kHintsItem || it.id == kLocalLinkItem ||
+                                      it.id == kLocalFocusItem;
+                             }),
+              items.end());
+  return items;
 }
 
 void App::menu_change(int id, int dir) {
@@ -1125,6 +1550,13 @@ void App::menu_change(int id, int dir) {
       if (overlay_ == Overlay::None) toast("State slot " + std::to_string(slot_));
       break;
     case kPicture: {
+      if (game_ && game_->system == System::GBA) {
+        const int p = (gba_look(settings_, gid) + step + kGbaLookCount) % kGbaLookCount;
+        settings_.set_game_int(gid, "gba_look", p);
+        toast(std::string("Picture: ") + kGbaLooks[p].name + " - " + kGbaLooks[p].blurb);
+        apply_core_options(*game_);  // colours and ghosting: the core picks them up as it runs
+        break;
+      }
       const int p = (settings_.game_int(gid, "preset", 0) + step + 4) % 4;
       settings_.set_game_int(gid, "preset", p);
       toast(std::string("Picture: ") + kPresets[p].name + " - " + kPresets[p].blurb);
@@ -1141,12 +1573,21 @@ void App::menu_change(int id, int dir) {
     }
     case kFill: {
       const int count = static_cast<int>(FillMode::Count);
-      const int before = settings_.game_int(gid, "fill", 0);
-      const int f = (before + step + count) % count;
-      settings_.set_game_int(gid, "fill", f);
-      toast(std::string("Fill mode: ") + fill_mode_name(static_cast<FillMode>(f)) +
-            (static_cast<FillMode>(f) == FillMode::Widescreen ? "  (works with many games, not all)" : ""));
       const int ws = static_cast<int>(FillMode::Widescreen);
+      const int before = fill_mode(game_ ? &*game_ : nullptr);
+      int f = (before + step + count) % count;
+      const bool gba = game_ && game_->system == System::GBA;
+      const bool skip = f == ws && game_ && (gba || widescreen_breaks(game_->internal_name));
+      if (skip) f = (f + step + count) % count;
+      settings_.set_game_int(gid, "fill", f);
+      if (skip && gba) {
+        toast(std::string("Fill mode: ") + fill_mode_name(static_cast<FillMode>(f)));  // GBA games have no widescreen
+      } else if (skip) {
+        toast("No widescreen for this game: its text and fades are made for a 4:3 screen. Ambient fill fills the sides instead", 6);
+      } else {
+        toast(std::string("Fill mode: ") + fill_mode_name(static_cast<FillMode>(f)) +
+              (static_cast<FillMode>(f) == FillMode::Widescreen ? "  (text can look wrong in some games: then choose another)" : ""));
+      }
       if ((before == ws) != (f == ws)) {
         if (online_game_ && net_.active()) {
           // Turning widescreen on or off restarts the game, which an online game can't do.
@@ -1194,6 +1635,40 @@ void App::menu_change(int id, int dir) {
     case kControlsItem:
       if (dir == 0) open_controls();
       break;
+    case kEventsItem:
+      if (dir == 0) {
+        open_online();
+        online_page_ = OnlinePage::Events;
+      }
+      break;
+    case kLocalLinkItem: {
+      if (game2_) {
+        if (dir == 0) stop_local_link();
+        break;
+      }
+      const auto choices = second_game_choices();
+      if (choices.empty()) {
+        if (dir == 0) toast("Add another GBA game to your library to link two games here", 5);
+        break;
+      }
+      const int n = static_cast<int>(choices.size());
+      local_choice_ = ((local_choice_ + dir) % n + n) % n;
+      if (dir == 0) {
+        start_local_link(*choices[static_cast<std::size_t>(local_choice_)]);
+        overlay_ = Overlay::None;
+      }
+      break;
+    }
+    case kLocalFocusItem:
+      switch_local_focus();
+      break;
+    case kHintsItem: {
+      const bool on = !settings_.get_int("daily_hints", 1);
+      settings_.set_int("daily_hints", on ? 1 : 0);
+      toast(on ? "Daily hints on: you'll hear when Mirage Island is out or the lottery would pay, nothing else"
+               : "Daily hints off");
+      break;
+    }
     case kReset:
       if (dir == 0) {
         core_.reset();
@@ -1215,7 +1690,15 @@ void App::menu_change(int id, int dir) {
 void App::draw() {
   SDL_GetWindowSizeInPixels(window_, &out_w_, &out_h_);
   video_.begin_present(out_w_, out_h_);
-  if (screen_ == Screen::Playing && game_) {
+  if (screen_ == Screen::Playing && game_ && game2_) {
+    // Two games linked here: side by side, the first on the left.
+    const int half = out_w_ / 2;
+    video_.set_viewport(0, 0, half, out_h_);
+    video_.draw_game(half, out_h_, current_look());
+    video2_.set_viewport(half, 0, out_w_ - half, out_h_);
+    video2_.draw_game(out_w_ - half, out_h_, gba_look_for(*game2_, core2_));
+    video_.set_viewport(0, 0, out_w_, out_h_);
+  } else if (screen_ == Screen::Playing && game_) {
     video_.draw_game(out_w_, out_h_, current_look());
   }
   ui_.begin(out_w_, out_h_);
@@ -1227,6 +1710,15 @@ void App::draw() {
     // The mouse moved during a game: offer the menu, for players without a free key or button.
     const float s = out_h_ / 1080.0f;
     draw_button(out_w_ - 32 * s, 28 * s, "Menu", s, false, false, kHitMenuButton, 0, true);
+  }
+  if (playing && game2_) draw_local_link_labels();
+  if (playing && fast_) {
+    // Sped up: a small sign in the corner, so a game running fast is never a surprise.
+    const float s = out_h_ / 1080.0f;
+    const std::string t = std::to_string(kFastForward) + "x speed";
+    const float w = ui_.measure(t, 20 * s, true) + 36 * s;
+    ui_.rect(24 * s, 24 * s, w, 42 * s, rgb(0x121214, 0.8f), 12 * s);
+    ui_.text(24 * s + w / 2, 24 * s + 10 * s, t, 20 * s, kText, true, Align::Center);
   }
   drawing_overlay_ = true;
   if (overlay_ == Overlay::Menu) draw_menu();
@@ -1266,7 +1758,7 @@ void App::draw_home() {
 
   const float margin = 72 * s;
   ui_.image(ui_.logo(), margin, 54 * s, 72 * s, 72 * s);
-  ui_.text(margin + 92 * s, 52 * s, "Prometheus 64", 44 * s, kText, true);
+  ui_.text(margin + 92 * s, 52 * s, "Project Prometheus", 44 * s, kText, true);
   ui_.text(margin + 94 * s, 106 * s, "Classics, rekindled", 21 * s, kDim);
 
   // Footer: every shortcut is also a button.
@@ -1345,9 +1837,10 @@ void App::draw_home() {
     for (std::size_t l = 0; l < lines.size(); ++l) {
       ui_.text(x + 22 * s, y + 22 * s + l * 32 * s, lines[l], 26 * s, sel ? kText : kText.with_alpha(0.85f), true);
     }
-    std::string meta = g.region.empty() ? g.internal_name : g.region;
+    // Which console, then where it's from: one library holds every console's games.
+    std::string meta = std::string(system_name(g.system)) + "  ·  " + (g.region.empty() ? g.internal_name : g.region);
     ui_.text(x + 22 * s, y + tile_h - 44 * s, ui_.fit(meta, 18 * s, tile_w - 150 * s), 18 * s, kDim);
-    if (fs::is_directory(library_dir_ / g.internal_name / "current", ec)) {
+    if (fs::is_directory(library_for(g.system) / g.internal_name / "current", ec)) {
       const float cw = ui_.measure("Saved progress", 15 * s) + 24 * s;
       ui_.rect(x + tile_w - cw - 18 * s, y + tile_h - 48 * s, cw, 30 * s, kRed.with_alpha(0.18f), 15 * s);
       ui_.text(x + tile_w - cw / 2 - 18 * s, y + tile_h - 42 * s, "Saved progress", 15 * s, rgb(0xFF8F8A), false,
@@ -1360,7 +1853,7 @@ void App::draw_menu() {
   const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_), H = static_cast<float>(out_h_);
   ui_.rect(0, 0, W, H, rgb(0x000000, 0.55f));
   const auto items = menu_items();
-  const float row = 50 * s, pw = 620 * s, ph = 150 * s + items.size() * row + 50 * s;
+  const float row = 50 * s, pw = 660 * s, ph = 150 * s + items.size() * row + 70 * s;
   const float px = (W - pw) / 2, py = std::max(20 * s, (H - ph) / 2);
   ui_.rect(px, py, pw, ph, kPanel.with_alpha(0.97f), 24 * s);
   ui_.outline(px, py, pw, ph, rgb(0xFFFFFF, 0.06f), 24 * s, 1.5f * s);
@@ -1378,7 +1871,13 @@ void App::draw_menu() {
     }
     add_hit(px + 18 * s, y, pw - 36 * s, row - 6 * s, kHitMenuRow, i);
     const bool off = items[i].value == "off online";  // brief 11.4: shown greyed out while online
-    ui_.text(px + 40 * s, y + 11 * s, items[i].label, 21 * s, off ? kFaint : sel ? kText : kText.with_alpha(0.82f), sel);
+    const float label_w = ui_.text(px + 40 * s, y + 11 * s, items[i].label, 21 * s, off ? kFaint : sel ? kText : kText.with_alpha(0.82f), sel);
+    if (!items[i].key.empty()) {
+      // The shortcut, as a small key cap after the label: it works while playing, and here too.
+      const float kx = px + 40 * s + label_w + 14 * s, kw = ui_.measure(items[i].key, 15 * s, true) + 16 * s;
+      ui_.rect(kx, y + 11 * s, kw, 26 * s, rgb(0xFFFFFF, sel ? 0.14f : 0.07f), 7 * s);
+      ui_.text(kx + 8 * s, y + 15 * s, items[i].key, 15 * s, off ? kFaint : sel ? kText : kDim, true);
+    }
     if (!items[i].value.empty()) {
       const bool adjustable = items[i].id >= kSlot && items[i].id <= kVolume;
       if (adjustable && sel) {
@@ -1397,8 +1896,10 @@ void App::draw_menu() {
     }
     y += row;
   }
-  ui_.text(px + pw / 2, py + ph - 42 * s, "Up/Down or W/S choose     Left/Right change     Enter select     Esc back     Mouse: click",
+  ui_.text(px + pw / 2, py + ph - 56 * s, "Up/Down or W/S choose     Left/Right change     Enter select     Esc back     Mouse: click",
            16 * s, kFaint, false, Align::Center);
+  ui_.text(px + pw / 2, py + ph - 32 * s, "F12 screenshot     F1 all controls and shortcuts", 16 * s, kFaint, false,
+           Align::Center);
 }
 
 void App::draw_seating() {
@@ -1471,9 +1972,8 @@ void App::draw_help() {
       {"Menu", "Back or Guide"},
   };
   const Row hotkeys[] = {
-      {"Esc", "Menu"}, {"F11 / Alt+Enter", "Fullscreen"}, {"F2", "Next fill mode"}, {"F3", "Next picture style"},
-      {"F5 / F7", "Save / load state"}, {"F6", "Next state slot"}, {"F10", "Who's playing"}, {"F12", "Screenshot"},
-      {"Ctrl+R", "Reset"},
+      {"Esc", "Menu"}, {"F11 / Alt+Enter", "Fullscreen"}, {"F5 / F7", "Save / load state"},
+      {"F8 / F9", "Volume down / up"}, {"F10", "Who's playing"}, {"F12", "Screenshot"}, {"Ctrl+R", "Reset"},
   };
   auto column = [&](float x, const char* title, const Row* rows, int n) {
     float y = py + 100 * s;
@@ -1487,7 +1987,11 @@ void App::draw_help() {
   };
   column(px + 40 * s, "Keyboard", keyboard, 8);
   column(px + pw / 3 + 20 * s, "Controller", pad, 7);
-  column(px + 2 * pw / 3, "Shortcuts", hotkeys, 9);
+  column(px + 2 * pw / 3, "Shortcuts", hotkeys, 7);
+  ui_.text(px + 40 * s, py + ph - 154 * s,
+           "GBA games: A, B, L, R and Start as above, Select on Z, the +Control Pad on the D-pad or the stick. Hold " +
+               k(kSpeed) + " to speed the game up.",
+           18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 122 * s,
            "Change any key or button on the Controls screen: press C in the library, or Menu > Controls.", 18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 90 * s,
@@ -1635,8 +2139,8 @@ std::vector<App::ControlsEntry> App::controls_entries() const {
   std::vector<ControlsEntry> out;
   int row = 0;
   if (controls_tab_ < Input::kKeyLayouts) {
-    for (int c : std::initializer_list<int>{kStickUp, kStickDown, kStickLeft, kStickRight, kWalk, kDUp, kDDown, kDLeft,
-                                            kDRight}) {
+    for (int c : std::initializer_list<int>{kStickUp, kStickDown, kStickLeft, kStickRight, kWalk, kSpeed, kDUp, kDDown,
+                                            kDLeft, kDRight}) {
       out.push_back({c, 0, row++});
     }
   } else {
@@ -1881,6 +2385,178 @@ void App::draw_toasts() {
     ui_.rect((out_w_ - w) / 2, y, w, h, rgb(0x121214, 0.92f * alpha), 14 * s);
     ui_.rect((out_w_ - w) / 2 + 14 * s, y + h / 2 - 4 * s, 8 * s, 8 * s, kRed.with_alpha(alpha), 4 * s);
     ui_.text((out_w_ - w) / 2 + 32 * s, y + 13 * s, t, 20 * s, kText.with_alpha(alpha));
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Local link play: a second of the player's GBA games, linked to the one playing (local_link.hpp)
+
+void App::run_one_frame() {
+  if (!local_.active()) {
+    core_.run();
+    return;
+  }
+  local_.before_first();
+  core_.run();
+  local_.before_second();
+  core2_.run();
+  if (frame_count_ % 30 == 0) sync_second_save(false);
+}
+
+std::vector<const Game*> App::second_game_choices() const {
+  std::vector<const Game*> out;
+  if (!game_ || game_->system != System::GBA) return out;
+  for (const Game& g : games_) {
+    // Not the same game: both copies would share its one save in the library.
+    if (g.system == System::GBA && g.internal_name != game_->internal_name) out.push_back(&g);
+  }
+  return out;
+}
+
+std::string App::local_link_value() const {
+  if (game2_) return "Linked: " + game2_->title + " (Enter ends it)";
+  const auto choices = second_game_choices();
+  if (choices.empty()) return "No other GBA game";
+  return choices[static_cast<std::size_t>(std::clamp(local_choice_, 0, static_cast<int>(choices.size()) - 1))]->title;
+}
+
+void App::start_local_link(const Game& second) {
+  if (!game_ || game_->system != System::GBA || second.system != System::GBA) return;
+  if (second.internal_name == game_->internal_name) {
+    toast("Pick a different game: two copies of one game would share its save", 5);
+    return;
+  }
+  if (link_.active() || online_game_) {
+    toast("End the online link first", 4);
+    return;
+  }
+  stop_local_link();
+  close_event();
+  // Both games on the same link: the cable, which every generation 3 Pokémon game has, unless
+  // both are set to the Wireless Adapter; other games as gpSP knows them.
+  const std::string m1 = link_mode(*game_), m2 = link_mode(second);
+  local_mode_ = m1 == "auto" && m2 == "auto" ? "auto" : m1 == "wireless" && m2 == "wireless" ? "wireless" : "cable";
+  const std::string serial = local_mode_ == "cable" ? "mul_poke" : local_mode_ == "wireless" ? "rfu" : "auto";
+  if (core_.option("gpsp_serial") != serial) restart_game_keep_progress();  // the first game's link port too
+  // gpSP keeps its state in globals: the second game runs in its own copy of the library.
+  std::error_code ec;
+  const fs::path copy = pref_dir_ / "cores" / (gba_core_path_.stem().string() + "-second" + gba_core_path_.extension().string());
+  fs::create_directories(copy.parent_path(), ec);
+  fs::copy_file(gba_core_path_, copy, fs::copy_options::overwrite_existing, ec);
+  if (ec) {
+    toast("Could not prepare the second game: " + ec.message(), 6);
+    local_mode_.clear();
+    return;
+  }
+  if (const std::string err = core2_.open(copy); !err.empty()) {
+    toast("Could not start the second game: " + err, 6);
+    local_mode_.clear();
+    return;
+  }
+  apply_core_options(second, &core2_);
+  if (const std::string err = load_into(core2_, second); !err.empty()) {
+    toast("Could not start " + second.title + ": " + err, 6);
+    core2_.close();
+    local_mode_.clear();
+    return;
+  }
+  game2_ = second;
+  video2_.clear_frame();
+  load_second_save();
+  local_.start(core_.netpacket(), core2_.netpacket());
+  if (!local_.active()) {
+    toast("These two games can't be linked here", 5);
+    stop_local_link();
+    return;
+  }
+  focus2_ = false;
+  toast("Linked " + game_->title + " and " + second.title + " (" + (local_mode_ == "wireless" ? "Wireless Adapter" : "link cable") +
+            "). F3, or Controlling in the menu, switches which one you play",
+        8);
+}
+
+void App::stop_local_link() {
+  if (!game2_) return;
+  sync_second_save(true);
+  local_.stop();
+  core2_.close();
+  game2_.reset();
+  video2_.clear_frame();
+  local_mode_.clear();
+  if (focus2_) audio_.clear();
+  focus2_ = false;
+  last_saved2_.clear();
+  pending2_.clear();
+}
+
+void App::switch_local_focus() {
+  if (!game2_) return;
+  focus2_ = !focus2_;
+  audio_.clear();
+  toast("Playing " + (focus2_ ? game2_->title : game_->title), 2);
+}
+
+void App::load_second_save() {
+  last_saved2_.clear();
+  pending2_.clear();
+  uint8_t* ram = core2_.save_ram();
+  if (!ram || core2_.save_ram_size() != savekit::kGbaSaveSize) return;
+  try {
+    if (auto saved = savekit::load_current(gba_library_dir_, game2_->internal_name)) {
+      auto it = saved->memories.find(savekit::Memory::GbaSave);
+      if (it != saved->memories.end() && it->second.size() == savekit::kGbaSaveSize) {
+        std::memcpy(ram, it->second.data(), savekit::kGbaSaveSize);
+      }
+    }
+  } catch (const std::exception& e) {
+    toast(std::string("Could not load ") + game2_->title + "'s save: " + e.what(), 6);
+  }
+  last_saved2_.assign(ram, ram + savekit::kGbaSaveSize);
+}
+
+// As sync_game_save, for the second game.
+void App::sync_second_save(bool force) {
+  uint8_t* ram = core2_.save_ram();
+  if (!game2_ || !ram || core2_.save_ram_size() != savekit::kGbaSaveSize) return;
+  std::vector<uint8_t> now(ram, ram + savekit::kGbaSaveSize);
+  if (now == last_saved2_) {
+    pending2_.clear();
+    return;
+  }
+  if (!force && now != pending2_) {
+    pending2_ = std::move(now);
+    pending2_since_ = frame_count_;
+    return;
+  }
+  if (!force && frame_count_ - pending2_since_ < 60) return;
+  if (std::all_of(now.begin(), now.end(), [](uint8_t b) { return b == 0xFF; })) {
+    last_saved2_ = now;
+    return;
+  }
+  try {
+    savekit::StoreOptions o;
+    o.library = gba_library_dir_;
+    o.game = game2_->internal_name;
+    o.save.memories[savekit::Memory::GbaSave] = savekit::Bytes(now);
+    if (savekit::store_current(o).changed) toast(game2_->title + ": progress saved", 2);
+    last_saved2_ = now;
+    pending2_.clear();
+  } catch (const std::exception& e) {
+    toast(std::string("Could not save ") + game2_->title + "'s progress: " + e.what(), 6);
+  }
+}
+
+// Over each half: the game's name, and which one the controls go to.
+void App::draw_local_link_labels() {
+  const float s = out_h_ / 1080.0f;
+  const float half = out_w_ / 2.0f;
+  for (int i = 0; i < 2; ++i) {
+    const bool focus = (i == 1) == focus2_;
+    const std::string t = (focus ? "Playing: " : "") + (i == 0 ? game_->title : game2_->title) + (focus ? "" : "  (F3)");
+    const float w = ui_.measure(t, 20 * s, true) + 36 * s;
+    const float x = i * half + (half - w) / 2;
+    ui_.rect(x, 24 * s, w, 42 * s, focus ? kRed.with_alpha(0.85f) : rgb(0x121214, 0.75f), 12 * s);
+    ui_.text(x + w / 2, 24 * s + 10 * s, t, 20 * s, kText, true, Align::Center);
   }
 }
 

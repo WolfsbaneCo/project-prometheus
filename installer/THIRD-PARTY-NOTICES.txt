@@ -1,4 +1,4 @@
-Prometheus 64 includes the following third-party software.
+Project Prometheus includes the following third-party software.
 
 Mupen64Plus-Next (cores/mupen64plus_next_libretro.dll)
   The N64 emulator core, including mupen64plus-core, GLideN64, Angrylion RDP Plus,
@@ -7,30 +7,62 @@ Mupen64Plus-Next (cores/mupen64plus_next_libretro.dll)
   other licences, listed in the source repository.
   Source code: https://github.com/libretro/mupen64plus-libretro-nx
   This build was made from the commit named in cores/CORE-SOURCE.txt. The complete source
-  code for that commit is available at the address above; on request, the Prometheus 64
+  code for that commit is available at the address above; on request, the Project Prometheus
   maintainers will provide a copy for three years from the date of distribution.
 
-SDL 3 (built into Prometheus64.exe)
+gpSP (cores/gpsp_libretro.dll)
+  The GBA emulator core, by Exophase and the gpSP contributors (libretro version).
+  Licence: GNU General Public License version 2 (see GPL-2.0.txt).
+  Source code: https://github.com/libretro/gpsp
+  It includes the open source GBA BIOS replacement by Normmatt and the VBA/VBA-M team
+  (GPL version 2), used instead of Nintendo's BIOS.
+  This build was made from the commit named in cores/GBA-CORE-SOURCE.txt. The complete source
+  code for that commit is available at the address above; on request, the Project Prometheus
+  maintainers will provide a copy for three years from the date of distribution.
+
+xBRZ picture filter (built into ProjectPrometheus.exe, the GBA "Smooth" look)
+  Copyright (C) Zenju (zenju AT gmx DOT de); vectorised version by the VBA-M team.
+  GNU General Public License version 3 (the same licence as Project Prometheus, LICENSE).
+  Source: https://github.com/visualboyadvance-m/visualboyadvance-m, commit
+  b0ff7bd0449e4a433cee6ccb33444f7499ab5d20, src/components/filters/internal/xBRZ, and in the
+  Project Prometheus source at apps/prometheus64/third_party/xbrz.
+
+MMPX pixel art magnification (built into ProjectPrometheus.exe, the GBA "Clean" look)
+  Copyright 2020 Morgan McGuire & Mara Gagiu. MIT licence.
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+  and associated documentation files (the "Software"), to deal in the Software without
+  restriction, including without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions: The above copyright
+  notice and this permission notice shall be included in all copies or substantial portions of
+  the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+  PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+  OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
+
+SDL 3 (built into ProjectPrometheus.exe)
   Copyright (C) 1997-2026 Sam Lantinga. zlib licence. https://libsdl.org
 
 Fira Sans (assets/fonts)
   Copyright (c) 2012-2015, The Mozilla Foundation and Telefonica S.A.
   SIL Open Font License 1.1 (see assets/fonts/OFL.txt).
 
-stb_truetype (built into Prometheus64.exe)
+stb_truetype (built into ProjectPrometheus.exe)
   Sean Barrett. Public domain (Unlicense).
 
 libretro API header (libretro.h)
   Copyright (C) 2010-2024 The RetroArch team. MIT licence.
 
-libarchive 3.8.4 (built into Prometheus64.exe; opens .zip, .7z and .rar archives)
+libarchive 3.8.4 (built into ProjectPrometheus.exe; opens .zip, .7z and .rar archives)
   Copyright (c) 2003-2018 Tim Kientzle and the libarchive contributors, including
   Michihiro NAKAJIMA, Andres Mejia and Grzegorz Antoniak.
   BSD 2-Clause licence; a few files carry other permissive terms. The full terms are in
   libarchive-COPYING.txt. https://www.libarchive.org
 
-zlib 1.3.1 (built into Prometheus64.exe)
+zlib 1.3.1 (built into ProjectPrometheus.exe)
   Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler. zlib licence. https://zlib.net
 
-liblzma from XZ Utils 5.8.1 (built into Prometheus64.exe)
+liblzma from XZ Utils 5.8.1 (built into ProjectPrometheus.exe)
   The XZ Utils authors and contributors. BSD Zero Clause licence (0BSD). https://tukaani.org/xz/

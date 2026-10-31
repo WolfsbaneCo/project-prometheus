@@ -24,9 +24,10 @@ class Settings;
 enum N64Button : int {
   kA, kB, kZ, kStart, kL, kR, kCUp, kCDown, kCLeft, kCRight, kDUp, kDDown, kDLeft, kDRight, kButtonCount
 };
-// Everything a key can drive: the 14 buttons, then the control stick's four directions and the
-// walk modifier (keyboard only; a gamepad uses its left stick).
-enum Control : int { kStickUp = kButtonCount, kStickDown, kStickLeft, kStickRight, kWalk, kControlCount };
+// Everything a key can drive: the 14 buttons, then the control stick's four directions, the
+// walk modifier (keyboard only; a gamepad uses its left stick) and, for GBA games, speeding the
+// game up while held.
+enum Control : int { kStickUp = kButtonCount, kStickDown, kStickLeft, kStickRight, kWalk, kSpeed, kControlCount };
 
 struct PadState {
   uint32_t buttons = 0;  // bit per N64Button
@@ -68,7 +69,11 @@ class Input {
   // Online play: the emulator reads these instead of the local devices.
   void set_overrides(bool on) { overriding_ = on; }
   void set_override(int port, const PadState& pad) { overrides_[port] = pad; }
+  // GBA games: the same controls, handed to the core as a GBA's buttons (see retro_state).
+  void set_gba(bool on) { gba_ = on; }
   bool rumble(unsigned port, bool strong, uint16_t strength);
+  // A speed key is held (any keyboard layout's: speeding up is for the whole game, not a player).
+  bool speed_held() const;
 
   void start_seating();  // "Who's playing": seated players stay, free seats can be claimed
   void stop_seating();   // if nobody is seated, the keyboard takes player 1 again
@@ -120,11 +125,13 @@ class Input {
   std::array<uint16_t, kPlayers> rumble_strong_{}, rumble_weak_{};
   std::array<uint32_t, kPlayers> test_buttons_{};
   std::array<float, kPlayers> test_x_{}, test_y_{};
+  bool test_speed_ = false;
   std::array<std::array<SDL_Scancode, kControlCount>, kKeyLayouts> keys_{};
   std::array<std::vector<PadInput>, kButtonCount> pad_{};
   bool seating_ = false;
   bool overriding_ = false;
   std::array<PadState, kPlayers> overrides_{};
+  bool gba_ = false;
   std::vector<std::string> notices_;
 };
 

@@ -1,6 +1,7 @@
 #include "settings.hpp"
 
 #include <fstream>
+#include <iterator>
 
 namespace p64 {
 namespace {
@@ -33,7 +34,7 @@ void Settings::save() const {
   const auto tmp = std::filesystem::path(file_).concat(".tmp");
   {
     std::ofstream out(tmp, std::ios::trunc);
-    out << "# Prometheus 64 settings\n";
+    out << "# Project Prometheus settings\n";
     for (const auto& [k, v] : values_) out << k << " = " << v << "\n";
   }
   std::filesystem::rename(tmp, file_, ec);
@@ -57,6 +58,15 @@ int Settings::get_int(const std::string& key, int fallback) const {
 }
 
 void Settings::set(const std::string& key, const std::string& value) { values_[key] = value; }
+
+void Settings::clear_game_key(const std::string& key) {
+  const std::string tail = "." + key;
+  for (auto it = values_.begin(); it != values_.end();) {
+    const std::string& k = it->first;
+    const bool match = k.rfind("game.", 0) == 0 && k.size() > tail.size() && k.compare(k.size() - tail.size(), tail.size(), tail) == 0;
+    it = match ? values_.erase(it) : std::next(it);
+  }
+}
 
 std::string Settings::game(const std::string& id, const std::string& key, const std::string& fallback) const {
   auto it = values_.find("game." + id + "." + key);

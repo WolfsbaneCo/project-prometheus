@@ -20,6 +20,10 @@
 #include "core.hpp"
 #include "input.hpp"
 #include "library.hpp"
+#include "cable_station.hpp"
+#include "gift_station.hpp"
+#include "link.hpp"
+#include "local_link.hpp"
 #include "netplay.hpp"
 #include "settings.hpp"
 #include "ui.hpp"
@@ -47,6 +51,9 @@ struct Options {
   bool ram_hash = false;             // test mode: print a hash of the console's RAM on exit
   bool online_host = false;          // test mode: host `rom` online at start (prints the invite code)
   std::string online_join;           // test mode: join this invite code at start
+  bool link_host = false;            // test mode: play `rom` (GBA) and host a link (prints its code)
+  std::string link_join;             // test mode: play `rom` (GBA) and join this link code
+  std::filesystem::path second;      // test mode: link this GBA game to `rom` on this computer
   bool online_start = false;         // test mode: the host starts as soon as everyone is ready
   uint32_t online_exit_frame = 0;    // test mode: print the RAM hash at this online frame and quit
   std::string setup_token;           // test mode: run the online setup with this key at start
@@ -63,7 +70,7 @@ class App {
  private:
   enum class Screen { Home, Playing };
   enum class Overlay { None, Menu, Seating, Help, Controls, Online, Backup };
-  enum class OnlinePage { Main, Setup, Join, Lobby };
+  enum class OnlinePage { Main, Setup, Join, Lobby, Link, Events };
   enum class TextField { None, Name, Token, Code };
   struct Toast {
     std::string text;
@@ -72,6 +79,7 @@ class App {
   struct MenuItem {
     std::string label, value;
     int id;
+    std::string key = {};  // its keyboard shortcut, shown next to it
   };
   // A clickable area, recorded while drawing and tested against the mouse on the next events.
   struct Hit {
@@ -130,6 +138,19 @@ class App {
   void finish_setup();
   void host_online();
   void join_online();
+  // GBA link play (link.hpp): the game whose link it is (running, else picked in the library).
+  const Game* link_game() const;
+  std::string link_mode(const Game& game) const;  // "cable", "wireless" or "auto"
+  void host_link();
+  void join_link();
+  // Event gifts (GBA Pokémon): the app as an event's distribution machine (gift_station.hpp).
+  std::vector<EventGift> events_for(const Game& game) const;
+  void open_event(const EventGift& gift);
+  void close_event();
+  void update_event();
+  // A link needs the link hardware the game was started with: restart it (keeping its progress)
+  // when an event left the Wireless Adapter in.
+  void ensure_link_hardware();
   void start_online_game();
   void end_online_game();  // host: end for everyone, keep playing; guest: leave
   void process_net_events();
@@ -167,14 +188,29 @@ class App {
   bool start_game(const Game& game);
   void stop_game();
   void restart_game_keep_progress();
-  void apply_core_options(const Game& game);
+  void apply_core_options(const Game& game, Core* target = nullptr);
   Look current_look() const;
+  Look gba_look_for(const Game& game, const Core& core) const;
+  int fill_mode(const Game* game) const;  // the game's fill mode, never one that breaks it
   // Rendering size for a game: a fixed factor, or 0 to render at exactly render_height.
   int resolution_factor(const std::string& game_id) const;
   int render_height(const std::string& game_id) const;
   bool supersampling(const std::string& game_id) const;
   int texture_look(const std::string& game_id) const;
   void run_frames();
+  void run_one_frame();  // the game, and the second game when two are linked here
+
+  // Local link play (local_link.hpp): a second of the player's GBA games, linked to this one.
+  std::vector<const Game*> second_game_choices() const;
+  void start_local_link(const Game& second);
+  void stop_local_link();
+  void load_second_save();
+  void sync_second_save(bool force);
+  void switch_local_focus();
+  void draw_local_link_labels();
+  std::string local_link_value() const;  // the menu row's value: the game to link, or the one linked
+  int refreshes_per_frame(double fps) const;
+  void check_speed(double fps);
 
   void load_game_save();
   void sync_game_save(bool force);
@@ -188,6 +224,7 @@ class App {
   void rescan();
   void set_fullscreen(bool on);
   void toast(const std::string& text, double seconds = 3.0);
+  void update_hints();  // Pokémon daily hints (pokemon_hints.hpp), every few seconds of play
   void take_screenshot(const std::filesystem::path& file);
   std::vector<MenuItem> menu_items() const;
   void menu_change(int id, int direction);
@@ -197,11 +234,31 @@ class App {
   SDL_GLContext gl_ = nullptr;
   Core core_;
   Video video_;
+  // The second game of a local link, in its own copy of the GBA core, and its picture.
+  Core core2_;
+  Video video2_;
+  std::optional<Game> game2_;
+  LocalLink local_;
+  std::string local_mode_;  // the link both games use ("cable", "wireless"); empty when not linked
+  bool focus2_ = false;     // the player controls (and hears) the second game
+  int local_choice_ = 0;    // the menu's pick among second_game_choices()
+  std::vector<uint8_t> last_saved2_, pending2_;
+  uint64_t pending2_since_ = 0;
   Audio audio_;
   Input input_;
   Ui ui_;
   Settings settings_;
-  std::filesystem::path pref_dir_, assets_dir_, library_dir_, core_path_;
+  std::filesystem::path pref_dir_, assets_dir_, library_dir_, gba_library_dir_;
+  // Each console's emulator core; the one loaded now. Between games the N64 core is loaded (online
+  // play compares its version).
+  std::filesystem::path n64_core_path_, gba_core_path_;
+  System loaded_system_ = System::N64;
+  // Loads `system`'s core unless it is loaded already. Returns an error message, or empty.
+  std::string use_core(System system);
+  // Where a console's saves live: Memories\N64, Memories\GBA.
+  const std::filesystem::path& library_for(System system) const {
+    return system == System::GBA ? gba_library_dir_ : library_dir_;
+  }
   std::vector<Game> games_;
   int selected_ = 0;
   std::optional<Game> game_;
@@ -220,7 +277,16 @@ class App {
 
   // Online play.
   Netplay net_;
+  Link link_;
+  GiftStation gifts_;   // Wonder Cards over the Wireless Adapter (Emerald, FireRed, LeafGreen)
+  CableStation cable_;  // Mystery Events over the link cable, as the e-Reader (Ruby, Sapphire)
+  std::string event_key_;  // the open event's gift ("aurora"); empty when none
+  bool event_cable_ = false;  // the open event goes over the cable
+  GiftStation::Stage event_stage_ = GiftStation::Stage::Closed;
+  GiftStation::Stage event_station_stage() const;  // the open station's stage, as GiftStation's
+  std::string event_station_status() const;
   OnlinePage online_page_ = OnlinePage::Main;
+  std::map<std::string, int> event_choice_;  // Event gifts page: the choice picked in each group
   TextField text_field_ = TextField::None;
   std::string name_input_, token_input_, code_input_, online_note_;
   bool confirm_remove_key_ = false;  // "Remove key" asks once more before forgetting the group
@@ -239,7 +305,9 @@ class App {
   bool net_game_pending_ = false;  // loaded, waiting for everyone before frame 0
   std::vector<uint8_t> guest_save_;
   uint64_t stalled_since_ns_ = 0;
-  bool printed_invite_ = false;
+  uint64_t stalled_ns_ = 0;  // time spent waiting for others' inputs, logged every 10 seconds of play
+  int stalls_ = 0;
+  bool printed_invite_ = false, printed_link_ = false;
   std::map<std::string, std::array<uint8_t, 32>> sha_cache_;
 
   // Google Drive backup.
@@ -252,13 +320,26 @@ class App {
   bool test_synced_ = false;
   bool backup_was_working_ = false;
   uint64_t next_backup_ns_ = 0;  // the hourly backup
+  // Two ways: a game that starts is checked against Drive at once, in the background.
+  std::string drive_check_key_;    // the game to check next ("GBA/<game>" or the N64 game's folder)
+  uint64_t game_started_ns_ = 0;
+  bool session_saved_ = false;     // the running game has saved since it started
   int slot_ = 1;
   bool running_ = true;
   bool fullscreen_ = false;
   bool vsync_working_ = false;
+  // Frame pacing: the screen's refresh period as measured, and whether recent refreshes were missed.
+  double refresh_ns_ = 0;
+  uint64_t last_swap_ns_ = 0, refreshes_ = 0;
+  int unlocked_for_ = 0;  // refreshes left before pacing locks to the screen again after a slow patch
+  uint64_t speed_since_ns_ = 0, speed_frames_ = 0;  // keeping up: frames run since then
+  bool fast_ = false;  // a GBA game sped up (the speed key held): its sound is left out meanwhile
+  int slow_spans_ = 0;      // slow 5-second stretches in a row (one alone may be the game loading)
+  bool slow_told_ = false;  // said once this game that the computer can't keep up
   int out_w_ = 0, out_h_ = 0;
   uint64_t last_ns_ = 0, acc_ns_ = 0;
   uint64_t frame_count_ = 0;
+  uint64_t hints_checked_ = 0;  // frame_count_ at the last daily-hints check
   std::deque<Toast> toasts_;
   std::vector<uint8_t> last_saved_ram_;
   std::vector<uint8_t> pending_ram_;

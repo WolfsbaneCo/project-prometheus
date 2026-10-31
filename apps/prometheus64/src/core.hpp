@@ -37,11 +37,15 @@ class Core {
   Hooks hooks;
   std::filesystem::path system_dir;
   std::filesystem::path save_dir;
+  // Where games from archives are unpacked for cores that only read games from a file (gpSP).
+  std::filesystem::path unpack_dir;
 
   // Loads the core library and calls retro_init. Returns an error message, or empty on success.
   std::string open(const std::filesystem::path& library);
   // `rom` is the name the core sees; `data` is the whole game (the app unpacks archives itself).
-  std::string load_game(const std::filesystem::path& rom, std::vector<uint8_t> data);
+  // `on_disk`: `rom` is the game's own file. When it is not (the game was in an archive) and the
+  // core reads games only from a file, `data` is written to a file in unpack_dir for it.
+  std::string load_game(const std::filesystem::path& rom, std::vector<uint8_t> data, bool on_disk);
   void unload_game();
   // Unloads the game, shuts the core down and releases the library. Call while the GL context
   // still exists: the core's renderer frees GPU objects on the way out.
@@ -70,12 +74,18 @@ class Core {
   bool hardware_rendering() const { return hw_requested_; }
   const retro_hw_render_callback& hw() const { return hw_; }
   retro_pixel_format pixel_format() const { return pixel_format_; }
+  // The console's memory at a bus address (GBA: 0x02000000 work RAM, 0x03000000 internal RAM), as
+  // the core maps it; nullptr when `size` bytes from there are not all in one mapped block.
+  uint8_t* memory(uint32_t address, std::size_t size);
+  // The core's link-play interface (GBA: gpSP), or nullptr when it has none.
+  const retro_netpacket_callback* netpacket() const { return netpacket_.start ? &netpacket_ : nullptr; }
 
   // Called by the app once its GL context exists (after load_game), and before it is destroyed.
   void context_reset();
   void context_destroy();
 
  private:
+  void remove_unpacked();
   struct Api;
   bool environment(unsigned cmd, void* data);
   static bool RETRO_CALLCONV env_trampoline(unsigned cmd, void* data);
@@ -89,6 +99,13 @@ class Core {
   retro_pixel_format pixel_format_ = RETRO_PIXEL_FORMAT_0RGB1555;
   bool hw_requested_ = false;
   retro_hw_render_callback hw_{};
+  retro_netpacket_callback netpacket_{};
+  struct MemoryBlock {
+    uint8_t* ptr;
+    uint32_t start;
+    std::size_t len;
+  };
+  std::vector<MemoryBlock> memory_;  // from the core's memory map
   std::map<std::string, std::string> defaults_;   // from the core's option list
   std::map<std::string, std::string> overrides_;  // set by the app
   std::map<std::string, std::string> current_;    // what GET_VARIABLE hands out (stable storage)
@@ -96,6 +113,8 @@ class Core {
   std::string system_dir_str_, save_dir_str_, library_path_str_;
   std::vector<uint8_t> rom_data_;
   std::string rom_path_;
+  std::filesystem::path unpacked_;  // the file written for the core, removed with the game
+  unsigned unpack_count_ = 0;
 };
 
 }  // namespace p64

@@ -1,0 +1,38 @@
+PROJECT PROMETHEUS: TERMS OF USE
+
+Please read these terms. By installing or using Project Prometheus you agree to them.
+
+1. FREE OF CHARGE
+Project Prometheus is free. Its only official source is
+https://github.com/WolfsbaneCo/project-prometheus/releases
+No one is authorised to sell it or charge for it. If you paid for this copy, or got it anywhere
+else, it did not come from Wolfsbane Co.
+
+2. NO GAMES INCLUDED
+Project Prometheus contains no games, BIOS or system files of any console maker, and never
+downloads, finds or shares them. Use it only with games you own and have copied yourself, as the
+law where you live allows. You are responsible for the files you use with it.
+
+3. NOT AFFILIATED
+Project Prometheus is not affiliated with, endorsed or sponsored by Nintendo, The Pokemon Company,
+Game Freak, Google or Cloudflare. Their names and trademarks belong to them and are used only to
+say what the software works with.
+
+4. YOUR ACCOUNTS AND YOUR DATA
+Online play runs through a relay on your group owner's own Cloudflare account. Backups go to your
+own Google Drive. Wolfsbane Co. receives none of your games, saves or other data. You are
+responsible for following the terms of any service you connect.
+Privacy policy: https://wolfsbanecompany.com/apps/privacy/
+Terms: https://wolfsbanecompany.com/apps/terms/
+
+5. NO WARRANTY
+Project Prometheus is provided "AS IS", WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or
+implied. To the extent the law allows, Wolfsbane Co. and the contributors are not liable for any
+damages arising from its use, including lost or damaged saves. Keep backups of saves that matter.
+
+6. LICENCES
+The app is licensed under the GNU General Public License, version 3 or later. The names
+"Project Prometheus" and "Prometheus 64" and the flame logo are trademarks of Wolfsbane Co. and
+are not covered by that licence. The emulator cores and other components keep their own licences (GPL-2.0 for the
+emulator cores). All licences, and where to get the cores' source code, are in the "licenses"
+folder where the app is installed.

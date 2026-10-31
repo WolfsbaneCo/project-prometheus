@@ -32,14 +32,20 @@ class Backup {
  public:
   enum class State { Off, SigningIn, Idle, Working };
 
+  // Games are named by their library folder; `key` also says which console (GBA games: "GBA/<game>",
+  // N64 games just "<game>", as earlier versions named them). choose() and applied() take the key.
   struct Conflict {
     std::string game;  // the library's folder name
     std::string here_saved, there_saved, there_device;  // ISO times, device name
+    std::string key;
+    bool gba = false;
   };
   // A newer save from another device, unpacked under `library` (as <library>/<game>/current/...).
   struct Download {
     std::string game, id, device;
     std::filesystem::path library;
+    std::string key;
+    bool gba = false;
   };
   struct Found {
     std::string game;
@@ -47,7 +53,9 @@ class Backup {
   };
 
   ~Backup();
-  void init(const std::filesystem::path& pref_dir, const std::filesystem::path& library, const std::string& device_name);
+  // `library` and `gba_library`: Memories\N64 and Memories\GBA on this computer.
+  void init(const std::filesystem::path& pref_dir, const std::filesystem::path& library,
+            const std::filesystem::path& gba_library, const std::string& device_name);
   void set_library(const std::filesystem::path& library);
 
   // Main thread.
@@ -55,6 +63,9 @@ class Backup {
   void cancel_connect();
   void disconnect();
   void sync(bool include_states);    // in the background, unless it is already running
+  // Only one game (its key), without save states: quick, for a game that is starting.
+  // Returns false when a sync is already running (try again once it is Idle).
+  bool check(const std::string& key);
   void wait(int timeout_ms);         // for the last backup when the app closes
   void choose(const std::string& game, bool keep_here);  // answer a conflict
   void applied(const std::string& game, const std::string& id);  // a Download is now the current save
@@ -77,20 +88,20 @@ class Backup {
     std::string last_id;  // the save this device and Drive last agreed on
     std::string choice;   // "here" or "there" after a conflict was answered
   };
-  void run_sync(bool include_states);
+  void run_sync(bool include_states, std::string only);
   void run_sign_in(bool fetch);
   void load_state();
   void save_state() const;  // under mutex_
   void set_problem(const std::string& text, int kind);
   void join();
 
-  std::filesystem::path pref_dir_, library_, state_file_, incoming_;
+  std::filesystem::path pref_dir_, library_, gba_library_, state_file_, incoming_;
   std::string device_id_, device_name_;
   mutable std::mutex mutex_;
   std::thread worker_;
   std::atomic<bool> busy_{false}, cancel_{false};
   State state_ = State::Off;
-  std::string token_, account_, root_, progress_, problem_;
+  std::string token_, account_, root_, gba_root_, progress_, problem_;
   int problem_kind_ = 0;  // 1 signed out, 2 Drive full
   int64_t last_sync_ = 0;
   std::map<std::string, GameState> games_;

@@ -82,7 +82,7 @@ Both print `online-ram <frame> <sha256>` at that frame, and the two hashes must 
 - `GET /` answers `Project Prometheus relay`. The app checks this after setting up.
 - `wss://…/v1/host?app=<app>&key=<group key>&v=2&name=<name>` opens a room.
 - `wss://…/v1/rooms/<CODE>?app=<app>&key=<group key>&v=2&name=<name>` joins one.
-- `app` names the app's own rooms, such as `prometheus64`. The same code in another app is another room.
+- `app` names the app's own rooms: `prometheus64` for N64 online games, `prometheus-link` for GBA link play. The same code under another `app` is another room.
 - Refusals before the upgrade:
 
   | Code | Meaning |

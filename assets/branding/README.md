@@ -1,5 +1,7 @@
 # Branding
 
+**© Wolfsbane Co., all rights reserved.** The files in this folder are not covered by the repository's GNU GPL. The names and the flame logo are trademarks of Wolfsbane Co.; what others may and may not do with them is in [`TRADEMARKS.md`](../../TRADEMARKS.md).
+
 Project Prometheus has one base mark, the flame. Each app in the project is a variation of it, with its own colour and an acronym.
 
 ## Project Prometheus (base mark): `project-prometheus/`
@@ -13,7 +15,20 @@ A gold flame on a dark tile.
 | `project-prometheus.ico` | Windows icon, 16 to 256 px |
 | `png/` | 256, 512 and 1024 px exports |
 
-## Prometheus 64: `prometheus64/`
+## Project Prometheus, the app: `prometheus/`
+
+The app plays games from several consoles (N64, GBA), so its icon has no acronym. It is the red flame of the app's theme, on the red tile, laid out like the base mark: the flame alone, about 70% of the tile.
+
+| File | Use |
+|---|---|
+| `prometheus-icon.svg` | Master icon, 48 px and larger |
+| `prometheus-icon-small.svg` | 16 to 40 px: the tile fills the square and the flame is larger |
+| `prometheus.ico` | Windows icon, 16 to 256 px |
+| `png/` | 256, 512 and 1024 px exports, plus `prometheus-icon-small-256.png` |
+
+The PNGs and the ICO were rendered from the SVGs with Chromium (headless) and packed with ImageMagick.
+
+## Prometheus 64 (earlier name of the app): `prometheus64/`
 
 A red flame, the N64 theme colour, with the acronym **"64"** below it.
 

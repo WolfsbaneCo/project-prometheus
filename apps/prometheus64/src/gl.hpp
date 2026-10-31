@@ -19,7 +19,7 @@
   X(glRenderbufferStorage) X(glScissor) X(glShaderSource) X(glTexImage2D) X(glTexParameteri)    \
   X(glTexSubImage2D) X(glUniform1f) X(glUniform1i) X(glUniform2f) X(glUniform4f)                \
   X(glUseProgram) X(glVertexAttribPointer) X(glViewport) X(glColorMask) X(glDepthMask)          \
-  X(glBindSampler) X(glPolygonMode) X(glBlendEquation)
+  X(glBindSampler) X(glPolygonMode) X(glBlendEquation) X(glFinish)
 
 namespace gl {
 

@@ -17,11 +17,15 @@ class Audio {
   void clear();
   void set_volume(float volume);  // 0..1
   void set_paused(bool paused);
+  void set_speed(double ratio);  // how much faster the game runs than its own clock (screen-locked pacing)
   double queued_seconds() const;
 
  private:
   SDL_AudioStream* stream_ = nullptr;
   double rate_ = 0;
+  double speed_ = 1.0;
+  double target_ = 0.05;  // seconds of sound to keep queued
+  bool primed_ = false;  // the cushion of sound is in place
 };
 
 }  // namespace p64

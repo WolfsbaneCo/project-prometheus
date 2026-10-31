@@ -25,6 +25,8 @@ class Settings {
   void set_game_int(const std::string& id, const std::string& key, int value) {
     set_game(id, key, std::to_string(value));
   }
+  // Forgets `key` for every game, so all of them use the global value or the fallback again.
+  void clear_game_key(const std::string& key);
 
  private:
   std::filesystem::path file_;

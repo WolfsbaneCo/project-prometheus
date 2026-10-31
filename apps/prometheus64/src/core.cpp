@@ -14,12 +14,16 @@
 namespace p64 {
 namespace {
 
+namespace fs = std::filesystem;
+
 std::string utf8(const std::filesystem::path& p) {
   const auto u = p.u8string();
   return std::string(u.begin(), u.end());
 }
 
-Core* g_core = nullptr;  // libretro callbacks carry no user pointer
+// libretro callbacks carry no user pointer: they go to the core that was last called into (two
+// copies of the GBA core run side by side for local link play, each from its own library file).
+Core* g_core = nullptr;
 
 void RETRO_CALLCONV video_cb(const void* data, unsigned w, unsigned h, std::size_t pitch) {
   if (g_core && g_core->hooks.video) g_core->hooks.video(data, w, h, pitch);
@@ -102,9 +106,15 @@ Core::Core() = default;
 Core::~Core() { close(); }
 
 void Core::close() {
+  if (api_) g_core = this;
   if (game_loaded_) unload_game();
   if (initialised_ && api_) api_->deinit();
   initialised_ = false;
+  if (!unpack_dir.empty()) {
+    // Now the core has let go of every game file it was given.
+    std::error_code ec;
+    fs::remove_all(unpack_dir, ec);
+  }
   delete api_;
   api_ = nullptr;
   if (library_) SDL_UnloadObject(static_cast<SDL_SharedObject*>(library_));
@@ -117,6 +127,8 @@ std::string Core::open(const std::filesystem::path& library) {
   current_ = overrides_;
   options_changed_ = false;
   hw_requested_ = false;
+  netpacket_ = {};
+  memory_.clear();
   pixel_format_ = RETRO_PIXEL_FORMAT_0RGB1555;
   library_path_str_ = utf8(library);
   auto* so = SDL_LoadObject(library_path_str_.c_str());
@@ -167,11 +179,29 @@ std::string Core::open(const std::filesystem::path& library) {
   return {};
 }
 
-std::string Core::load_game(const std::filesystem::path& rom, std::vector<uint8_t> data) {
+std::string Core::load_game(const std::filesystem::path& rom, std::vector<uint8_t> data, bool on_disk) {
   if (!api_) return "no emulator core loaded";
   if (game_loaded_) unload_game();
   rom_path_ = utf8(rom);
   rom_data_ = std::move(data);
+  if (info_.need_fullpath && !on_disk) {
+    // Each load gets its own folder: on Windows the core keeps the file open until it shuts down,
+    // so an earlier copy may not be removable yet. Removing the folder clears what can go.
+    std::error_code ec;
+    fs::remove_all(unpack_dir, ec);
+    const fs::path folder = unpack_dir / std::to_string(++unpack_count_);
+    fs::create_directories(folder, ec);
+    unpacked_ = folder / rom.filename();
+    std::ofstream out(unpacked_, std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(rom_data_.data()), static_cast<std::streamsize>(rom_data_.size()));
+    if (!out.flush()) {
+      out.close();
+      fs::remove(unpacked_, ec);
+      unpacked_.clear();
+      return "could not unpack the game for the emulator (is the disk full?)";
+    }
+    rom_path_ = utf8(unpacked_);
+  }
 
   retro_game_info game{};
   game.path = rom_path_.c_str();
@@ -180,18 +210,38 @@ std::string Core::load_game(const std::filesystem::path& rom, std::vector<uint8_
     game.size = rom_data_.size();
   }
   hw_requested_ = false;
-  if (!api_->load_game(&game)) return "the emulator core could not start this game";
+  g_core = this;
+  if (!api_->load_game(&game)) {
+    remove_unpacked();
+    return "the emulator core could not start this game";
+  }
   game_loaded_ = true;
   api_->get_system_av_info(&av_);
   for (unsigned port = 0; port < 4; ++port) api_->set_controller_port_device(port, RETRO_DEVICE_JOYPAD);
   return {};
 }
 
+void Core::remove_unpacked() {
+  if (unpacked_.empty()) return;
+  std::error_code ec;
+  if (fs::remove(unpacked_, ec)) fs::remove(unpacked_.parent_path(), ec);  // still open: removed at close()
+  unpacked_.clear();
+}
+
 void Core::unload_game() {
   if (!game_loaded_) return;
+  g_core = this;
   api_->unload_game();
   game_loaded_ = false;
   hw_requested_ = false;
+  remove_unpacked();
+}
+
+uint8_t* Core::memory(uint32_t address, std::size_t size) {
+  for (const MemoryBlock& b : memory_) {
+    if (address >= b.start && address - b.start + size <= b.len) return b.ptr + (address - b.start);
+  }
+  return nullptr;
 }
 
 void Core::context_reset() {
@@ -203,22 +253,28 @@ void Core::context_destroy() {
 }
 
 void Core::run() {
-  if (game_loaded_) api_->run();
+  if (!game_loaded_) return;
+  g_core = this;
+  api_->run();
 }
 
 void Core::reset() {
-  if (game_loaded_) api_->reset();
+  if (!game_loaded_) return;
+  g_core = this;
+  api_->reset();
 }
 
 std::vector<uint8_t> Core::save_state() {
   std::vector<uint8_t> out;
   if (!game_loaded_) return out;
+  g_core = this;
   out.resize(api_->serialize_size());
   if (out.empty() || !api_->serialize(out.data(), out.size())) out.clear();
   return out;
 }
 
 bool Core::load_state(const std::vector<uint8_t>& state) {
+  if (game_loaded_) g_core = this;
   return game_loaded_ && !state.empty() && api_->unserialize(state.data(), state.size());
 }
 
@@ -268,7 +324,6 @@ bool Core::environment(unsigned cmd, void* data) {
     case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
     case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
     case RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS:
-    case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
       return true;
     case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
       *static_cast<const char**>(data) = system_dir_str_.c_str();
@@ -326,6 +381,21 @@ bool Core::environment(unsigned cmd, void* data) {
       *static_cast<bool*>(data) = options_changed_;
       options_changed_ = false;
       return true;
+    case RETRO_ENVIRONMENT_SET_NETPACKET_INTERFACE: {
+      // Link play (gpSP): the app's Link carries its packets between the players.
+      const auto* cb = static_cast<const retro_netpacket_callback*>(data);
+      netpacket_ = cb ? *cb : retro_netpacket_callback{};
+      return true;
+    }
+    case RETRO_ENVIRONMENT_SET_MEMORY_MAPS: {
+      memory_.clear();
+      const auto* map = static_cast<const retro_memory_map*>(data);
+      for (unsigned i = 0; map && i < map->num_descriptors; ++i) {
+        const retro_memory_descriptor& d = map->descriptors[i];
+        if (d.ptr && !d.select) memory_.push_back({static_cast<uint8_t*>(d.ptr) + d.offset, static_cast<uint32_t>(d.start), d.len});
+      }
+      return true;
+    }
     case RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE:
       static_cast<retro_rumble_interface*>(data)->set_rumble_state = rumble_cb;
       return true;

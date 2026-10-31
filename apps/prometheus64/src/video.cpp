@@ -4,6 +4,8 @@
 #include <cmath>
 #include <vector>
 
+#include "xbrz.h"
+
 namespace p64 {
 namespace {
 
@@ -33,8 +35,24 @@ uniform float u_lines;   // source lines across the quad
 uniform float u_alpha;
 uniform float u_bicubic; // 1 = Catmull-Rom from the full-size frame
 uniform vec2 u_size;     // texture size in texels
+uniform float u_pixels;  // pixel art: 0 = plain, 1 = sharp pixels
+uniform float u_scale;   // output pixels per texel
+uniform float u_grid;    // handheld LCD grid strength
 in vec2 v_uv;
 out vec4 o;
+
+// Crisp pixels at any size: each texel is a solid block, sampled at its centre, and only within
+// the last half output pixel before an edge does the sample slide toward the neighbour (linear
+// filtering does the blend). So at most one output pixel per edge is mixed, which keeps the
+// blocks even at sizes like 4.5x without shimmering; at whole-number sizes none is.
+vec3 sharp_pixels(vec2 uv) {
+  vec2 p = uv * u_size;
+  vec2 cell = floor(p);
+  vec2 d = p - cell - 0.5;                       // from the texel's centre, -0.5..0.5
+  float r = 0.5 - 0.5 / max(u_scale, 1.0);       // the part of the texel that is solid
+  vec2 f = (d - clamp(d, -r, r)) * max(u_scale, 1.0) + 0.5;
+  return textureLod(u_tex, (cell + f) / u_size, 0.0).rgb;
+}
 
 // Catmull-Rom in 9 bilinear taps (weights folded into the sample positions).
 vec3 catmull_rom(vec2 uv) {
@@ -66,7 +84,14 @@ void main() {
     o = vec4(textureLod(u_tex, uv, u_lod).rgb * u_dim, 1.0);
     return;
   }
-  vec3 c = u_bicubic > 0.5 ? catmull_rom(uv) : texture(u_tex, uv).rgb;
+  vec3 c = u_pixels > 0.5 ? sharp_pixels(uv) : u_bicubic > 0.5 ? catmull_rom(uv) : texture(u_tex, uv).rgb;
+  if (u_grid > 0.0) {
+    // A handheld's LCD: a thin dark gap around each pixel, brightened so the screen keeps its level.
+    vec2 f = fract(uv * u_size);
+    float w = clamp(1.6 / max(u_scale, 1.0), 0.0, 0.5);
+    float m = smoothstep(0.0, w, f.x) * smoothstep(0.0, w, 1.0 - f.x) * smoothstep(0.0, w, f.y) * smoothstep(0.0, w, 1.0 - f.y);
+    c *= mix(1.0 - 0.55 * u_grid, 1.0 + 0.12 * u_grid, m);
+  }
   if (u_sharpen > 0.0) {
     vec3 n = texture(u_tex, uv + vec2(u_step.x, 0.0)).rgb + texture(u_tex, uv - vec2(u_step.x, 0.0)).rgb +
              texture(u_tex, uv + vec2(0.0, u_step.y)).rgb + texture(u_tex, uv - vec2(0.0, u_step.y)).rgb;
@@ -138,6 +163,9 @@ bool Video::init(std::string& error) {
   u_scan_ = gl::glGetUniformLocation(program_, "u_scan");
   u_lines_ = gl::glGetUniformLocation(program_, "u_lines");
   u_alpha_ = gl::glGetUniformLocation(program_, "u_alpha");
+  u_pixels_ = gl::glGetUniformLocation(program_, "u_pixels");
+  u_scale_ = gl::glGetUniformLocation(program_, "u_scale");
+  u_grid_ = gl::glGetUniformLocation(program_, "u_grid");
   gl::glGenVertexArrays(1, &vao_);
   gl::glGenTextures(1, &sw_tex_);
   return true;
@@ -186,9 +214,120 @@ void Video::hardware_frame(unsigned width, unsigned height) {
   frame_h_ = height;
 }
 
+namespace {
+
+// MMPX, "Style-Preserving Pixel Art Magnification" (Morgan McGuire and Mara Gagiu, JCGT 2021):
+// each pixel becomes 2x2, rounding staircases into curves and diagonals while keeping single-pixel
+// details, text and thin lines as drawn. It only copies colours, never mixes them. Twice gives 4x.
+// Ported from the authors' published rules:
+//   Copyright 2020 Morgan McGuire & Mara Gagiu.
+//   Provided under the Open Source MIT license https://opensource.org/licenses/MIT
+uint32_t luma(uint32_t c) { return ((c >> 16) & 255u) + ((c >> 8) & 255u) + (c & 255u) + 1u; }  // XRGB8888
+
+template <typename Px>
+void mmpx2x(const Px* src, std::size_t stride, int w, int h, Px* dst) {
+  auto at = [&](int x, int y) { return src[static_cast<std::size_t>(std::clamp(y, 0, h - 1)) * stride + std::clamp(x, 0, w - 1)]; };
+  auto all2 = [](Px b, Px a0, Px a1) { return b == a0 && b == a1; };
+  auto all3 = [](Px b, Px a0, Px a1, Px a2) { return b == a0 && b == a1 && b == a2; };
+  auto all4 = [](Px b, Px a0, Px a1, Px a2, Px a3) { return b == a0 && b == a1 && b == a2 && b == a3; };
+  auto any3 = [](Px b, Px a0, Px a1, Px a2) { return b == a0 || b == a1 || b == a2; };
+  auto none2 = [](Px b, Px a0, Px a1) { return b != a0 && b != a1; };
+  auto none4 = [](Px b, Px a0, Px a1, Px a2, Px a3) { return b != a0 && b != a1 && b != a2 && b != a3; };
+  const std::size_t out = 2 * static_cast<std::size_t>(w);
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const Px A = at(x - 1, y - 1), B = at(x, y - 1), C = at(x + 1, y - 1);
+      const Px D = at(x - 1, y), E = at(x, y), F = at(x + 1, y);
+      const Px G = at(x - 1, y + 1), H = at(x, y + 1), I = at(x + 1, y + 1);
+      Px J = E, K = E, L = E, M = E;
+      if (!(A == E && B == E && C == E && D == E && F == E && G == E && H == E && I == E)) {
+        const Px P = at(x, y - 2), S = at(x, y + 2), Q = at(x - 2, y), R = at(x + 2, y);
+        const uint32_t Bl = luma(B), Dl = luma(D), El = luma(E), Fl = luma(F), Hl = luma(H);
+        // 1:1 slopes
+        if ((D == B && D != H && D != F) && (El >= Dl || E == A) && any3(E, A, C, G) && (El < Dl || A != D || E != P || E != Q)) J = D;
+        if ((B == F && B != D && B != H) && (El >= Bl || E == C) && any3(E, A, C, I) && (El < Bl || C != B || E != P || E != R)) K = B;
+        if ((H == D && H != F && H != B) && (El >= Hl || E == G) && any3(E, A, G, I) && (El < Hl || G != H || E != S || E != Q)) L = H;
+        if ((F == H && F != B && F != D) && (El >= Fl || E == I) && any3(E, C, G, I) && (El < Fl || I != H || E != R || E != S)) M = F;
+        // Intersections
+        if ((E != F && all4(E, C, I, D, Q) && all2(F, B, H)) && F != at(x + 3, y)) K = M = F;
+        if ((E != D && all4(E, A, G, F, R) && all2(D, B, H)) && D != at(x - 3, y)) J = L = D;
+        if ((E != H && all4(E, G, I, B, P) && all2(H, D, F)) && H != at(x, y + 3)) L = M = H;
+        if ((E != B && all4(E, A, C, H, S) && all2(B, D, F)) && B != at(x, y - 3)) J = K = B;
+        if (Bl < El && all4(E, G, H, I, S) && none4(E, A, D, C, F)) J = K = B;
+        if (Hl < El && all4(E, A, B, C, P) && none4(E, D, G, I, F)) L = M = H;
+        if (Fl < El && all4(E, A, D, G, Q) && none4(E, B, C, I, H)) K = M = F;
+        if (Dl < El && all4(E, C, F, I, R) && none4(E, B, A, G, H)) J = L = D;
+        // 2:1 slopes
+        if (H != B) {
+          if (H != A && H != E && H != C) {
+            if (all3(H, G, F, R) && none2(H, D, at(x + 2, y - 1))) L = M;
+            if (all3(H, I, D, Q) && none2(H, F, at(x - 2, y - 1))) M = L;
+          }
+          if (B != I && B != G && B != E) {
+            if (all3(B, A, F, R) && none2(B, D, at(x + 2, y + 1))) J = K;
+            if (all3(B, C, D, Q) && none2(B, F, at(x - 2, y + 1))) K = J;
+          }
+        }
+        if (F != D) {
+          if (D != I && D != E && D != C) {
+            if (all3(D, A, H, S) && none2(D, B, at(x + 1, y + 2))) J = L;
+            if (all3(D, G, B, P) && none2(D, H, at(x + 1, y - 2))) L = J;
+          }
+          if (F != E && F != A && F != G) {
+            if (all3(F, C, H, S) && none2(F, B, at(x - 1, y + 2))) K = M;
+            if (all3(F, I, B, P) && none2(F, H, at(x - 1, y - 2))) M = K;
+          }
+        }
+      }
+      Px* o = dst + 2 * static_cast<std::size_t>(y) * out + 2 * static_cast<std::size_t>(x);
+      o[0] = J;
+      o[1] = K;
+      o[out] = L;
+      o[out + 1] = M;
+    }
+  }
+}
+
+// The core's pixels as XRGB8888, each channel widened to the full 0-255 range.
+void to_xrgb(const void* data, unsigned w, unsigned h, std::size_t pitch, retro_pixel_format format, std::vector<uint32_t>& out) {
+  out.resize(static_cast<std::size_t>(w) * h);
+  for (unsigned y = 0; y < h; ++y) {
+    const uint8_t* row = static_cast<const uint8_t*>(data) + y * pitch;
+    uint32_t* o = out.data() + static_cast<std::size_t>(y) * w;
+    for (unsigned x = 0; x < w; ++x) {
+      if (format == RETRO_PIXEL_FORMAT_XRGB8888) {
+        o[x] = reinterpret_cast<const uint32_t*>(row)[x] & 0xFFFFFFu;
+        continue;
+      }
+      const uint16_t p = reinterpret_cast<const uint16_t*>(row)[x];
+      uint32_t r, g, b;
+      if (format == RETRO_PIXEL_FORMAT_RGB565) {
+        r = (p >> 11) & 31u, g = (p >> 5) & 63u, b = p & 31u;
+        g = (g << 2) | (g >> 4);
+      } else {
+        r = (p >> 10) & 31u, g = (p >> 5) & 31u, b = p & 31u;
+        g = (g << 3) | (g >> 2);
+      }
+      o[x] = (((r << 3) | (r >> 2)) << 16) | (g << 8) | ((b << 3) | (b >> 2));
+    }
+  }
+}
+
+}  // namespace
+
 void Video::software_frame(const void* data, unsigned width, unsigned height, std::size_t pitch,
-                           retro_pixel_format format) {
-  gl::glBindTexture(GL_TEXTURE_2D, sw_tex_);
+                           retro_pixel_format format, Prescale prescale) {
+  frame_is_hw_ = false;
+  raw_prescale_ = prescale;
+  if (prescale != Prescale::None) {
+    to_xrgb(data, width, height, pitch, format, raw_);
+    raw_w_ = width;
+    raw_h_ = height;
+    raw_dirty_ = true;
+    frame_w_ = width;  // until it is drawn (prescale_for)
+    frame_h_ = height;
+    return;
+  }
   GLenum fmt = GL_BGRA, type = GL_UNSIGNED_INT_8_8_8_8_REV;
   unsigned bpp = 4;
   if (format == RETRO_PIXEL_FORMAT_RGB565) {
@@ -200,6 +339,11 @@ void Video::software_frame(const void* data, unsigned width, unsigned height, st
     type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
     bpp = 2;
   }
+  upload_sw(data, width, height, pitch / bpp, fmt, type);
+}
+
+void Video::upload_sw(const void* data, unsigned width, unsigned height, std::size_t row_pixels, GLenum fmt, GLenum type) {
+  gl::glBindTexture(GL_TEXTURE_2D, sw_tex_);
   if (width > sw_w_ || height > sw_h_) {
     sw_w_ = std::max(width, sw_w_);
     sw_h_ = std::max(height, sw_h_);
@@ -207,14 +351,39 @@ void Video::software_frame(const void* data, unsigned width, unsigned height, st
     gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   }
-  gl::glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(pitch / bpp));
+  gl::glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(row_pixels));
   gl::glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   gl::glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, fmt, type, data);
   gl::glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
   gl::glGenerateMipmap(GL_TEXTURE_2D);
-  frame_is_hw_ = false;
   frame_w_ = width;
   frame_h_ = height;
+}
+
+void Video::prescale_for(int out_w, int out_h) {
+  int factor = raw_prescale_ == Prescale::Mmpx2 ? 2 : raw_prescale_ == Prescale::Mmpx4 ? 4 : 0;
+  if (raw_prescale_ == Prescale::Xbrz) {
+    // The whole number of times that reaches the window's size, so the last step only shrinks a
+    // little (sharp) instead of stretching (soft). xBRZ goes from 2x to 6x, then 9x: a 1080p screen
+    // (6.75x) gets 9x shrunk, a 1440p one exactly 9x. About 3 ms a frame either way.
+    const double fit = std::min(static_cast<double>(out_w) / raw_w_, static_cast<double>(out_h) / raw_h_);
+    factor = std::clamp(static_cast<int>(std::ceil(fit - 0.01)), 2, 9);
+    if (factor > 6) factor = 9;
+  }
+  if (!raw_dirty_ && factor == raw_factor_) return;
+  raw_dirty_ = false;
+  raw_factor_ = factor;
+  const int w = static_cast<int>(raw_w_), h = static_cast<int>(raw_h_);
+  big_.resize(static_cast<std::size_t>(w) * h * factor * factor);
+  if (raw_prescale_ == Prescale::Xbrz) {
+    xbrz::scale(static_cast<std::size_t>(factor), raw_.data(), big_.data(), w, h, xbrz::ColorFormat::rgb, w * 4, w * factor * 4);
+  } else {
+    work_.resize(static_cast<std::size_t>(w) * h * 4);
+    std::vector<uint32_t>& two = factor == 2 ? big_ : work_;
+    mmpx2x(raw_.data(), static_cast<std::size_t>(w), w, h, two.data());
+    if (factor == 4) mmpx2x(work_.data(), 2 * static_cast<std::size_t>(w), 2 * w, 2 * h, big_.data());
+  }
+  upload_sw(big_.data(), raw_w_ * factor, raw_h_ * factor, raw_w_ * factor, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV);
 }
 
 void Video::begin_present(int out_w, int out_h) {
@@ -242,6 +411,8 @@ void Video::begin_present(int out_w, int out_h) {
   gl::glClear(GL_COLOR_BUFFER_BIT);
 }
 
+void Video::set_viewport(int x, int y, int w, int h) { gl::glViewport(x, y, w, h); }
+
 void Video::draw_quad(const float src[4], const float dst[4], bool background, float lod, float dim, const Look& look,
                       float step_x, float step_y, float alpha) {
   gl::glUseProgram(program_);
@@ -256,6 +427,8 @@ void Video::draw_quad(const float src[4], const float dst[4], bool background, f
   gl::glUniform1f(u_scan_, background ? 0.0f : look.scanlines);
   gl::glUniform1f(u_alpha_, alpha);
   gl::glUniform1f(u_bicubic_, background ? 0.0f : bicubic_);
+  gl::glUniform1f(u_pixels_, background ? 0.0f : static_cast<float>(look.pixels));
+  gl::glUniform1f(u_grid_, background ? 0.0f : look.grid);
   gl::glUniform2f(u_size_, size_w_, size_h_);
   gl::glUniform1i(gl::glGetUniformLocation(program_, "u_tex"), 0);
   gl::glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -264,6 +437,7 @@ void Video::draw_quad(const float src[4], const float dst[4], bool background, f
 Rect Video::draw_game(int out_w, int out_h, const Look& look, float alpha) {
   Rect r;
   if (!has_frame() || out_w <= 0 || out_h <= 0) return r;
+  if (!frame_is_hw_ && raw_prescale_ != Prescale::None) prescale_for(out_w, out_h);
 
   const GLuint tex = frame_is_hw_ ? target_tex_ : sw_tex_;
   const float tw = static_cast<float>(frame_is_hw_ ? target_w_ : sw_w_);
@@ -301,6 +475,14 @@ Rect Video::draw_game(int out_w, int out_h, const Look& look, float alpha) {
       sy0 = mid - half;
       sy1 = mid + half;
     }
+  }
+  if (look.whole_pixels && (look.fill == FillMode::Fit || look.fill == FillMode::Ambient)) {
+    // Every game pixel exactly k by k screen pixels, the largest k that fits: perfectly even and
+    // unblended, with a little more border (the picture at 6x on a 1080p screen, 9x on 1440p).
+    const float pw = (sx1 - sx0) * tw, ph = (sy1 - sy0) * th;
+    const float k = std::max(1.0f, std::floor(std::min(static_cast<float>(out_w) / pw, static_cast<float>(out_h) / ph)));
+    dw = pw * k;
+    dh = ph * k;
   }
   r.w = static_cast<int>(std::lround(dw));
   r.h = static_cast<int>(std::lround(dh));
@@ -352,7 +534,13 @@ Rect Video::draw_game(int out_w, int out_h, const Look& look, float alpha) {
   // nearest-neighbour sampling.
   bicubic_ = look.smooth && static_cast<float>(r.h) > 0.55f * (sy1 - sy0) * th ? 1.0f : 0.0f;
   gl::glUseProgram(program_);
-  gl::glUniform1f(u_lines_, 240.0f * (sy1 - sy0) / v1);  // the N64's 240 lines, minus any crop
+  gl::glUniform1f(u_lines_, static_cast<float>(look.lines) * (sy1 - sy0) / v1);  // the console's lines, minus any crop
+  gl::glUniform1f(u_scale_, static_cast<float>(r.h) / std::max(1.0f, (sy1 - sy0) * th));
+  if (look.pixels != Look::Pixels::Plain) {
+    // The sharp-pixel filter picks its own samples at texel edges, for linear filtering to blend.
+    gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  }
   if (alpha < 1.0f) {
     gl::glEnable(GL_BLEND);
     gl::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

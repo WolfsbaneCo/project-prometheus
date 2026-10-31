@@ -21,9 +21,10 @@ namespace p64 {
 
 class Netplay {
  public:
-  static constexpr int kProtocol = 2;  // this app's own messages (the relay has its own version)
+  static constexpr int kProtocol = 3;  // this app's own messages (the relay has its own version)
   static constexpr int kPorts = 4;
-  static constexpr int kMinDelay = 2, kMaxDelay = 12;
+  // Up to a third of a second: enough for friends on different continents.
+  static constexpr int kMinDelay = 2, kMaxDelay = 20;
 
   enum class Phase { Off, Connecting, Lobby, Starting, Running };
 
@@ -91,7 +92,8 @@ class Netplay {
   const std::vector<Player>& players() const { return players_; }
   const std::array<Port, kPorts>& ports() const { return ports_; }
   const GameInfo& game() const { return game_; }
-  int delay() const { return delay_; }
+  int delay() const { return delay_; }  // the delay the game started with
+  int my_delay() const { return my_delay_; }  // this computer's delay now (it adjusts during the game)
   int pak(int port) const { return paks_[port]; }  // 1 = Controller Pak, 2 = Rumble Pak
   bool paused_by_host() const { return host_paused_; }
   bool out_of_sync() const { return desynced_; }
@@ -102,6 +104,9 @@ class Netplay {
   // Samples this computer's players for (frame + delay); once per frame, repeated calls are ignored.
   void sample_local(const std::vector<PadState>& local);
   bool ready_to_run() const;
+  // True now and then while this computer runs ahead of the others: skip running a frame this time,
+  // so the others catch up and nobody waits on anyone's late input.
+  bool take_yield();
   PadState input(int port) const;  // for the current frame
   bool reset_due() const { return reset_frame_ == frame_; }
   void frame_done(const uint8_t* ram, std::size_t size);  // after running the current frame
@@ -112,7 +117,19 @@ class Netplay {
 
  private:
   enum Msg : uint8_t {
-    kHello = 1, kReject, kLobby, kHaveGame, kStart, kReady, kGo, kInput, kHash, kPing, kPong, kReset, kPause, kEnd
+    kHello = 1, kReject, kLobby, kHaveGame, kStart, kReady, kGo, kInput, kHash, kPing, kPong, kReset, kPause, kEnd,
+    kTiming
+  };
+  // How another computer's inputs arrive here: the margin is how many frames before it was needed
+  // each message came (negative: late, the game waited). Measured over a second, then sent to it.
+  struct Link {
+    int min_margin = INT32_MAX;
+    int sum_margin = 0, count = 0;
+    double last_avg = 0;         // the last second's average, kept to compare with theirs
+    int their_delay = -1;        // what it reported: its own delay,
+    int their_min = 0;           // and how early this computer's inputs arrive there
+    double their_avg = 0;
+    bool reported = false;
   };
   struct Slot {
     uint32_t frame = UINT32_MAX;
@@ -129,6 +146,8 @@ class Netplay {
   void assign_ports();
   void end(const std::string& reason, bool keep_playing);
   void begin();
+  void send_timing();
+  void on_timing(int from, int their_delay, int min_margin, double avg_margin);
   Player* player(int id);
   Slot& slot(uint32_t frame);
   const Slot* find_slot(uint32_t frame) const;
@@ -150,6 +169,15 @@ class Netplay {
   uint32_t session_ = 0;
   std::vector<Event> events_;
   uint64_t last_ping_ns_ = 0;
+  std::map<int, std::vector<int>> recent_pings_;  // this computer's last few measurements, per player
+  uint64_t begin_at_ns_ = 0;  // host: when to start, once the start message has reached the others
+  // Adjusting during the game: this computer's own delay, what it learns about each other computer,
+  // and frames to hold back while it runs ahead.
+  int my_delay_ = 4;
+  std::map<int, Link> links_;
+  uint64_t last_timing_ns_ = 0, last_lower_ns_ = 0;
+  int yield_frames_ = 0;
+  uint32_t last_yield_frame_ = 0;
 
   // Lockstep.
   std::array<Slot, 256> ring_{};

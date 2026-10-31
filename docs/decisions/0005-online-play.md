@@ -33,7 +33,21 @@
 - **Saves** (brief 11.5). The host's in-game save is sent to the guests at the start and used by everyone. The host keeps saving as usual, with a backup taken first (`<game>/backups/before-online-<time>.srm`). Guests never write the session's save into their own library.
 - **Save states off** (11.4): greyed out in the menu, F5/F7 explain why. Changing the renderer, textures or resolution is also refused mid-game, because it restarts the game.
 - **Pause and reset are the host's** (11.7). The host's menu pauses everyone ("Paused by …"); a guest's menu doesn't hold up the others (that guest's controller goes neutral). Reset is scheduled for a frame ahead so it happens on the same frame everywhere.
-- **Input delay.** Suggested from the slowest ping: half the round trip in frames, plus one, between 2 and 12. The host can change it in the lobby; ping is shown per player with the brief's guide (under 40 ms great, under 80 ms good, more is hard for fast games), and the lobby suggests a wired connection.
+- **Input delay.** The game starts with a delay suggested from the slowest of the last 10 pings: half the round trip in frames, plus 3, between 2 and 20. The host can change the starting value in the lobby, and can start only once 3 pings have come back from everyone. Ping is shown per player with the brief's guide (under 40 ms great, under 80 ms good, more is hard for fast games), and the lobby suggests a wired connection.
+- **The delay adjusts during the game.**
+  - **Each computer has its own delay.** Inputs carry their frame numbers, so the delays don't have to match. Raising a delay fills the frames in between with the same input. Lowering it just skips sampling until the game catches up.
+  - **Every second, each computer tells each other one how early its inputs arrived** (the margin, in frames before they were needed).
+  - **A computer raises its delay at once** when its inputs arrived late or with less than a frame to spare anywhere.
+  - **It lowers its delay a frame at a time** after 3 seconds with 3 frames to spare everywhere.
+- **Keeping level.**
+  - **How it's measured:** the same reports show when one computer runs ahead of another. Its inputs arrive early there while the other's arrive late here, by more than the two delays explain; half the difference is the number of frames ahead.
+  - **What the computer ahead does:** it holds back that many frames, one every 8 frames at most, so neither player carries extra delay to cover the gap.
+  - **At the start:** the host begins half a ping after sending the start, so both begin together.
+- **Late inputs.** When a frame's inputs haven't arrived, the app keeps checking for up to half a frame before giving up that frame. Most late inputs are only a few milliseconds late.
+- **Measuring.** `p64_netsim` (`apps/prometheus64/tools/netsim.cpp`, an optional build target) runs two players' online code at 60 frames a second without the emulator, through a relay, and reports pauses and delays. Results with a local relay:
+  - **No added lag:** both settled at 4 frames, with no pauses.
+  - **150 ms added each way** (±5 ms): the delays settled at 12 and 14–15 frames, with no pauses.
+  - **150–210 ms added each way:** the delays settled at 15–17 frames, with about 0.1 s of pauses in 90 seconds.
 - **Leaving and arriving late.** If a guest leaves, the game ends for everyone else and the host keeps playing offline. If the host leaves, the room closes and the guests return to the library. Once the host starts, the relay turns away anyone else ("This game has already started"); someone turned away never ends the game for the others.
 
 ## Not done

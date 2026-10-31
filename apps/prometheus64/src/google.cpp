@@ -197,9 +197,9 @@ class Loopback {
       const std::string query = q == std::string::npos ? std::string() : target.substr(q + 1);
       const bool answer = !query_param(query, "code").empty() || !query_param(query, "error").empty();
       const std::string page =
-          answer ? "<!doctype html><meta charset=utf-8><title>Prometheus 64</title>"
+          answer ? "<!doctype html><meta charset=utf-8><title>Project Prometheus</title>"
                    "<body style=\"font-family:sans-serif;background:#17100f;color:#f4f1ee;text-align:center;padding-top:15vh\">"
-                   "<h1>All set</h1><p>You can close this tab and go back to Prometheus 64.</p>"
+                   "<h1>All set</h1><p>You can close this tab and go back to Project Prometheus.</p>"
                  : "Not found";
       const std::string reply = std::string(answer ? "HTTP/1.1 200 OK" : "HTTP/1.1 404 Not Found") +
                                 "\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nContent-Length: " +
@@ -221,7 +221,7 @@ std::string token_error(const net::Response& r) {
   json::Value v;
   json::parse(r.body, v);
   const std::string e = v["error"].str();
-  if (e == "invalid_client" || e == "unauthorized_client") return "This build of Prometheus 64 isn't registered with Google";
+  if (e == "invalid_client" || e == "unauthorized_client") return "This build of Project Prometheus isn't registered with Google";
   return "Google refused the sign-in (" + (e.empty() ? "HTTP " + std::to_string(r.status) : e) + "). Try again";
 }
 
@@ -232,7 +232,7 @@ bool configured() { return !client_id().empty(); }
 SignIn sign_in(const std::function<void(const std::string&)>& open_url, const std::atomic<bool>& cancel) {
   SignIn res;
   if (!configured()) {
-    res.error = "This build of Prometheus 64 doesn't have Google Drive backup switched on";
+    res.error = "This build of Project Prometheus doesn't have Google Drive backup switched on";
     return res;
   }
   Loopback lb;

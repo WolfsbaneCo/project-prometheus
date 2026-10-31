@@ -28,8 +28,34 @@ constexpr std::size_t kSrmSize = 0x48800;
 enum OnlineButton {
   kObHost, kObJoin, kObSetup, kObClose, kObBack, kObSignup, kObTokenPage, kObPasteToken, kObInstall, kObFixPage,
   kObPasteCode, kObJoinGo, kObCopyCode, kObStart, kObLeave, kObDelayDown, kObDelayUp, kObDone, kObAddKey, kObSaveKey,
-  kObRemoveKey
+  kObRemoveKey, kObLinkHost, kObLinkMode, kObLinkEnd, kObCopyLinkCode, kObEvents, kObEventClose,
+  kObEventFirst  // kObEventFirst + i opens the i-th event of the game; + kObEventPrev/Next + row picks a choice
 };
+constexpr int kObEventPrev = 100, kObEventNext = 200;
+
+// The Event gifts page's rows: a gift of its own, or the gifts of one group (picked with < >).
+std::vector<std::vector<std::size_t>> event_rows(const std::vector<EventGift>& gifts) {
+  std::vector<std::vector<std::size_t>> rows;
+  for (std::size_t i = 0; i < gifts.size(); ++i) {
+    if (!gifts[i].group.empty() && !rows.empty() && gifts[rows.back()[0]].group == gifts[i].group) {
+      rows.back().push_back(i);
+    } else {
+      rows.push_back({i});
+    }
+  }
+  return rows;
+}
+
+// Pokemon Ruby, Sapphire, Emerald, FireRed and LeafGreen (any region) by game code. They all
+// trade and battle over the link cable; FireRed, LeafGreen and Emerald also over the Wireless
+// Adapter (the Union Room). Ruby and Sapphire have no wireless.
+bool pokemon_gen3(const Game& g, bool* wireless = nullptr) {
+  if (g.system != System::GBA || g.id.size() < 7) return false;
+  const std::string code = g.id.substr(4, 3);
+  const bool w = code == "BPE" || code == "BPR" || code == "BPG";
+  if (wireless) *wireless = w;
+  return w || code == "AXV" || code == "AXP";
+}
 
 // The group's key file: which relay, and the key that opens it. Small JSON, and not tied to this
 // app: every Project Prometheus app with online play (a GBA one trading Pokemon, say) uses the same
@@ -94,7 +120,7 @@ Color ping_colour(int ms) {
 
 std::string App::versions() const {
   const char* core = core_.info().library_version;
-  return std::string("Prometheus 64 ") + P64_VERSION + " / core " + (core ? core : "?");
+  return std::string("Project Prometheus ") + P64_VERSION + " / core " + (core ? core : "?");
 }
 
 // The group this computer belongs to, from its key file (tests can point elsewhere).
@@ -233,7 +259,185 @@ void App::open_online() {
   online_focus_ = 0;
   online_note_.clear();
   confirm_remove_key_ = false;
-  online_page_ = net_.active() ? OnlinePage::Lobby : OnlinePage::Main;
+  online_page_ = link_.active()        ? OnlinePage::Link
+                 : net_.active()       ? OnlinePage::Lobby
+                 : !event_key_.empty() ? OnlinePage::Events
+                                       : OnlinePage::Main;
+}
+
+// ---------------------------------------------------------------------------------------------
+// GBA link play
+
+const Game* App::link_game() const {
+  if (game_) return game_->system == System::GBA ? &*game_ : nullptr;
+  if (games_.empty()) return nullptr;
+  const Game& g = games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)];
+  return g.system == System::GBA ? &g : nullptr;
+}
+
+std::string App::link_mode(const Game& game) const {
+  bool wireless = false;
+  if (!pokemon_gen3(game, &wireless)) return "auto";  // gpSP knows the other games' links
+  // The cable by default: every generation 3 Pokemon game has it, so any two can link.
+  const std::string m = settings_.game(game.id, "link", "cable");
+  return wireless && m == "wireless" ? "wireless" : "cable";
+}
+
+void App::host_link() {
+  const Game* g = link_game();
+  if (!g || !has_group_key()) return;
+  const Game game = *g;
+  if (!game_ && !start_game(game)) return;
+  ensure_link_hardware();
+  link_.host(relay_url(), group_key(), name_input_.empty() ? default_name() : name_input_, link_mode(game), game.title);
+  link_.attach(core_.netpacket());
+  online_page_ = OnlinePage::Link;
+  online_focus_ = 0;
+}
+
+void App::join_link() {
+  const Game* g = link_game();
+  if (!g || !has_group_key()) return;
+  std::string code;
+  for (char c : code_input_) {
+    if (std::isalnum(static_cast<unsigned char>(c))) code += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  }
+  if (code.size() != 5) {
+    online_note_ = "A link code is five letters or numbers, like K7Q2M. Ask your friend for it";
+    return;
+  }
+  focus_field(TextField::None);
+  const Game game = *g;
+  if (!game_ && !start_game(game)) return;
+  ensure_link_hardware();
+  link_.join(relay_url(), group_key(), code, name_input_.empty() ? default_name() : name_input_, link_mode(game),
+             game.title);
+  link_.attach(core_.netpacket());
+  online_note_.clear();
+  online_page_ = OnlinePage::Link;
+  online_focus_ = 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Event gifts
+
+std::vector<EventGift> App::events_for(const Game& game) const {
+  if (game.system != System::GBA || game.id.size() < 8) return {};
+  return event_gifts(game.id.substr(4, 4));
+}
+
+void App::open_event(const EventGift& gift) {
+  const Game* g = link_game();
+  if (!g) return;
+  if (link_.active()) {
+    online_note_ = "End the link first: the game's link port is busy";
+    return;
+  }
+  // The game starts afresh at its title screen, with the Wireless Adapter in (or, for Ruby and
+  // Sapphire, the link cable to the e-Reader): Mystery Gift (Mystery Events) is on the title menu.
+  const Game game = *g;
+  if (game_) stop_game();
+  event_key_ = gift.key;
+  event_cable_ = gift.cable;
+  if (!start_game(game)) {
+    event_key_.clear();
+    event_cable_ = false;
+    return;
+  }
+  if (event_cable_) {
+    EventGift event = gift;
+    if (gift.key == "jirachi") {
+      // Made for this save, as the Bonus Disc did; once per Pokédex. The save is only read.
+      const RubySapphireSave save = read_ruby_sapphire_save(core_.save_ram(), core_.save_ram_size());
+      const char* refuse = !save.valid        ? "Jirachi: save your game in Ruby or Sapphire first"
+                           : save.has_jirachi ? "Jirachi: this save's POKéDEX already has Jirachi caught"
+                                              : nullptr;
+      if (refuse) {
+        event_key_.clear();
+        event_cable_ = false;
+        toast(refuse, 8);
+        return;
+      }
+      event.script = jirachi_event(save.seed);
+    }
+    cable_.attach(core_.netpacket());
+    cable_.open(event);
+  } else {
+    gifts_.attach(core_.netpacket());
+    gifts_.open(gift);
+  }
+  event_stage_ = event_station_stage();
+  overlay_ = Overlay::None;
+  toast("Event open: " + gift.name +
+            (event_cable_ ? ". In the game: MYSTERY EVENTS on the title menu, then press A"
+                          : ". In the game: MYSTERY GIFT, WONDER CARDS, WIRELESS COMMUNICATION"),
+        8);
+}
+
+void App::close_event() {
+  if (event_key_.empty()) return;
+  gifts_.close();
+  gifts_.attach(nullptr);
+  cable_.close();
+  cable_.attach(nullptr);
+  event_key_.clear();
+  event_cable_ = false;
+  event_stage_ = GiftStation::Stage::Closed;
+}
+
+GiftStation::Stage App::event_station_stage() const {
+  if (!event_cable_) return gifts_.stage();
+  switch (cable_.stage()) {
+    case CableStation::Stage::Closed: return GiftStation::Stage::Closed;
+    case CableStation::Stage::Waiting: return GiftStation::Stage::Waiting;
+    case CableStation::Stage::Linked: return GiftStation::Stage::Linked;
+    case CableStation::Stage::Sending: return GiftStation::Stage::Sending;
+    case CableStation::Stage::Done: return GiftStation::Stage::Done;
+    case CableStation::Stage::Failed: return GiftStation::Stage::Failed;
+  }
+  return GiftStation::Stage::Closed;
+}
+
+std::string App::event_station_status() const { return event_cable_ ? cable_.status() : gifts_.status(); }
+
+void App::update_event() {
+  if (event_cable_ ? !cable_.is_open() : !gifts_.is_open()) return;
+  if (event_cable_) {
+    cable_.update();
+  } else {
+    gifts_.update();
+  }
+  const GiftStation::Stage st = event_station_stage();
+  if (st == event_stage_) return;
+  event_stage_ = st;
+  if (st == GiftStation::Stage::Done && event_cable_) {
+    const std::string& k = event_key_;
+    toast(k == "clock"                 ? "The clock fix went across. To set the clock, hold B, Select and Left on the title screen"
+          : k == "words"               ? "The rare words went across: they're in your easy chat word lists"
+          : k == "jirachi"             ? "Jirachi went across: it joins your party if there was room"
+          : k.rfind("ecard-", 0) == 0  ? "The trainer went across: start a new Battle Tower challenge at that level to meet them"
+                                       : "The event went across. After your game restarts, go and see your Dad at the Petalburg City Gym",
+          10);
+  } else if (st == GiftStation::Stage::Done && event_key_.rfind("visiting-", 0) == 0) {
+    toast("Done. A new card: ask the deliveryman for the survey password. A new trainer: they're waiting in Sootopolis City", 10);
+  } else if (st == GiftStation::Stage::Done && event_key_ == "stamp") {
+    toast("Done: your game has the Stamp Card, or its next stamp. Connect again for another", 10);
+  } else if (st == GiftStation::Stage::Done) {
+    toast("Your game has the WONDER CARD. Collect the gift from the deliveryman upstairs in any Pokemon Center", 10);
+  } else if (st == GiftStation::Stage::Failed) {
+    toast("Event: " + event_station_status() +
+              (event_cable_ ? ". Leave Mystery Events in the game and try again" : ". Close Mystery Gift in the game and try again"),
+          8);
+  }
+}
+
+void App::ensure_link_hardware() {
+  close_event();
+  stop_local_link();  // a game links to one place at a time: the relay now
+  if (!game_ || game_->system != System::GBA) return;
+  const std::string link = link_mode(*game_);
+  const std::string want = link == "cable" ? "mul_poke" : link == "wireless" ? "rfu" : "auto";
+  if (core_.option("gpsp_serial") != want) restart_game_keep_progress();
 }
 
 void App::focus_field(TextField field) {
@@ -546,7 +750,7 @@ void App::process_net_events() {
         acc_ns_ = 0;
         last_ns_ = SDL_GetTicksNS();
         stalled_since_ns_ = 0;
-        toast("Online game started  -  " + std::to_string(net_.delay()) + " frames of input delay", 4);
+        toast("Online game started  -  " + std::to_string(net_.delay()) + " frames of input delay, adjusting as you play", 4);
         break;
       case Netplay::Event::Ended:
         input_.set_overrides(false);
@@ -592,11 +796,35 @@ void App::run_online_frames(uint64_t frame_ns) {
     net_.flush();
     if (!net_.ready_to_run()) {
       net_.flush(true);
+      // An input that's a little late usually arrives within a few milliseconds: wait for it here,
+      // up to half a frame, rather than leaving this whole frame empty.
+      const uint64_t until = SDL_GetTicksNS() + frame_ns / 2;
+      while (net_.running() && !net_.ready_to_run() && SDL_GetTicksNS() < until) {
+        SDL_DelayNS(500'000);
+        net_.update();
+      }
+    }
+    if (net_.running() && net_.ready_to_run() && net_.take_yield()) {
+      // This computer is running ahead of the others: one frame later, now and then, until level.
+      acc_ns_ = std::min(acc_ns_, frame_ns);
+      return;
+    }
+    if (!net_.ready_to_run()) {
       if (!stalled_since_ns_) stalled_since_ns_ = SDL_GetTicksNS();
       acc_ns_ = std::min(acc_ns_, frame_ns);
       return;
     }
+    if (stalled_since_ns_) {
+      stalled_ns_ += SDL_GetTicksNS() - stalled_since_ns_;
+      ++stalls_;
+    }
     stalled_since_ns_ = 0;
+    if (net_.frame() % 600 == 0 && net_.frame()) {
+      SDL_Log("online: frame %u, %d pauses, %llu ms waiting in the last 10 s (delay %d)", net_.frame(), stalls_,
+              static_cast<unsigned long long>(stalled_ns_ / 1'000'000), net_.my_delay());
+      stalls_ = 0;
+      stalled_ns_ = 0;
+    }
     for (int p = 0; p < Netplay::kPorts; ++p) input_.set_override(p, net_.input(p));
     if (net_.reset_due()) core_.reset();
     core_.run();
@@ -653,7 +881,10 @@ void App::draw_online() {
   const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_), H = static_cast<float>(out_h_);
   online_buttons_.clear();
   ui_.rect(0, 0, W, H, rgb(0x000000, 0.7f));
-  const float pw = std::min(W - 40 * s, 1100 * s), ph = std::min(H - 40 * s, 860 * s);
+  // The Event gifts page grows for Emerald's nine rows; the other pages keep their size.
+  const Game* events_game = online_page_ == OnlinePage::Events ? link_game() : nullptr;
+  const bool tall = events_game && event_rows(events_for(*events_game)).size() > 5;
+  const float pw = std::min(W - 40 * s, 1100 * s), ph = std::min(H - 40 * s, (tall ? 1000 : 860) * s);
   const float px = (W - pw) / 2, py = (H - ph) / 2;
   ui_.rect(px, py, pw, ph, kPanel, 24 * s);
   ui_.outline(px, py, pw, ph, rgb(0xFFFFFF, 0.06f), 24 * s, 1.5f * s);
@@ -696,7 +927,23 @@ void App::draw_online() {
       online_button(x + inner - 28 * s, y + 49 * s, button, s, true, id, true, enabled);
       y += 172 * s;
     };
-    if (keyed) {
+    if (keyed && link_game()) {
+      // A GBA game: a link, not a shared game. Each player plays their own game; only what goes
+      // over the link travels, so nothing waits on the connection.
+      const Game& g = *link_game();
+      const std::string mode = link_mode(g);
+      card("Host a link", "Link " + g.title + " with friends: you get a code to send them", "Host a link", kObLinkHost, true,
+           "Each of you plays your own game at full speed; only the link travels");
+      card("Join a link", "Type the code a friend sent you", "Join", kObJoin, true);
+      bool wireless = false;
+      if (pokemon_gen3(g, &wireless) && wireless) {
+        card(mode == "wireless" ? "Link: Wireless Adapter" : "Link: cable",
+             mode == "wireless" ? "The Union Room: FireRed, LeafGreen and Emerald only"
+                                : "Trade and battle in the Pokemon Center: works with every Pokemon Advance game",
+             mode == "wireless" ? "Use the cable" : "Use wireless", kObLinkMode, !link_.active(),
+             "Everyone in the link needs the same");
+      }
+    } else if (keyed) {
       const std::string game = games_.empty() ? std::string()
                                               : games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)].title;
       // The game hosted is the one picked in the library (one click on its tile, or the arrow keys).
@@ -723,7 +970,102 @@ void App::draw_online() {
       online_button(bx, py + ph - 92 * s, confirm_remove_key_ ? "Click again to remove" : "Remove key", s, false,
                     kObRemoveKey);
     }
-    online_button(px + pw - 48 * s, py + ph - 92 * s, "Close", s, false, kObClose, true);
+    const float close_w = online_button(px + pw - 48 * s, py + ph - 92 * s, "Close", s, false, kObClose, true);
+    if (const Game* g = link_game(); g && !events_for(*g).empty())
+      online_button(px + pw - 48 * s - close_w - 14 * s, py + ph - 92 * s, "Event gifts", s, false, kObEvents, true);
+    return;
+  }
+
+  if (online_page_ == OnlinePage::Events) {
+    const Game* g = link_game();
+    const std::vector<EventGift> gifts = g ? events_for(*g) : std::vector<EventGift>{};
+    title("Event gifts", "Gifts from Pokemon's old events, received the way players did: your game's own Mystery Gift "
+                         "(Ruby and Sapphire: Mystery Events), from a distribution machine or e-Reader the app plays.");
+    const auto rows = event_rows(gifts);
+    const bool compact = rows.size() > 5;  // Emerald's nine: a little tighter, so the page still fits
+    const float h = (compact ? 66 : 70) * s;  // a button (52) with even room above and below
+    const float by = (h - 52 * s) / 2;
+    for (std::size_t r = 0; r < rows.size(); ++r) {
+      const std::vector<std::size_t>& row = rows[r];
+      std::size_t pick = row[0];
+      if (row.size() > 1) {
+        const auto it = event_choice_.find(gifts[row[0]].group);
+        pick = row[static_cast<std::size_t>(std::clamp(it == event_choice_.end() ? 0 : it->second, 0, static_cast<int>(row.size()) - 1))];
+      }
+      for (std::size_t i : row) {
+        if (gifts[i].key == event_key_) pick = i;  // the open one
+      }
+      const EventGift& e = gifts[pick];
+      const bool open = e.key == event_key_;
+      ui_.rect(x, y, inner, h, open ? kTile.with_alpha(1.0f) : kTile, 14 * s);
+      if (open) ui_.outline(x, y, inner, h, kRed, 14 * s, 2 * s);
+      ui_.text(x + 24 * s, y + (compact ? 8 : 9) * s, e.name, (compact ? 21 : 22) * s, kText, true);
+      ui_.text(x + 24 * s, y + (compact ? 37 : 39) * s, ui_.fit(e.where, (compact ? 16 : 17) * s, inner - (row.size() > 1 && !open ? 580 : 240) * s),
+               (compact ? 16 : 17) * s, kDim);
+      float right = x + inner - 20 * s;
+      if (open) {
+        right -= online_button(right, y + by, "Close event", s, false, kObEventClose, true);
+      } else {
+        right -= online_button(right, y + by, "Open event", s, false, kObEventFirst + static_cast<int>(pick), true,
+                               !link_.active());
+      }
+      if (row.size() > 1 && !open) {
+        // The choice: < Mareep >
+        right -= 14 * s;
+        right -= online_button(right, y + by, ">", s, false, kObEventFirst + kObEventNext + static_cast<int>(r), true);
+        const float box = std::max(ui_.measure(e.choice, 19 * s, true), 150 * s) + 20 * s;
+        ui_.text(right - box / 2, y + by + 15 * s, e.choice, 19 * s, kText, true, Align::Center);  // level with the buttons' text
+        right -= box;
+        online_button(right, y + by, "<", s, false, kObEventFirst + kObEventPrev + static_cast<int>(r), true);
+      }
+      y += h + 8 * s;
+    }
+    if (!event_key_.empty()) {
+      ui_.text(x, y + 4 * s, "Event open: " + event_station_status(), 20 * s, kRed, true);
+      y += 40 * s;
+    } else {
+      y += 8 * s;
+    }
+    const bool ruby_sapphire = g && g->id.size() >= 8 && (g->id.substr(4, 3) == "AXV" || g->id.substr(4, 3) == "AXP");
+    const char* steps_ruby_sapphire[] = {
+        "1.  Once: join the Mystery Event Club. Once you have 5 badges, talk to the man in any Pokemon Center who asks "
+        "for your profile, and give it as MYSTERY EVENT IS EXCITING. Then save.",
+        "2.  Save your game, then open the event here: the game restarts at its title screen, linked by cable to an "
+        "e-Reader the app plays, as players did with an e-Reader card.",
+        "3.  In the game: MYSTERY EVENTS, then press A. The game loads the event, saves and restarts.",
+        "4.  Then: your Dad at the Petalburg City Gym has the ticket and the berry. The README's guide has every step.",
+    };
+    const char* steps_wireless[] = {
+        "1.  Once: unlock Mystery Gift in your game. In any Poke Mart, fill in the questionnaire on the counter with "
+        "LINK TOGETHER WITH ALL (in Emerald, once you have your Pokedex), then save.",
+        "2.  Save your game, then open an event here: the game restarts at its title screen, with the Wireless Adapter.",
+        "3.  In the game: MYSTERY GIFT, then WONDER CARDS, then WIRELESS COMMUNICATION.",
+        "4.  Upstairs in any Pokemon Center, the deliveryman hands you the gift or tells you what to do next. Tickets: "
+        "show them at the harbor he names. One card at a time. The README's guide has every step.",
+    };
+    // The steps, above the buttons; when the rows leave no room for them, where to find them.
+    const float steps_end = py + ph - 104 * s;
+    std::vector<std::vector<std::string>> steps;
+    float need = 0;
+    for (const char* step : ruby_sapphire ? steps_ruby_sapphire : steps_wireless) {
+      steps.push_back(wrap(ui_, step, 18 * s, inner, false, 3));
+      need += 26 * s * static_cast<float>(steps.back().size()) + 4 * s;
+    }
+    if (y + need > steps_end) {
+      ui_.text(x, y + 6 * s, "Every step, for each gift: the guide in the README (\"Pokemon: the lost events, restored\").", 18 * s, kDim);
+      y += 36 * s;
+    } else {
+      for (const auto& lines : steps) {
+        for (const auto& line : lines) {
+          ui_.text(x, y, line, 18 * s, kDim);
+          y += 26 * s;
+        }
+        y += 4 * s;
+      }
+    }
+    note(y + 4 * s);
+    online_button(x, py + ph - 92 * s, "Back", s, false, kObBack);
+    if (game_) online_button(px + pw - 48 * s, py + ph - 92 * s, "Back to the game", s, true, kObDone, true);
     return;
   }
 
@@ -746,7 +1088,7 @@ void App::draw_online() {
     };
     float t = step(1, "Make a free Cloudflare account", "Skip this if you already have one.", 96 * s);
     online_button(x + inner, t, "Open Cloudflare", s, false, kObSignup, true);
-    t = step(2, "Create a key for Prometheus 64",
+    t = step(2, "Create a key for Project Prometheus",
              "On the page that opens, scroll down and click Continue to summary, then Create Token, then Copy. "
              "If no permissions are filled in, use the template \"Edit Cloudflare Workers\".",
              126 * s);
@@ -791,13 +1133,58 @@ void App::draw_online() {
   }
 
   if (online_page_ == OnlinePage::Join) {
-    title("Join a game", "Type the game code the host sent you: five letters or numbers, like K7Q2M.");
+    if (link_game()) {
+      title("Join a link", "Type the link code your friend sent you: five letters or numbers, like K7Q2M.");
+    } else {
+      title("Join a game", "Type the game code the host sent you: five letters or numbers, like K7Q2M.");
+    }
     draw_field(x, y, inner - 300 * s, s, TextField::Code, code_input_, "Game code", false);
     online_button(x + inner - 140 * s, y, "Paste", s, false, kObPasteCode, true);
     online_button(x + inner, y, "Join", s, true, kObJoinGo, true, !code_input_.empty());
     y += 96 * s;
     note(y);
     online_button(x, py + ph - 92 * s, "Back", s, false, kObBack);
+    return;
+  }
+
+  if (online_page_ == OnlinePage::Link) {
+    const auto lp = link_.phase();
+    if (lp != Link::Phase::Open) {
+      title("Link", lp == Link::Phase::Connecting ? link_.status() : "The link has ended.");
+      note(y);
+      online_button(x, py + ph - 92 * s, "Back", s, false, kObBack);
+      return;
+    }
+    title("Link", "Each of you plays your own game; only the link travels. In Pokemon, go to a Pokemon Center's "
+                  "upstairs to trade or battle. The link stays open while you play.");
+    if (link_.is_host()) {
+      ui_.rect(x, y, inner, 110 * s, kTile, 18 * s);
+      ui_.text(x + 28 * s, y + 18 * s, "Link code", 19 * s, kDim);
+      ui_.text(x + 28 * s, y + 46 * s, link_.code(), 40 * s, kText, true);
+      online_button(x + inner - 28 * s, y + 29 * s, "Copy", s, false, kObCopyLinkCode, true);
+      y += 124 * s;
+      ui_.text(x, y, "Send this code to your friends. They need your group's key file too, then Play online > Join a link.",
+               19 * s, kDim);
+      y += 46 * s;
+    }
+    ui_.text(x, y, "Linked", 22 * s, kRed, true);
+    y += 40 * s;
+    auto row = [&](const std::string& name, const std::string& detail) {
+      ui_.rect(x, y, inner, 56 * s, kTile.with_alpha(0.7f), 12 * s);
+      ui_.text(x + 20 * s, y + 15 * s, ui_.fit(name, 21 * s, inner * 0.4f), 21 * s, kText, true);
+      ui_.text(x + inner * 0.42f, y + 16 * s, ui_.fit(detail, 19 * s, inner * 0.55f), 19 * s, kDim);
+      y += 64 * s;
+    };
+    auto mode_name = [](const std::string& m) {
+      return m == "wireless" ? std::string("Wireless Adapter") : m == "cable" ? std::string("link cable") : std::string("link");
+    };
+    row((name_input_.empty() ? default_name() : name_input_) + "  (you)",
+        (game_ ? game_->title : std::string()) + "  -  " + mode_name(link_.mode()));
+    for (const auto& [id, p] : link_.peers()) row(p.name, p.game.empty() ? "Connecting..." : p.game + "  -  " + mode_name(p.mode));
+    if (link_.peers().empty()) ui_.text(x, y + 8 * s, link_.is_host() ? "Waiting for a friend to join..." : "", 19 * s, kDim);
+    note(py + ph - 150 * s);
+    online_button(x, py + ph - 92 * s, "End link", s, false, kObLinkEnd);
+    online_button(px + pw - 48 * s, py + ph - 92 * s, "Back to the game", s, true, kObDone, true);
     return;
   }
 
@@ -853,8 +1240,9 @@ void App::draw_online() {
   }
   y += 66 * s;
   for (const auto& line : wrap(ui_,
-                               "More delay copes with a slower connection but buttons react later. The suggested value "
-                               "covers the slowest ping. Tip: a wired connection plays smoother than Wi-Fi.",
+                               "Where the game starts: during the game, each computer adjusts its own delay to its "
+                               "connection, lower while it's steady (less lag) and higher when it wobbles (no pauses). "
+                               "Tip: a wired connection plays smoother than Wi-Fi.",
                                18 * s, inner, false, 3)) {
     ui_.text(x, y, line, 18 * s, kFaint);
     y += 26 * s;
@@ -871,8 +1259,29 @@ void App::draw_online() {
 }
 
 void App::draw_online_status() {
-  if (!net_.running() || overlay_ != Overlay::None) return;
+  if (overlay_ != Overlay::None) return;
   const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_);
+  if (!event_key_.empty() && game_ && event_stage_ != GiftStation::Stage::Done) {
+    // An open event: what to do in the game, until the card has gone across.
+    const std::string t = "Event open  -  " + event_station_status() +
+                          (event_cable_ ? "  -  in the game: MYSTERY EVENTS on the title menu, then press A"
+                                        : "  -  in the game: MYSTERY GIFT, WONDER CARDS, WIRELESS COMMUNICATION");
+    const float w = ui_.measure(t, 20 * s) + 48 * s, h = 46 * s;
+    ui_.rect((W - w) / 2, 24 * s, w, h, rgb(0x121214, 0.85f), 14 * s);
+    ui_.text(W / 2, 24 * s + 12 * s, t, 20 * s, kText, false, Align::Center);
+    return;
+  }
+  if (link_.active() && link_.peers().empty() && game_) {
+    // A link nobody has joined yet: the code stays in sight until someone does.
+    const std::string t = link_.phase() == Link::Phase::Connecting ? "Opening the link..."
+                          : link_.is_host() ? "Link code " + link_.code() + "  -  waiting for a friend"
+                                            : "Linking...";
+    const float w = ui_.measure(t, 20 * s) + 48 * s, h = 46 * s;
+    ui_.rect((W - w) / 2, 24 * s, w, h, rgb(0x121214, 0.85f), 14 * s);
+    ui_.text(W / 2, 24 * s + 12 * s, t, 20 * s, kText, false, Align::Center);
+    return;
+  }
+  if (!net_.running()) return;
   std::string text;
   if (!net_.is_host() && net_.paused_by_host()) {
     text = "Paused by " + net_.player_name(0);
@@ -888,6 +1297,25 @@ void App::draw_online_status() {
 
 void App::online_click(int id) {
   if (id != kObRemoveKey) confirm_remove_key_ = false;
+  if (id >= kObEventFirst) {
+    if (const Game* g = link_game()) {
+      const std::vector<EventGift> gifts = events_for(*g);
+      const int n = id - kObEventFirst;
+      if (n >= kObEventPrev) {
+        // A group's choice, one step back or on.
+        const auto rows = event_rows(gifts);
+        const std::size_t r = static_cast<std::size_t>(n % 100);
+        if (r < rows.size() && rows[r].size() > 1) {
+          const int count = static_cast<int>(rows[r].size());
+          int& c = event_choice_[gifts[rows[r][0]].group];
+          c = (c + (n >= kObEventNext ? 1 : -1) + count) % count;
+        }
+      } else if (static_cast<std::size_t>(n) < gifts.size()) {
+        open_event(gifts[static_cast<std::size_t>(n)]);
+      }
+    }
+    return;
+  }
   switch (id) {
     case kObHost:
       online_note_.clear();
@@ -947,7 +1375,45 @@ void App::online_click(int id) {
       if (!setup_result_.fix_url.empty()) SDL_OpenURL(setup_result_.fix_url.c_str());
       break;
     }
-    case kObJoinGo: join_online(); break;
+    case kObJoinGo:
+      if (link_game()) {
+        join_link();
+      } else {
+        join_online();
+      }
+      break;
+    case kObLinkHost:
+      online_note_.clear();
+      host_link();
+      break;
+    case kObEvents:
+      online_page_ = OnlinePage::Events;
+      online_note_.clear();
+      online_focus_ = 0;
+      break;
+    case kObEventClose:
+      close_event();
+      toast("Event closed");
+      break;
+    case kObLinkMode:
+      close_event();
+      if (const Game* g = link_game(); g && !link_.active()) {
+        settings_.set_game(g->id, "link", link_mode(*g) == "wireless" ? "cable" : "wireless");
+        settings_.save();
+        // The core picks its link when the game starts: restart a running one, keeping its progress.
+        if (game_) restart_game_keep_progress();
+      }
+      break;
+    case kObLinkEnd:
+      link_.leave();
+      toast("Link ended");
+      online_page_ = OnlinePage::Main;
+      online_focus_ = 0;
+      break;
+    case kObCopyLinkCode:
+      SDL_SetClipboardText(link_.code().c_str());
+      toast("Link code copied");
+      break;
     case kObCopyCode:
       SDL_SetClipboardText(net_.code().c_str());
       toast("Game code copied");
@@ -985,7 +1451,9 @@ void App::online_action(int action) {
       break;
     case kBack:
     case kMenu:
-      if (online_page_ == OnlinePage::Setup || online_page_ == OnlinePage::Join) {
+      if (online_page_ == OnlinePage::Link) {
+        overlay_ = Overlay::None;  // the link stays open: back to the game
+      } else if (online_page_ == OnlinePage::Setup || online_page_ == OnlinePage::Join || online_page_ == OnlinePage::Events) {
         online_page_ = OnlinePage::Main;
         online_focus_ = 0;
       } else if (online_page_ == OnlinePage::Lobby && net_.phase() != Netplay::Phase::Running && !net_game_pending_) {
