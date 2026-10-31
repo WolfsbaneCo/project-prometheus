@@ -89,7 +89,10 @@ const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 
 // GBA pictures: 240x160 pixel art on a big screen. Smooth, the default, is xBRZ, the filter the
 // owner knew from VBA-M: smooth, clean edges without melting small details or text (xBR, used
-// before, rounded a whole game pixel at a time and did). Clean is MMPX at 4x with crisp one-pixel
+// before, rounded a whole game pixel at a time and did). As VBA-M draws it, xBRZ is made at the
+// largest whole size that fits and stretched the last bit with crisp pixels, never blurred; then
+// a light sharpening that stays within each pixel's neighbours tightens the edges xBRZ blends,
+// without halos: a touch crisper than VBA-M. Clean is MMPX at 4x with crisp one-pixel
 // edges: rounded staircases, with text and thin lines kept as drawn; Sharp keeps every pixel a
 // square. gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen:
 // Handheld is that screen on purpose, with its pixel grid and slight ghosting. Pixel-perfect is
@@ -102,12 +105,13 @@ struct GbaLookDef {
   float grid;
   bool colour_correction, ghosting, whole_pixels;
   Prescale prescale;  // redrawn bigger on the CPU first (Video::software_frame)
+  float sharpen = 0.0f;  // halo-free sharpening after it (Look::sharpen_within): xBRZ's blended edges tightened
 };
 const GbaLookDef kGbaLooks[] = {
     {"Sharp", "Crisp pixels filling the screen, in the game's own colours", Look::Pixels::Sharp, 0.0f, false, false, false,
      Prescale::None},
-    {"Smooth", "Smooth, clean edges, as if redrawn in HD (xBRZ)", Look::Pixels::Plain, 0.0f, false, false, false,
-     Prescale::Xbrz},
+    {"Smooth", "Smooth, clean edges, as if redrawn in HD (xBRZ)", Look::Pixels::Sharp, 0.0f, false, false, false,
+     Prescale::Xbrz, 0.6f},
     {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false,
      Prescale::None},
     {"Pixel-perfect", "Every pixel exactly the same size, at a whole-number scale", Look::Pixels::Sharp, 0.0f, false, false,
@@ -703,6 +707,8 @@ Look App::gba_look_for(const Game& game, const Core& core) const {
   const GbaLookDef& g = kGbaLooks[gba_look(settings_, game.id)];
   l.fill = static_cast<FillMode>(fill_mode(&game));
   l.pixels = g.pixels;
+  l.sharpen = g.sharpen;
+  l.sharpen_within = g.sharpen > 0.0f;
   l.grid = g.grid;
   l.whole_pixels = g.whole_pixels;
   l.lines = 160;

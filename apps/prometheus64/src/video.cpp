@@ -30,6 +30,7 @@ uniform float u_lod;     // mip level for the background blur
 uniform float u_dim;     // background darkening
 uniform vec2 u_step;     // one output pixel, in texture units
 uniform float u_sharpen;
+uniform float u_within;  // 1 = keep the sharpened colour within its neighbours' range (no halos)
 uniform float u_scan;    // scanline strength
 uniform float u_lines;   // source lines across the quad
 uniform float u_alpha;
@@ -93,9 +94,13 @@ void main() {
     c *= mix(1.0 - 0.55 * u_grid, 1.0 + 0.12 * u_grid, m);
   }
   if (u_sharpen > 0.0) {
-    vec3 n = texture(u_tex, uv + vec2(u_step.x, 0.0)).rgb + texture(u_tex, uv - vec2(u_step.x, 0.0)).rgb +
-             texture(u_tex, uv + vec2(0.0, u_step.y)).rgb + texture(u_tex, uv - vec2(0.0, u_step.y)).rgb;
-    c = clamp(c + u_sharpen * (c - 0.25 * n), 0.0, 1.0);
+    vec3 a = texture(u_tex, uv + vec2(u_step.x, 0.0)).rgb, b = texture(u_tex, uv - vec2(u_step.x, 0.0)).rgb;
+    vec3 d = texture(u_tex, uv + vec2(0.0, u_step.y)).rgb, e = texture(u_tex, uv - vec2(0.0, u_step.y)).rgb;
+    vec3 s = c + u_sharpen * (c - 0.25 * (a + b + d + e));
+    // Within: an edge's blended pixels move toward the colours on either side, never beyond them,
+    // so edges tighten without the bright and dark rims plain sharpening leaves.
+    if (u_within > 0.5) s = clamp(s, min(c, min(min(a, b), min(d, e))), max(c, max(max(a, b), max(d, e))));
+    c = clamp(s, 0.0, 1.0);
   }
   if (u_scan > 0.0) {
     float f = fract(v_uv.y * u_lines);
@@ -160,6 +165,7 @@ bool Video::init(std::string& error) {
   u_dim_ = gl::glGetUniformLocation(program_, "u_dim");
   u_step_ = gl::glGetUniformLocation(program_, "u_step");
   u_sharpen_ = gl::glGetUniformLocation(program_, "u_sharpen");
+  u_within_ = gl::glGetUniformLocation(program_, "u_within");
   u_scan_ = gl::glGetUniformLocation(program_, "u_scan");
   u_lines_ = gl::glGetUniformLocation(program_, "u_lines");
   u_alpha_ = gl::glGetUniformLocation(program_, "u_alpha");
@@ -363,12 +369,12 @@ void Video::upload_sw(const void* data, unsigned width, unsigned height, std::si
 void Video::prescale_for(int out_w, int out_h) {
   int factor = raw_prescale_ == Prescale::Mmpx2 ? 2 : raw_prescale_ == Prescale::Mmpx4 ? 4 : 0;
   if (raw_prescale_ == Prescale::Xbrz) {
-    // The whole number of times that reaches the window's size, so the last step only shrinks a
-    // little (sharp) instead of stretching (soft). xBRZ goes from 2x to 6x, then 9x: a 1080p screen
-    // (6.75x) gets 9x shrunk, a 1440p one exactly 9x. About 3 ms a frame either way.
+    // As VBA-M draws it: xBRZ at the largest whole size that fits the window, then the last bit of
+    // stretching with crisp pixels (the Sharp look's shader), never blended. xBRZ goes from 2x to
+    // 6x, then 9x: a 1080p screen (6.75x) gets 6x and a 1440p one exactly 9x. About 3 ms a frame.
     const double fit = std::min(static_cast<double>(out_w) / raw_w_, static_cast<double>(out_h) / raw_h_);
-    factor = std::clamp(static_cast<int>(std::ceil(fit - 0.01)), 2, 9);
-    if (factor > 6) factor = 9;
+    factor = std::clamp(static_cast<int>(std::floor(fit + 0.01)), 2, 9);
+    if (factor > 6 && factor < 9) factor = 6;
   }
   if (!raw_dirty_ && factor == raw_factor_) return;
   raw_dirty_ = false;
@@ -424,6 +430,7 @@ void Video::draw_quad(const float src[4], const float dst[4], bool background, f
   gl::glUniform1f(u_dim_, dim);
   gl::glUniform2f(u_step_, step_x, step_y);
   gl::glUniform1f(u_sharpen_, background ? 0.0f : look.sharpen);
+  gl::glUniform1f(u_within_, look.sharpen_within ? 1.0f : 0.0f);
   gl::glUniform1f(u_scan_, background ? 0.0f : look.scanlines);
   gl::glUniform1f(u_alpha_, alpha);
   gl::glUniform1f(u_bicubic_, background ? 0.0f : bicubic_);

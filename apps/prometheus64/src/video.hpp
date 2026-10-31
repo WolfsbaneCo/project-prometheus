@@ -20,6 +20,7 @@ struct Look {
   float aspect = 4.0f / 3.0f;  // display shape of the game picture
   float overscan = 0.0f;       // fraction cropped from each edge
   float sharpen = 0.0f;        // 0 = off
+  bool sharpen_within = false; // sharpening never past the neighbours' range: tighter edges, no halos
   float scanlines = 0.0f;      // 0 = off
   bool smooth = true;          // false = sharp pixels (the "Native" look)
   // Pixel art (the GBA): how the small picture becomes a big one. Plain = the settings above.
@@ -73,7 +74,7 @@ class Video {
   GLuint program_ = 0, vao_ = 0;
   GLint u_bicubic_ = -1, u_size_ = -1, u_pixels_ = -1, u_scale_ = -1, u_grid_ = -1;
   float bicubic_ = 0.0f, size_w_ = 1.0f, size_h_ = 1.0f;
-  GLint u_src_ = -1, u_dst_ = -1, u_mode_ = -1, u_lod_ = -1, u_dim_ = -1, u_step_ = -1, u_sharpen_ = -1,
+  GLint u_src_ = -1, u_dst_ = -1, u_mode_ = -1, u_lod_ = -1, u_dim_ = -1, u_step_ = -1, u_sharpen_ = -1, u_within_ = -1,
         u_scan_ = -1, u_lines_ = -1, u_alpha_ = -1;
   GLuint target_fbo_ = 0, target_tex_ = 0, target_depth_ = 0;
   unsigned target_w_ = 0, target_h_ = 0;

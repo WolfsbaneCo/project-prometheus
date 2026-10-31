@@ -229,7 +229,7 @@ It never changes the odds or your game, and says nothing on ordinary days. Becau
 
 | Look | |
 |---|---|
-| Smooth (default) | Smooth, clean edges, as if redrawn in HD (xBRZ, the filter VBA-M offers), keeping small details and text |
+| Smooth (default) | Smooth, clean edges, as if redrawn in HD (xBRZ, the filter VBA-M offers), keeping small details and text, with a light, halo-free sharpening that makes it a touch crisper than VBA-M |
 | Clean | Crisp, with jagged staircase edges rounded off |
 | Sharp | Crisp pixels, every one the same size at any screen size, in the game's own colours |
 | Handheld | The GBA's own screen: its muted colours, pixel grid and the slight ghosting some games relied on for transparency |
