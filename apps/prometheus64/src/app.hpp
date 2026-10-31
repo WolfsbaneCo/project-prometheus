@@ -212,7 +212,8 @@ class App {
   void sync_second_save(bool force);
   void switch_local_focus();
   void draw_local_link_labels();
-  std::string local_link_value() const;  // the menu row's value: the game to link, or the one linked
+  std::string local_link_value() const;
+  void back_from_picking();  // the menu row's value: the game to link, or the one linked
   int refreshes_per_frame(double fps) const;
   void check_speed(double fps);
 
@@ -245,7 +246,7 @@ class App {
   LocalLink local_;
   std::string local_mode_;  // the link both games use ("cable", "wireless"); empty when not linked
   bool focus2_ = false;     // the player controls (and hears) the second game
-  int local_choice_ = 0;    // the menu's pick among second_game_choices()
+  bool picking_second_ = false;  // the menu lists the games to link instead of its usual rows
   std::vector<uint8_t> last_saved2_, pending2_;
   uint64_t pending2_since_ = 0;
   Audio audio_;

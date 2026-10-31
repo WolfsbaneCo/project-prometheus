@@ -184,9 +184,10 @@ Ruby and Sapphire have no Mystery Gift. Their events came from Nintendo e-Reader
 
 #### Two of your games linked on this computer (trading between them)
 
-In the menu of a running GBA game: **Link a second game**. Pick the other game with **‹ ›** and press **Enter**. The second game starts beside the first, with its own save from your library, and the two are joined as if by a link cable (or by Wireless Adapters, if both games are set to wireless).
+In the menu of a running GBA game: **Link a second game**, then choose the other game from the list of your GBA games (click it, or the arrow keys and **Enter**). The second game starts beside the first, with its own save from your library, and the two are joined as if by a link cable (or by Wireless Adapters, if both games are set to wireless).
 
 - Both games show side by side. **F3** (or **Controlling** in the menu) switches which game your keys and controller drive, and which one you hear. The label over each game says which is in play.
+- Both games always keep running, even the one you're not controlling and even with the menu open, as two consoles would: a link that stopped mid-trade would drop you out of the Cable Club. While a menu is open, neither game takes your button presses.
 - Play each game into a Pokémon Center and upstairs to the **Cable Club**, as two players would: then trade, battle or mix records. Switch with F3 to make each game's choices.
 - Each game saves its own progress into the library, as usual. **Link a second game** again (it shows "Linked") closes the second game; quitting closes both.
 - Two copies of the same game can't be linked this way (they'd share one save). Ruby with Emerald, Sapphire with FireRed, and so on all work, as on real consoles. FireRed and LeafGreen trade with Ruby, Sapphire and Emerald once they have the National Pokédex and the Sevii Islands' Network Machine is fixed, as in the original games.
