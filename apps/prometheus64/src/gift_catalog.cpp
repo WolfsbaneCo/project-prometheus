@@ -122,18 +122,18 @@ struct TicketDef {
 
 // Emerald (English). Flags and items from the game's own tables.
 const TicketDef kEmerald[] = {
-    {"aurora", "Aurora Ticket", "Birth Island, where Deoxys waits", 1000, 0x173, 0x8D5, 0x13A, {0x1AD}, 410, 1,
+    {"aurora", "Aurora Ticket", "Ferry to Birth Island, where Deoxys waits. From the deliveryman; sail from Lilycove City after the Hall of Fame", 1000, 0x173, 0x8D5, 0x13A, {0x1AD}, 410, 1,
      "AURORA TICKET",
      {"A ticket for a ship to BIRTH", "ISLAND, far to the south. Pick", "it up from the deliveryman in any",
       "POKéMON CENTER."}},
-    {"mystic", "Mystic Ticket", "Navel Rock, where Lugia and Ho-Oh rest", 1001, 0x172, 0x8E0, 0x13B, {0x91, 0x92}, 249,
+    {"mystic", "Mystic Ticket", "Ferry to Navel Rock (Lugia and Ho-Oh). From the deliveryman; sail from Lilycove City after the Hall of Fame", 1001, 0x172, 0x8E0, 0x13B, {0x91, 0x92}, 249,
      2, "MYSTIC TICKET",
      {"A ticket for a ship to NAVEL", "ROCK. Pick it up from the", "deliveryman in any POKéMON", "CENTER."}},
-    {"oldseamap", "Old Sea Map", "Faraway Island, where Mew hides", 1002, 0x178, 0x8D6, 0x13C, {0x1CA}, 151, 3,
+    {"oldseamap", "Old Sea Map", "Ferry to Faraway Island, where Mew hides. From the deliveryman; sail from Lilycove City after the Hall of Fame", 1002, 0x178, 0x8D6, 0x13C, {0x1CA}, 151, 3,
      "OLD SEA MAP",
      {"An old map of an island no one", "has charted. Pick it up from the", "deliveryman in any POKéMON",
       "CENTER."}},
-    {"eon", "Eon Ticket", "Southern Island, where Latias or Latios lives", 1003, 0x113, 0x8B3, 0x13D, {0x1C9}, 407, 4,
+    {"eon", "Eon Ticket", "Ferry to Southern Island (Latias or Latios). From the deliveryman; sail from Lilycove City after the Hall of Fame", 1003, 0x113, 0x8B3, 0x13D, {0x1C9}, 407, 4,
      "EON TICKET",
      {"A ticket for a ship to SOUTHERN", "ISLAND. Pick it up from the", "deliveryman in any POKéMON", "CENTER."}},
 };
@@ -141,10 +141,10 @@ const TicketDef kEmerald[] = {
 // FireRed and LeafGreen (English): the two tickets they were made for, from the Vermilion City
 // harbor's Seagallop ferry once the Sevii Islands are open. Their own flags (pokefirered).
 const TicketDef kFireRedLeafGreen[] = {
-    {"aurora", "Aurora Ticket", "Birth Island, where Deoxys waits", 1000, 0x173, 0x84B, 0x2A7, {0x2E4}, 410, 1,
+    {"aurora", "Aurora Ticket", "Seagallop ferry to Birth Island (Deoxys), from Vermilion City once the Sevii Islands are open", 1000, 0x173, 0x84B, 0x2A7, {0x2E4}, 410, 1,
      "AURORA TICKET",
      {"A ticket for a ship to BIRTH", "ISLAND. Pick it up from the", "deliveryman in any POKéMON", "CENTER."}},
-    {"mystic", "Mystic Ticket", "Navel Rock, where Lugia and Ho-Oh rest", 1001, 0x172, 0x84A, 0x2A8, {0x2F2, 0x2F3}, 249,
+    {"mystic", "Mystic Ticket", "Seagallop ferry to Navel Rock (Lugia, Ho-Oh), from Vermilion City once the Sevii Islands are open", 1001, 0x172, 0x84A, 0x2A8, {0x2F2, 0x2F3}, 249,
      2, "MYSTIC TICKET",
      {"A ticket for a ship to NAVEL", "ROCK. Pick it up from the", "deliveryman in any POKéMON", "CENTER."}},
 };
@@ -1001,26 +1001,26 @@ const uint16_t kPassword[4] = {0x1602, 0x0A14, 0x2017, 0x020B};  // GIVE ME AWES
 std::vector<EventGift> event_gifts(const std::string& game_code) {
   std::vector<EventGift> out;
   if (game_code == "AXVE" || game_code == "AXPE") {
-    EventGift eon{"eon", "Eon Ticket", "Southern Island, where Latias or Latios lives", "", "", 0, {}, eon_ticket_event()};
+    EventGift eon{"eon", "Eon Ticket", "Ferry to Southern Island (Latias in Ruby, Latios in Sapphire). Dad gives it; sail from Lilycove City after the Hall of Fame", "", "", 0, {}, eon_ticket_event()};
     eon.cable = true;
     out.push_back(std::move(eon));
     auto cable = [&](EventGift g) {
       g.cable = true;
       out.push_back(std::move(g));
     };
-    cable({"enigma", "Enigma Berry", "From DAD at the Petalburg City Gym, once his badge is won", "", "", 0, {},
+    cable({"enigma", "Enigma Berry", "The event-only berry, with its own picture. Dad gives it at the Petalburg City Gym; plant it to grow more", "", "", 0, {},
            enigma_berry_event()});
-    cable({"clock", "Clock fix", "Turns on the clock reset: hold B, Select and Left at the title screen", "", "", 0, {},
+    cable({"clock", "Clock fix", "Nintendo's berry-clock fix. Then hold B, Select and Left on the title screen to set the game's clock", "", "", 0, {},
            clock_fix_event()});
-    cable({"words", "Rare words", "All 33 rare easy chat words", "", "", 0, {}, rare_words_event()});
+    cable({"words", "Rare words", "All 33 rare easy chat words (trendy sayings), for your profile, trends and greetings", "", "", 0, {}, rare_words_event()});
     // The script is made for the player's own save when the event opens (jirachi_event).
-    cable({"jirachi", "Jirachi", "WISHMKR Jirachi, from the Pokémon Colosseum Bonus Disc", "", "", 0, {}, jirachi_event(0)});
+    cable({"jirachi", "Jirachi", "The WISHMKR Jirachi of the Pokémon Colosseum Bonus Disc, straight into your party. One per save", "", "", 0, {}, jirachi_event(0)});
     for (uint8_t level : {50, 100}) {
       for (const ECardTrainer& t : kECardTrainers) {
         std::string name = t.name;
         for (std::size_t i = 1; i < name.size(); ++i) name[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(name[i])));
         cable({std::string("ecard-") + t.key + "-" + std::to_string(level), "Battle e-Card",
-               "A new opponent at the Battle Tower", "ecard", name + ", Lv. " + std::to_string(level), 0, {},
+               "Battle Tower: your first foe in a new challenge", "ecard", name + ", Lv. " + std::to_string(level), 0, {},
                ecard_trainer_event(t, level)});
       }
     }
@@ -1036,7 +1036,7 @@ std::vector<EventGift> event_gifts(const std::string& game_code) {
     out.push_back({t.key, t.name, t.where, "", "", t.card_flag, ticket_card(t, id++), ticket_script(t, harbor)});
   }
   if (emerald) {
-    out.push_back({"pichu", "Pichu Egg", "A Pichu that knows Surf, from an event held only in Japan", "", "",
+    out.push_back({"pichu", "Pichu Egg", "A Pichu egg that knows Surf, from an event held only in Japan. The deliveryman gives it; keep a party slot free", "", "",
                    kPichuCardFlag, pichu_card(id++), pichu_script()});
   }
   if (emerald) {
@@ -1046,7 +1046,7 @@ std::vector<EventGift> event_gifts(const std::string& game_code) {
     for (const ECardTrainer& t : kECardTrainers) {
       std::string name = t.name;
       for (std::size_t i = 1; i < name.size(); ++i) name[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(name[i])));
-      EventGift g{std::string("visiting-") + t.key, "Visiting Trainer", "A battle in Sootopolis City's Mystery Events House",
+      EventGift g{std::string("visiting-") + t.key, "Visiting Trainer", "Battle them in Sootopolis City, after a survey password",
                   "visiting", name + ", Lv. 50", flag,
                   ex::card(flag, t.party[0].species, extra_id++, 0, 6, 0, "VISITING TRAINER",
                            {std::string("A TRAINER named ") + t.name + " wants", "to battle you in SOOTOPOLIS.",
@@ -1058,7 +1058,7 @@ std::vector<EventGift> event_gifts(const std::string& game_code) {
       out.push_back(std::move(g));
       ++flag;
     }
-    EventGift stamp{"stamp", "Stamp Card", "Seven stamps, one a visit", "", "", 1017,
+    EventGift stamp{"stamp", "Stamp Card", "A Wonder Card with seven stamps to collect: connect again to get each next one", "", "", 1017,
                     ex::card(1017, 25, extra_id++, 1, 7, 7, "STAMP CARD",
                              {"Collect seven STAMPS of HOENN's", "POKéMON: connect to MYSTERY GIFT",
                               "again to get the next one.", ""},
@@ -1069,7 +1069,7 @@ std::vector<EventGift> event_gifts(const std::string& game_code) {
       stamp.stamps.push_back(kSpecies[i] | (i + 1) << 16);
     }
     out.push_back(std::move(stamp));
-    out.push_back({"battlecard", "Battle Card", "Counts link battles with friends who hold it", "", "", 1018,
+    out.push_back({"battlecard", "Battle Card", "Counts your link battles with friends who hold it too; three wins earn a prize from the deliveryman", "", "", 1018,
                    ex::card(1018, 384, extra_id++, 2, 0, 0, "BATTLE CARD",
                             {"Battle friends who hold this", "CARD over the link. The card",
                              "keeps the score. Win three", "for a prize."},
@@ -1083,7 +1083,7 @@ std::vector<EventGift> event_gifts(const std::string& game_code) {
     const uint16_t set = c.species == 41 ? 0 : static_cast<uint16_t>(i + 1);
     const uint16_t flag = static_cast<uint16_t>(1004 + i);
     out.push_back({std::string("altering-") + c.key, "Altering Cave",
-                   std::string("Wild ") + c.name + " in the cave on " + cave.place_name, "altering", c.name, flag,
+                   std::string("Wild ") + c.name + " in the Altering Cave (" + cave.place_name + ")", "altering", c.name, flag,
                    cave_card(c, flag, id++, cave), cave_script(c, set, cave)});
   }
   return out;

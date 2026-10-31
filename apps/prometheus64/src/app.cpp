@@ -2414,7 +2414,7 @@ std::vector<const Game*> App::second_game_choices() const {
 }
 
 std::string App::local_link_value() const {
-  if (game2_) return "Linked: " + game2_->title;
+  if (game2_) return "Linked: " + game2_->title + " (Enter ends it)";
   const auto choices = second_game_choices();
   if (choices.empty()) return "No other GBA game";
   return choices[static_cast<std::size_t>(std::clamp(local_choice_, 0, static_cast<int>(choices.size()) - 1))]->title;

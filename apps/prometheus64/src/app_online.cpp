@@ -433,6 +433,7 @@ void App::update_event() {
 
 void App::ensure_link_hardware() {
   close_event();
+  stop_local_link();  // a game links to one place at a time: the relay now
   if (!game_ || game_->system != System::GBA) return;
   const std::string link = link_mode(*game_);
   const std::string want = link == "cable" ? "mul_poke" : link == "wireless" ? "rfu" : "auto";
@@ -880,7 +881,10 @@ void App::draw_online() {
   const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_), H = static_cast<float>(out_h_);
   online_buttons_.clear();
   ui_.rect(0, 0, W, H, rgb(0x000000, 0.7f));
-  const float pw = std::min(W - 40 * s, 1100 * s), ph = std::min(H - 40 * s, 860 * s);
+  // The Event gifts page grows for Emerald's nine rows; the other pages keep their size.
+  const Game* events_game = online_page_ == OnlinePage::Events ? link_game() : nullptr;
+  const bool tall = events_game && event_rows(events_for(*events_game)).size() > 5;
+  const float pw = std::min(W - 40 * s, 1100 * s), ph = std::min(H - 40 * s, (tall ? 1000 : 860) * s);
   const float px = (W - pw) / 2, py = (H - ph) / 2;
   ui_.rect(px, py, pw, ph, kPanel, 24 * s);
   ui_.outline(px, py, pw, ph, rgb(0xFFFFFF, 0.06f), 24 * s, 1.5f * s);
@@ -978,8 +982,9 @@ void App::draw_online() {
     title("Event gifts", "Gifts from Pokemon's old events, received the way players did: your game's own Mystery Gift "
                          "(Ruby and Sapphire: Mystery Events), from a distribution machine or e-Reader the app plays.");
     const auto rows = event_rows(gifts);
-    const bool compact = rows.size() > 5;  // Emerald's nine: shorter rows, so the page still fits
-    const float by = (compact ? 1 : 9) * s;
+    const bool compact = rows.size() > 5;  // Emerald's nine: a little tighter, so the page still fits
+    const float h = (compact ? 66 : 70) * s;  // a button (52) with even room above and below
+    const float by = (h - 52 * s) / 2;
     for (std::size_t r = 0; r < rows.size(); ++r) {
       const std::vector<std::size_t>& row = rows[r];
       std::size_t pick = row[0];
@@ -992,12 +997,11 @@ void App::draw_online() {
       }
       const EventGift& e = gifts[pick];
       const bool open = e.key == event_key_;
-      const float h = (compact ? 54 : 70) * s;
       ui_.rect(x, y, inner, h, open ? kTile.with_alpha(1.0f) : kTile, 14 * s);
       if (open) ui_.outline(x, y, inner, h, kRed, 14 * s, 2 * s);
-      ui_.text(x + 24 * s, y + (compact ? 4 : 9) * s, e.name, (compact ? 20 : 22) * s, kText, true);
-      ui_.text(x + 24 * s, y + (compact ? 30 : 39) * s, ui_.fit(e.where, (compact ? 15 : 17) * s, inner - 520 * s),
-               (compact ? 15 : 17) * s, kDim);
+      ui_.text(x + 24 * s, y + (compact ? 8 : 9) * s, e.name, (compact ? 21 : 22) * s, kText, true);
+      ui_.text(x + 24 * s, y + (compact ? 37 : 39) * s, ui_.fit(e.where, (compact ? 16 : 17) * s, inner - (row.size() > 1 && !open ? 580 : 240) * s),
+               (compact ? 16 : 17) * s, kDim);
       float right = x + inner - 20 * s;
       if (open) {
         right -= online_button(right, y + by, "Close event", s, false, kObEventClose, true);
@@ -1010,14 +1014,14 @@ void App::draw_online() {
         right -= 14 * s;
         right -= online_button(right, y + by, ">", s, false, kObEventFirst + kObEventNext + static_cast<int>(r), true);
         const float box = std::max(ui_.measure(e.choice, 19 * s, true), 150 * s) + 20 * s;
-        ui_.text(right - box / 2, y + by + 12 * s, e.choice, 19 * s, kText, true, Align::Center);
+        ui_.text(right - box / 2, y + by + 15 * s, e.choice, 19 * s, kText, true, Align::Center);  // level with the buttons' text
         right -= box;
         online_button(right, y + by, "<", s, false, kObEventFirst + kObEventPrev + static_cast<int>(r), true);
       }
-      y += h + (compact ? 6 : 8) * s;
+      y += h + 8 * s;
     }
     if (!event_key_.empty()) {
-      ui_.text(x, y + 4 * s, "Event open: " + gifts_.status(), 20 * s, kRed, true);
+      ui_.text(x, y + 4 * s, "Event open: " + event_station_status(), 20 * s, kRed, true);
       y += 40 * s;
     } else {
       y += 8 * s;
@@ -1048,8 +1052,8 @@ void App::draw_online() {
       need += 26 * s * static_cast<float>(steps.back().size()) + 4 * s;
     }
     if (y + need > steps_end) {
-      ui_.text(x, y, "Every step, for each gift: the guide in the README (\"Pokemon: the lost events, restored\").", 18 * s, kDim);
-      y += 30 * s;
+      ui_.text(x, y + 6 * s, "Every step, for each gift: the guide in the README (\"Pokemon: the lost events, restored\").", 18 * s, kDim);
+      y += 36 * s;
     } else {
       for (const auto& lines : steps) {
         for (const auto& line : lines) {

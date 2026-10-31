@@ -206,6 +206,7 @@ Two of these games' luck events are almost impossible to plan for: **Mirage Isla
 Project Prometheus reads your running game the way a guide would and tells you, once, on the days you'd be lucky:
 
 - *"Mirage Island is out today! Sail to Route 130, west of Pacifidlog Town, with [your Pokémon] in your party."* The island is gone when the day changes, and that Pokémon has to stay in your party.
+- *"Mirage Island could be out today: [your Pokémon], in your PC ([box]), brings it out."* The game only looks at your party, but a matching Pokémon sitting in a PC box counts as soon as you move it into your party: the hint names the box, so you can fetch it and sail the same day.
 - *"Lucky day at the Lottery Corner: today's number matches N digits of [your Pokémon]'s ID. Draw a ticket at the Lilycove Department Store to win a [prize]."* (2 digits: PP Up; 3: Exp. Share; 4: Max Revive; 5: Master Ball.) Your party and every PC box count. Once you've drawn today's ticket, it stays quiet.
 
 It never changes the odds or your game, and says nothing on ordinary days. Because the game's clock follows your computer's real clock, the daily numbers change every real day, as on a cartridge. Turn the hints off with **Daily hints** in the in-game menu.

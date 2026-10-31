@@ -111,14 +111,37 @@ std::vector<DailyHint> daily_hints(const std::string& game_code, const GbaMemory
   std::vector<MonHead> party;
   for (int i = 0; i < party_count; ++i) party.push_back(read_mon(memory, l->party + i * kPartyMonSize));
 
-  // Mirage Island: any party Pokémon (eggs too, as the game checks only the species).
+  // Mirage Island: any party Pokémon (eggs too, as the game checks only the species). The game
+  // looks at the party only; a matching Pokémon in the PC is worth knowing about too: moved into
+  // the party, it brings the island out the same day. Either way the hint is told once a day.
   const uint16_t mirage = var(kVarMirageRndH);
+  bool mirage_told = false;
   for (const MonHead& m : party) {
     if (m.present && (m.personality & 0xFFFF) == mirage) {
       out.push_back({"mirage:" + std::to_string(mirage),
                      "Mirage Island is out today! Sail to Route 130, west of Pacifidlog Town, with " + m.nickname +
                          " in your party. It's gone when the day changes."});
+      mirage_told = true;
       break;
+    }
+  }
+  for (int b = 0; b < kBoxes && !mirage_told; ++b) {
+    for (int s = 0; s < kBoxSlots && !mirage_told; ++s) {
+      const MonHead m = read_mon(memory, storage + 4 + (b * kBoxSlots + s) * kBoxMonSize);
+      if (!m.present || (m.personality & 0xFFFF) != mirage) continue;
+      // struct PokemonStorage: the box names follow the boxes, 9 bytes each ("BOX 1" unless renamed).
+      std::string box = "Box " + std::to_string(b + 1);
+      if (const uint8_t* name = memory(storage + 4 + kBoxes * kBoxSlots * kBoxMonSize + 9u * b, 9)) {
+        std::string named = decode_name(name, 9);
+        named.erase(named.find_last_not_of(' ') + 1);
+        named.erase(0, named.find_first_not_of(' '));
+        if (!named.empty()) box = named;
+      }
+      out.push_back({"mirage:" + std::to_string(mirage),
+                     "Mirage Island could be out today: " + m.nickname + ", in your PC (" + box +
+                         "), brings it out. Put " + m.nickname +
+                         " in your party and sail to Route 130, west of Pacifidlog Town. It's gone when the day changes."});
+      mirage_told = true;
     }
   }
 
