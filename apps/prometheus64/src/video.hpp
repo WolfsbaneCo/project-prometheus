@@ -51,8 +51,9 @@ class Video {
   void hardware_frame(unsigned width, unsigned height);
   // With a prescale, the frame is kept and redrawn when it is next shown (draw_game), at the size
   // the window then needs; frames that are never shown (speeding up) cost nothing more.
+  // `xbrz_max`: xBRZ redraws at most this many times the size (the rest of the way, crisp pixels).
   void software_frame(const void* data, unsigned width, unsigned height, std::size_t pitch, retro_pixel_format format,
-                      Prescale prescale = Prescale::None);
+                      Prescale prescale = Prescale::None, int xbrz_max = 9);
   void clear_frame() { frame_w_ = frame_h_ = 0; }
   bool has_frame() const { return frame_w_ > 0; }
 
@@ -88,6 +89,7 @@ class Video {
   Prescale raw_prescale_ = Prescale::None;
   bool raw_dirty_ = false;
   int raw_factor_ = 0;
+  int raw_xbrz_max_ = 9;
   bool frame_is_hw_ = false;
   unsigned frame_w_ = 0, frame_h_ = 0;
 };

@@ -322,9 +322,10 @@ void to_xrgb(const void* data, unsigned w, unsigned h, std::size_t pitch, retro_
 }  // namespace
 
 void Video::software_frame(const void* data, unsigned width, unsigned height, std::size_t pitch,
-                           retro_pixel_format format, Prescale prescale) {
+                           retro_pixel_format format, Prescale prescale, int xbrz_max) {
   frame_is_hw_ = false;
   raw_prescale_ = prescale;
+  raw_xbrz_max_ = xbrz_max;
   if (prescale != Prescale::None) {
     to_xrgb(data, width, height, pitch, format, raw_);
     raw_w_ = width;
@@ -375,6 +376,7 @@ void Video::prescale_for(int out_w, int out_h) {
     const double fit = std::min(static_cast<double>(out_w) / raw_w_, static_cast<double>(out_h) / raw_h_);
     factor = std::clamp(static_cast<int>(std::floor(fit + 0.01)), 2, 9);
     if (factor > 6 && factor < 9) factor = 6;
+    factor = std::max(2, std::min(factor, raw_xbrz_max_));  // a look that keeps more of the game's pixels
   }
   if (!raw_dirty_ && factor == raw_factor_) return;
   raw_dirty_ = false;

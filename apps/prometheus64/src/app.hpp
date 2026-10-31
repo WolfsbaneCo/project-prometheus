@@ -118,6 +118,9 @@ class App {
   float draw_button(float x, float y, const std::string& label, float s, bool primary, bool focused, int kind,
                     int arg = 0, bool right_aligned = false, bool enabled = true);
   void open_controls();
+  // Whose controls the Controls screen edits: the game being played (each game keeps its own), or
+  // the usual ones, from the library (empty).
+  std::string controls_game() const { return game_ ? game_->id : std::string(); }
   void close_controls();
   void controls_action(int action);
   std::vector<ControlsEntry> controls_entries() const;
@@ -198,7 +201,8 @@ class App {
   bool supersampling(const std::string& game_id) const;
   int texture_look(const std::string& game_id) const;
   void run_frames();
-  void run_one_frame();  // the game, and the second game when two are linked here
+  void run_one_frame();
+  int fast_times() const;  // how many times faster a GBA game runs with the speed key held (2, 4, 6, 8)  // the game, and the second game when two are linked here
 
   // Local link play (local_link.hpp): a second of the player's GBA games, linked to this one.
   std::vector<const Game*> second_game_choices() const;

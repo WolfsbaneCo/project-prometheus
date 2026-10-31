@@ -21,7 +21,7 @@ enum UiAction { kUp, kDown, kLeft, kRight, kAccept, kBack, kMenu, kPrevTab, kNex
 enum DialogKind { kFolderChosen = 1, kSaveChosen = 2, kKeyChosen = 3, kKeySaveAs = 4 };
 enum MenuId {
   kResume, kSaveState, kLoadState, kSlot, kPicture, kTextures, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
-  kPlayers, kControlsItem, kEventsItem, kHintsItem, kLocalLinkItem, kLocalFocusItem, kReset, kQuit
+  kPlayers, kControlsItem, kEventsItem, kHintsItem, kLocalLinkItem, kLocalFocusItem, kSpeedItem, kReset, kQuit
 };
 // Clickable areas (App::Hit::kind).
 enum HitKind {
