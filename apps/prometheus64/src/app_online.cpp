@@ -881,9 +881,13 @@ void App::draw_online() {
   const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_), H = static_cast<float>(out_h_);
   online_buttons_.clear();
   ui_.rect(0, 0, W, H, rgb(0x000000, 0.7f));
-  // The Event gifts page grows for Emerald's nine rows; the other pages keep their size.
+  // The Event gifts page grows for Emerald's nine rows, and the main page for a Pokémon game's
+  // third card (cable or wireless); the other pages keep their size.
   const Game* events_game = online_page_ == OnlinePage::Events ? link_game() : nullptr;
-  const bool tall = events_game && event_rows(events_for(*events_game)).size() > 5;
+  bool wireless_capable = false;
+  const bool three_cards = online_page_ == OnlinePage::Main && has_group_key() && link_game() &&
+                           pokemon_gen3(*link_game(), &wireless_capable) && wireless_capable;
+  const bool tall = three_cards || (events_game && event_rows(events_for(*events_game)).size() > 5);
   const float pw = std::min(W - 40 * s, 1100 * s), ph = std::min(H - 40 * s, (tall ? 1000 : 860) * s);
   const float px = (W - pw) / 2, py = (H - ph) / 2;
   ui_.rect(px, py, pw, ph, kPanel, 24 * s);
