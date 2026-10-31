@@ -34,7 +34,7 @@ The quick menu shows each item's shortcut next to it, and the shortcuts work whi
 
 **Changing the controls:** press **C** in the library (or Menu > Controls). Pick Keyboard, Left half, Right half or Controller, click a control and press the key or button you want. A key that is already in use swaps places, so nothing is left without a key. Changes save straight away; "Reset to defaults" undoes them.
 
-**GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger. Hold **Space** to speed the game up (4x, without sound; not during link play or an event); change the key on the Controls screen.
+**GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger. Hold **Space** to speed the game up (4x, its sound sped up with it; not during link play or an event); change the key on the Controls screen.
 
 **The cartridge clock** (for GBA games with one: growing berries, daily events) runs on your computer's real time, so time passes while the app is closed, as it did with the cartridge's battery.
 
@@ -229,7 +229,7 @@ It never changes the odds or your game, and says nothing on ordinary days. Becau
 
 | Look | |
 |---|---|
-| Smooth (default) | Smooth, clean edges, as if redrawn in HD (xBRZ, the filter VBA-M offers), keeping small details and text |
+| Smooth (default) | Smooth, clean edges, as if redrawn in HD (xBRZ, the filter VBA-M offers), keeping small details and text, with a light, halo-free sharpening that makes it a touch crisper than VBA-M |
 | Clean | Crisp, with jagged staircase edges rounded off |
 | Sharp | Crisp pixels, every one the same size at any screen size, in the game's own colours |
 | Handheld | The GBA's own screen: its muted colours, pixel grid and the slight ghosting some games relied on for transparency |

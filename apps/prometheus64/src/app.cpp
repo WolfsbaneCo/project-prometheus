@@ -89,7 +89,10 @@ const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 
 // GBA pictures: 240x160 pixel art on a big screen. Smooth, the default, is xBRZ, the filter the
 // owner knew from VBA-M: smooth, clean edges without melting small details or text (xBR, used
-// before, rounded a whole game pixel at a time and did). Clean is MMPX at 4x with crisp one-pixel
+// before, rounded a whole game pixel at a time and did). As VBA-M draws it, xBRZ is made at the
+// largest whole size that fits and stretched the last bit with crisp pixels, never blurred; then
+// a light sharpening that stays within each pixel's neighbours tightens the edges xBRZ blends,
+// without halos: a touch crisper than VBA-M. Clean is MMPX at 4x with crisp one-pixel
 // edges: rounded staircases, with text and thin lines kept as drawn; Sharp keeps every pixel a
 // square. gpSP's colour correction mutes the colours toward the GBA's dark, unlit screen:
 // Handheld is that screen on purpose, with its pixel grid and slight ghosting. Pixel-perfect is
@@ -102,12 +105,13 @@ struct GbaLookDef {
   float grid;
   bool colour_correction, ghosting, whole_pixels;
   Prescale prescale;  // redrawn bigger on the CPU first (Video::software_frame)
+  float sharpen = 0.0f;  // halo-free sharpening after it (Look::sharpen_within): xBRZ's blended edges tightened
 };
 const GbaLookDef kGbaLooks[] = {
     {"Sharp", "Crisp pixels filling the screen, in the game's own colours", Look::Pixels::Sharp, 0.0f, false, false, false,
      Prescale::None},
-    {"Smooth", "Smooth, clean edges, as if redrawn in HD (xBRZ)", Look::Pixels::Plain, 0.0f, false, false, false,
-     Prescale::Xbrz},
+    {"Smooth", "Smooth, clean edges, as if redrawn in HD (xBRZ)", Look::Pixels::Sharp, 0.0f, false, false, false,
+     Prescale::Xbrz, 0.6f},
     {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false,
      Prescale::None},
     {"Pixel-perfect", "Every pixel exactly the same size, at a whole-number scale", Look::Pixels::Sharp, 0.0f, false, false,
@@ -152,11 +156,12 @@ bool App::init(std::string& error) {
   }
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
-  if (settings_.get_int("gba_looks", 0) < 2) {
+  if (settings_.get_int("gba_looks", 0) < 3) {
     // The GBA looks changed while the owner was choosing them (Smooth became xBRZ, Clean MMPX):
-    // choices saved before then start again from the default, Smooth.
+    // choices saved before then start again from the default, Smooth. (3: once more for 0.2.1,
+    // after looks picked while testing were still saved on the owner's computer.)
     settings_.clear_game_key("gba_look");
-    settings_.set_int("gba_looks", 2);
+    settings_.set_int("gba_looks", 3);
     settings_.save();
   }
   load_group_key();
@@ -269,7 +274,7 @@ bool App::init(std::string& error) {
       }
       frames += n;
     }
-    if (!fast_ && !focus2_) audio_.push(d, n);
+    if (!focus2_) audio_.push(d, n);
   };
   core_.hooks.input_poll = [] {};
   core_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) -> int16_t {
@@ -624,6 +629,8 @@ void App::stop_game() {
   if (const std::string err = core_.open(n64_core_path_); !err.empty()) toast(err, 8);
   input_.set_gba(false);
   audio_.close();
+  fast_ = false;  // a game left mid speed-up: the next one starts at its own pace
+  audio_.set_fast(1);
   video_.clear_frame();
   game_.reset();
   screen_ = Screen::Home;
@@ -700,6 +707,8 @@ Look App::gba_look_for(const Game& game, const Core& core) const {
   const GbaLookDef& g = kGbaLooks[gba_look(settings_, game.id)];
   l.fill = static_cast<FillMode>(fill_mode(&game));
   l.pixels = g.pixels;
+  l.sharpen = g.sharpen;
+  l.sharpen_within = g.sharpen > 0.0f;
   l.grid = g.grid;
   l.whole_pixels = g.whole_pixels;
   l.lines = 160;
@@ -972,12 +981,13 @@ void App::run_frames() {
   }
   // Speeding up (GBA, the speed key held): kFastForward times the game's speed, by the clock.
   // Not while linked or at an event, where the other side expects the game's own pace. Its sound
-  // is left out (sped-up sound only stutters) and starts again cleanly afterwards.
+  // plays along, sped up as much (Audio::set_fast), and back to normal the moment it ends.
   const bool fast = game_ && game_->system == System::GBA && !link_.active() && !local_.active() && event_key_.empty() &&
                     overlay_ == Overlay::None && input_.speed_held();
   if (fast != fast_) {
     fast_ = fast;
     audio_.clear();
+    audio_.set_fast(fast ? kFastForward : 1);
     acc_ns_ = 0;
     speed_since_ns_ = 0;
   }
