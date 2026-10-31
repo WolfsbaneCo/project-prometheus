@@ -285,7 +285,10 @@ bool App::init(std::string& error) {
   };
   core_.hooks.input_poll = [] {};
   core_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) -> int16_t {
-    return focus2_ ? 0 : input_.retro_state(port, dev, idx, id);  // with two games here, the one in focus
+    // With two games here, the one in focus; and nothing while a menu is open over a game that
+    // keeps running behind it (link play), so the menu's keys don't also walk the character.
+    if (focus2_ || (overlay_ != Overlay::None && !online_game_)) return 0;
+    return input_.retro_state(port, dev, idx, id);
   };
   core_.hooks.rumble = [this](unsigned port, retro_rumble_effect effect, uint16_t strength) {
     if (net_.running() && online_game_) {
@@ -321,7 +324,7 @@ bool App::init(std::string& error) {
   };
   core2_.hooks.input_poll = [] {};
   core2_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) -> int16_t {
-    return focus2_ ? input_.retro_state(port, dev, idx, id) : 0;
+    return focus2_ && overlay_ == Overlay::None ? input_.retro_state(port, dev, idx, id) : 0;
   };
   core2_.hooks.rumble = [this](unsigned port, retro_rumble_effect effect, uint16_t strength) {
     return focus2_ && input_.rumble(port, effect == RETRO_RUMBLE_STRONG, strength);
@@ -988,7 +991,9 @@ void App::run_frames() {
     return;
   }
   // A linked GBA game keeps running behind the menus: the others' games are waiting on its link.
-  const bool linked = link_.active() && game_ && game_->system == System::GBA;
+  // Two games linked here keep running too: stopping either mid-trade breaks the link (the
+  // Cable Club drops both players), so F3, the menu and a window losing focus pause neither.
+  const bool linked = (link_.active() || local_.active()) && game_ && game_->system == System::GBA;
   if (screen_ != Screen::Playing || (overlay_ != Overlay::None && !linked)) {
     acc_ns_ = 0;
     speed_since_ns_ = 0;
@@ -1168,7 +1173,8 @@ void App::loop() {
     if (game_) run_frames();
     update_event();
     update_hints();
-    audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host()) && !link_.active()));
+    audio_.set_paused(!game_ || (overlay_ != Overlay::None && !(online_game_ && !net_.is_host()) && !link_.active() &&
+                                 !local_.active()));
     draw();
     ++frames_drawn;
 
@@ -1277,6 +1283,7 @@ void App::handle(const SDL_Event& e) {
       opt_.screenshot.empty() && !online_game_) {
     overlay_ = Overlay::Menu;  // pause when the window loses focus
     menu_index_ = 0;
+    picking_second_ = false;
   }
 
   // The Controls screen waiting for a key or button gets it before anything else can act on it.
@@ -1457,7 +1464,13 @@ void App::ui_action(int action) {
       case kLeft: menu_change(items[menu_index_].id, -1); break;
       case kRight: menu_change(items[menu_index_].id, 1); break;
       case kAccept: menu_change(items[menu_index_].id, 0); break;
-      case kBack: case kMenu: overlay_ = Overlay::None; break;
+      case kBack: case kMenu:
+        if (picking_second_) {
+          back_from_picking();
+        } else {
+          overlay_ = Overlay::None;
+        }
+        break;
       default: break;
     }
     return;
@@ -1466,6 +1479,7 @@ void App::ui_action(int action) {
     if (action == kMenu) {
       overlay_ = Overlay::Menu;
       menu_index_ = 0;
+      picking_second_ = false;
     }
     return;
   }
@@ -1488,6 +1502,14 @@ void App::ui_action(int action) {
 }
 
 std::vector<App::MenuItem> App::menu_items() const {
+  if (picking_second_) {
+    // "Link a second game": the player's other GBA games, one row each, and Back.
+    std::vector<MenuItem> pick;
+    const auto choices = second_game_choices();
+    for (std::size_t i = 0; i < choices.size(); ++i) pick.push_back({choices[i]->title, "", kPickGame + static_cast<int>(i)});
+    pick.push_back({"Back", "", kPickBack, "Esc"});
+    return pick;
+  }
   const std::string id = game_ ? game_->id : "";
   const Look look = current_look();
   const int preset = std::clamp(settings_.game_int(id, "preset", 0), 0, 3);
@@ -1673,19 +1695,19 @@ void App::menu_change(int id, int dir) {
         if (dir == 0) stop_local_link();
         break;
       }
-      const auto choices = second_game_choices();
-      if (choices.empty()) {
+      if (second_game_choices().empty()) {
         if (dir == 0) toast("Add another GBA game to your library to link two games here", 5);
         break;
       }
-      const int n = static_cast<int>(choices.size());
-      local_choice_ = ((local_choice_ + dir) % n + n) % n;
       if (dir == 0) {
-        start_local_link(*choices[static_cast<std::size_t>(local_choice_)]);
-        overlay_ = Overlay::None;
+        picking_second_ = true;  // the menu becomes the list of games to choose from
+        menu_index_ = 0;
       }
       break;
     }
+    case kPickBack:
+      if (dir == 0) back_from_picking();
+      break;
     case kLocalFocusItem:
       switch_local_focus();
       break;
@@ -1714,9 +1736,28 @@ void App::menu_change(int id, int dir) {
       if (dir == 0) stop_game();
       break;
     default:
+      if (id >= kPickGame && dir == 0) {
+        const auto choices = second_game_choices();
+        const std::size_t i = static_cast<std::size_t>(id - kPickGame);
+        picking_second_ = false;
+        if (i < choices.size()) {
+          const Game second = *choices[i];
+          overlay_ = Overlay::None;
+          start_local_link(second);
+        }
+      }
       break;
   }
   settings_.save();
+}
+
+// From the chooser back to the menu, on its "Link a second game" row.
+void App::back_from_picking() {
+  picking_second_ = false;
+  const auto items = menu_items();
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    if (items[i].id == kLocalLinkItem) menu_index_ = static_cast<int>(i);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1895,7 +1936,11 @@ void App::draw_menu() {
   add_hit(px, py, pw, ph, kHitPanel);
   ui_.image(ui_.logo(), px + 30 * s, py + 30 * s, 48 * s, 48 * s);
   ui_.text(px + 94 * s, py + 30 * s, ui_.fit(game_ ? game_->title : "", 28 * s, pw - 130 * s, true), 28 * s, kText, true);
-  const std::string state = !online_game_ ? "Paused" : net_.is_host() ? "Online: paused for everyone" : "Online: the game keeps going";
+  const std::string state = picking_second_ ? "Link a second game: choose the game to link with this one"
+                            : local_.active() || link_.active() ? "Linked: the game keeps running behind this menu"
+                            : !online_game_ ? "Paused"
+                            : net_.is_host() ? "Online: paused for everyone"
+                                             : "Online: the game keeps going";
   ui_.text(px + 94 * s, py + 66 * s, state, 18 * s, kDim);
   float y = py + 120 * s;
   for (int i = 0; i < static_cast<int>(items.size()); ++i) {
@@ -1914,7 +1959,7 @@ void App::draw_menu() {
       ui_.text(kx + 8 * s, y + 15 * s, items[i].key, 15 * s, off ? kFaint : sel ? kText : kDim, true);
     }
     if (!items[i].value.empty()) {
-      const bool adjustable = items[i].id >= kSlot && items[i].id <= kVolume;
+      const bool adjustable = (items[i].id >= kSlot && items[i].id <= kVolume) || items[i].id == kSpeedItem;
       if (adjustable && sel) {
         // Clickable arrows either side of the value.
         const float bs = 32 * s, by = y + (row - 6 * s - bs) / 2, inc_x = px + pw - 36 * s - bs;
@@ -2453,9 +2498,7 @@ std::vector<const Game*> App::second_game_choices() const {
 
 std::string App::local_link_value() const {
   if (game2_) return "Linked: " + game2_->title + " (Enter ends it)";
-  const auto choices = second_game_choices();
-  if (choices.empty()) return "No other GBA game";
-  return choices[static_cast<std::size_t>(std::clamp(local_choice_, 0, static_cast<int>(choices.size()) - 1))]->title;
+  return second_game_choices().empty() ? "No other GBA game" : "Choose a game";
 }
 
 void App::start_local_link(const Game& second) {

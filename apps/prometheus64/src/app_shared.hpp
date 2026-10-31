@@ -21,7 +21,8 @@ enum UiAction { kUp, kDown, kLeft, kRight, kAccept, kBack, kMenu, kPrevTab, kNex
 enum DialogKind { kFolderChosen = 1, kSaveChosen = 2, kKeyChosen = 3, kKeySaveAs = 4 };
 enum MenuId {
   kResume, kSaveState, kLoadState, kSlot, kPicture, kTextures, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
-  kPlayers, kControlsItem, kEventsItem, kHintsItem, kLocalLinkItem, kLocalFocusItem, kSpeedItem, kReset, kQuit
+  kPlayers, kControlsItem, kEventsItem, kHintsItem, kLocalLinkItem, kLocalFocusItem, kSpeedItem, kReset, kQuit,
+  kPickBack, kPickGame  // the chooser for "Link a second game": Back, then one row per game (kPickGame + i)
 };
 // Clickable areas (App::Hit::kind).
 enum HitKind {
