@@ -570,6 +570,7 @@ bool App::start_game(const Game& game) {
     return false;
   }
   game_ = game;
+  input_.load_bindings(settings_, game.id);  // its own controls, if it has any
   game_started_ns_ = SDL_GetTicksNS();
   session_saved_ = false;
   // Its progress may be newer on Google Drive (another computer played since): check now, in the
@@ -628,6 +629,7 @@ void App::stop_game() {
   loaded_system_ = System::N64;
   if (const std::string err = core_.open(n64_core_path_); !err.empty()) toast(err, 8);
   input_.set_gba(false);
+  input_.load_bindings(settings_);  // back to the usual controls
   audio_.close();
   fast_ = false;  // a game left mid speed-up: the next one starts at its own pace
   audio_.set_fast(1);
@@ -2177,7 +2179,7 @@ void App::open_controls() {
 
 void App::close_controls() {
   controls_capture_ = false;
-  input_.save_bindings(settings_);
+  input_.save_bindings(settings_, controls_game());
   settings_.save();
   overlay_ = controls_return_;
 }
@@ -2217,7 +2219,7 @@ void App::controls_action(int action) {
         } else {
           input_.reset_pad();
         }
-        input_.save_bindings(settings_);
+        input_.save_bindings(settings_, controls_game());
         settings_.save();
         toast("Controls reset to the defaults");
       } else {
@@ -2235,7 +2237,7 @@ bool App::handle_capture(const SDL_Event& e) {
   const bool keyboard_tab = controls_tab_ < Input::kKeyLayouts;
   auto finish = [&]() {
     controls_capture_ = false;
-    input_.save_bindings(settings_);
+    input_.save_bindings(settings_, controls_game());
     settings_.save();
   };
   switch (e.type) {
@@ -2300,7 +2302,10 @@ void App::draw_controls() {
   ui_.outline(px, py, pw, ph, rgb(0xFFFFFF, 0.06f), 24 * s, 1.5f * s);
   add_hit(px, py, pw, ph, kHitPanel);
   ui_.text(px + 40 * s, py + 30 * s, "Controls", 34 * s, kText, true);
-  ui_.text(px + 40 * s, py + 78 * s, "Click a control (or select it and press Enter), then press the key or button you want for it.",
+  ui_.text(px + 40 * s, py + 78 * s,
+           ui_.fit(game_ ? "For " + game_->title + " only: each game keeps its own controls. Click a control, then press its new key or button."
+                         : "Your usual controls, for every game you haven't set up on its own. Click a control, then press its new key or button.",
+                   18 * s, pw - 80 * s),
            18 * s, kDim);
 
   // Tabs.

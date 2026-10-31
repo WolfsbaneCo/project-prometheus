@@ -118,6 +118,9 @@ class App {
   float draw_button(float x, float y, const std::string& label, float s, bool primary, bool focused, int kind,
                     int arg = 0, bool right_aligned = false, bool enabled = true);
   void open_controls();
+  // Whose controls the Controls screen edits: the game being played (each game keeps its own), or
+  // the usual ones, from the library (empty).
+  std::string controls_game() const { return game_ ? game_->id : std::string(); }
   void close_controls();
   void controls_action(int action);
   std::vector<ControlsEntry> controls_entries() const;

@@ -102,8 +102,10 @@ class Input {
   bool bind_pad(int button, const SDL_Event& e);
   void reset_keys(int layout);
   void reset_pad();
-  void load_bindings(const Settings& settings);
-  void save_bindings(Settings& settings) const;
+  // A game's own controls (`game_id`), else the usual ones (no id: the ones set from the library).
+  void load_bindings(const Settings& settings, const std::string& game_id = {});
+  // Saves the controls as `game_id`'s own, or as the usual ones when there is no id.
+  void save_bindings(Settings& settings, const std::string& game_id = {}) const;
 
  private:
   struct Pad {

@@ -552,17 +552,18 @@ bool Input::pad_input_held(SDL_Gamepad* g, const PadInput& in) const {
   return axis(g, a) * static_cast<float>(in.sign) > (trigger ? kTriggerOn : kStickOn);
 }
 
-void Input::load_bindings(const Settings& settings) {
+void Input::load_bindings(const Settings& settings, const std::string& game_id) {
+  // Settings::game falls back to the usual value where the game has none of its own.
   for (int l = 0; l < kKeyLayouts; ++l) {
     keys_[l] = kDefaultKeys[l];
     for (int c = 0; c < kControlCount; ++c) {
-      const int v = settings.get_int("keys." + std::to_string(l) + "." + kControlIds[c], -1);
+      const int v = settings.game_int(game_id, "keys." + std::to_string(l) + "." + kControlIds[c], -1);
       if (v > 0 && v < SDL_SCANCODE_COUNT) keys_[l][c] = static_cast<SDL_Scancode>(v);
     }
     // Speed came later than the other controls: where a player already gave its default key
     // (Space) to something else, speed starts with no key rather than taking it.
     for (int c = 0; c < kSpeed; ++c) {
-      if (keys_[l][c] == keys_[l][kSpeed] && settings.get_int("keys." + std::to_string(l) + ".speed", -1) <= 0) {
+      if (keys_[l][c] == keys_[l][kSpeed] && settings.game_int(game_id, "keys." + std::to_string(l) + ".speed", -1) <= 0) {
         keys_[l][kSpeed] = SDL_SCANCODE_UNKNOWN;
       }
     }
@@ -570,17 +571,24 @@ void Input::load_bindings(const Settings& settings) {
   pad_ = default_pad();
   for (int b = 0; b < kButtonCount; ++b) {
     std::vector<PadInput> list;
-    if (decode(settings.get(std::string("pad.") + kControlIds[b]), list)) pad_[b] = list;
+    if (decode(settings.game(game_id, std::string("pad.") + kControlIds[b], ""), list)) pad_[b] = list;
   }
 }
 
-void Input::save_bindings(Settings& settings) const {
+void Input::save_bindings(Settings& settings, const std::string& game_id) const {
+  auto set = [&](const std::string& key, const std::string& value) {
+    if (game_id.empty()) {
+      settings.set(key, value);
+    } else {
+      settings.set_game(game_id, key, value);
+    }
+  };
   for (int l = 0; l < kKeyLayouts; ++l) {
     for (int c = 0; c < kControlCount; ++c) {
-      settings.set_int("keys." + std::to_string(l) + "." + kControlIds[c], static_cast<int>(keys_[l][c]));
+      set("keys." + std::to_string(l) + "." + kControlIds[c], std::to_string(static_cast<int>(keys_[l][c])));
     }
   }
-  for (int b = 0; b < kButtonCount; ++b) settings.set(std::string("pad.") + kControlIds[b], encode(pad_[b]));
+  for (int b = 0; b < kButtonCount; ++b) set(std::string("pad.") + kControlIds[b], encode(pad_[b]));
 }
 
 }  // namespace p64

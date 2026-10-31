@@ -40,6 +40,22 @@ int main() {
   // Corrupt settings fall back to defaults.
   Settings bad; bad.set("pad.a", "zz"); bad.set("keys.0.up", "99999"); Input in3; in3.init(); in3.load_bindings(bad);
   CHECK(in3.pad_label(kA) == "A"); CHECK(in3.key(0, kStickUp) == SDL_SCANCODE_UP);
+  // Per game: a game's own controls are saved apart from the usual ones and come back with it; a
+  // game without any uses the usual ones.
+  Settings pg; Input usual; usual.init(); usual.save_bindings(pg);  // the usual: defaults
+  Input ruby; ruby.init(); ruby.bind_key(0, kA, SDL_SCANCODE_K); ruby.bind_pad(kA, btn(SDL_GAMEPAD_BUTTON_NORTH));
+  ruby.save_bindings(pg, "AXVE-ruby");
+  Input check; check.init();
+  check.load_bindings(pg, "AXVE-ruby");
+  CHECK(check.key(0, kA) == SDL_SCANCODE_K); CHECK(check.pad_label(kA) == "Y");
+  check.load_bindings(pg, "BPEE-emerald");  // never set up on its own: the usual
+  CHECK(check.key(0, kA) == SDL_SCANCODE_X); CHECK(check.pad_label(kA) == "A");
+  check.load_bindings(pg);  // back to the usual
+  CHECK(check.key(0, kA) == SDL_SCANCODE_X);
+  // Changing the usual controls later doesn't change a game that has its own.
+  Input usual2; usual2.init(); usual2.bind_key(0, kA, SDL_SCANCODE_J); usual2.save_bindings(pg);
+  check.load_bindings(pg, "AXVE-ruby"); CHECK(check.key(0, kA) == SDL_SCANCODE_K);
+  check.load_bindings(pg, "BPEE-emerald"); CHECK(check.key(0, kA) == SDL_SCANCODE_J);
   std::filesystem::remove(file);
   std::printf("%s (%d failures)\n", fails ? "FAILED" : "all passed", fails);
   return fails != 0;
