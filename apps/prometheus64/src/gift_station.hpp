@@ -103,6 +103,7 @@ class GiftStation {
   std::vector<uint8_t> link_player_block() const;
 
   // Mystery Gift.
+  void holder_visit(const std::vector<uint8_t>& game_data);
   void mg_step();
   void mg_send(uint16_t ident, std::vector<uint8_t> data);
   std::vector<uint8_t> client_script(std::initializer_list<std::pair<uint32_t, uint32_t>> cmds) const;

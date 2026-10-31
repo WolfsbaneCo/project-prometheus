@@ -411,6 +411,8 @@ void Video::begin_present(int out_w, int out_h) {
   gl::glClear(GL_COLOR_BUFFER_BIT);
 }
 
+void Video::set_viewport(int x, int y, int w, int h) { gl::glViewport(x, y, w, h); }
+
 void Video::draw_quad(const float src[4], const float dst[4], bool background, float lod, float dim, const Look& look,
                       float step_x, float step_y, float alpha) {
   gl::glUseProgram(program_);

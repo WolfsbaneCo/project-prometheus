@@ -52,7 +52,9 @@ enum : uint16_t {
   kMgReadyEnd = 20,
   kMgDynamicMsg = 21,
   kMgCard = 22,
+  kMgStamp = 24,
   kMgRamScript = 25,
+  kMgEReaderTrainer = 26,
 };
 enum : uint32_t {
   kCliReturn = 1,
@@ -64,15 +66,25 @@ enum : uint32_t {
   kCliCopyMsg = 12,
   kCliAskToss = 13,
   kCliLoadTossResponse = 14,
+  kCliSaveStamp = 16,
   kCliSaveRamScript = 17,
+  kCliRecvEReaderTrainer = 18,
   kCliSendReadyEnd = 20,
 };
 enum : uint32_t {  // what the game says at the end
   kCliMsgCardReceived = 2,
+  kCliMsgStampReceived = 4,
   kCliMsgHadCard = 5,
+  kCliMsgHadStamp = 6,
+  kCliMsgNoRoomStamps = 8,
   kCliMsgCantAccept = 10,
+  kCliMsgTrainerReceived = 12,
   kCliMsgBufferFailure = 14,
 };
+// struct MysteryGiftLinkGameData (pokeemerald include/mystery_gift.h): what the game sends. The card's
+// metadata starts word-aligned, at 32 (checked against the game's own data).
+constexpr std::size_t kGameDataCardFlag = 20, kGameDataWords = 22, kGameDataStampSpecies = 40, kGameDataStampIds = 54,
+                      kGameDataMaxStamps = 68;
 
 void put32be(std::vector<uint8_t>& out, uint32_t v) {
   out.push_back(static_cast<uint8_t>(v >> 24));
@@ -640,6 +652,52 @@ void GiftStation::mg_send(uint16_t ident, std::vector<uint8_t> data) {
                                      data.begin() + static_cast<std::ptrdiff_t>(std::min(data.size(), at + 252))));
 }
 
+// The game holds this card already: a stamp for a Stamp Card, the trainer for a Visiting Trainer
+// card whose password the survey has, else nothing new.
+void GiftStation::holder_visit(const std::vector<uint8_t>& in) {
+  auto had_card = [&] {
+    note("the game has this card already");
+    mg_send(kMgClientScript, client_script({{kCliSendReadyEnd, 0}, {kCliReturn, kCliMsgHadCard}}));
+    mg_state_ = 9;
+  };
+  if (!gift_.trainer.empty()) {
+    bool match = gift_.password.size() == 4;
+    for (std::size_t i = 0; match && i < 4; ++i) match = get16(&in[kGameDataWords + 2 * i]) == gift_.password[i];
+    if (!match) return had_card();
+    note("the survey has the password: sending the trainer");
+    mg_send(kMgClientScript, client_script({{kCliRecv, kMgEReaderTrainer}, {kCliRecvEReaderTrainer, 0}, {kCliSendReadyEnd, 0},
+                                            {kCliReturn, kCliMsgTrainerReceived}}));
+    mg_send(kMgEReaderTrainer, gift_.trainer);
+    mg_state_ = 4;
+    return;
+  }
+  if (gift_.stamps.empty()) return had_card();
+  const std::size_t max = std::min<std::size_t>(in[kGameDataMaxStamps], 7);
+  std::size_t have = 0;
+  auto on_card = [&](uint32_t stamp) {
+    for (std::size_t i = 0; i < max; ++i) {
+      if (get16(&in[kGameDataStampIds + 2 * i]) == (stamp >> 16) || get16(&in[kGameDataStampSpecies + 2 * i]) == (stamp & 0xFFFF))
+        return true;
+    }
+    return false;
+  };
+  for (std::size_t i = 0; i < max; ++i) have += get16(&in[kGameDataStampIds + 2 * i]) && get16(&in[kGameDataStampSpecies + 2 * i]);
+  const auto next = std::find_if(gift_.stamps.begin(), gift_.stamps.end(), [&](uint32_t st) { return !on_card(st); });
+  if (have >= max || next == gift_.stamps.end()) {
+    note("the stamp card is full");
+    mg_send(kMgClientScript, client_script({{kCliSendReadyEnd, 0}, {kCliReturn, have >= max ? kCliMsgNoRoomStamps : kCliMsgHadStamp}}));
+    mg_state_ = 9;
+    return;
+  }
+  note("stamping the card");
+  std::vector<uint8_t> stamp;
+  put16(stamp, static_cast<uint16_t>(*next)), put16(stamp, static_cast<uint16_t>(*next >> 16));
+  mg_send(kMgClientScript, client_script({{kCliRecv, kMgStamp}, {kCliSaveStamp, 0}, {kCliSendReadyEnd, 0},
+                                          {kCliReturn, kCliMsgStampReceived}}));
+  mg_send(kMgStamp, stamp);
+  mg_state_ = 4;
+}
+
 void GiftStation::mg_step() {
   if (wait_ > 0) {
     --wait_;
@@ -671,11 +729,9 @@ void GiftStation::mg_step() {
         note("the game's data is not what a distributor expects");
         mg_send(kMgClientScript, client_script({{kCliSendReadyEnd, 0}, {kCliReturn, kCliMsgCantAccept}}));
         mg_state_ = 9;
-      } else if (get16(&in[20]) == gift_.card_flag) {
-        note("the game has this card already");
-        mg_send(kMgClientScript, client_script({{kCliSendReadyEnd, 0}, {kCliReturn, kCliMsgHadCard}}));
-        mg_state_ = 9;
-      } else if (get16(&in[20]) != 0) {
+      } else if (get16(&in[kGameDataCardFlag]) == gift_.card_flag && in.size() > kGameDataMaxStamps) {
+        holder_visit(in);
+      } else if (get16(&in[kGameDataCardFlag]) != 0) {
         note("the game has another card: asking to replace it");
         mg_send(kMgClientScript, client_script({{kCliAskToss, 0}, {kCliLoadTossResponse, 0}, {kCliSendLoaded, 0},
                                                 {kCliRecv, kMgClientScript}, {kCliCopyRecv, 0}}));

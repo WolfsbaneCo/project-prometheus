@@ -40,6 +40,7 @@ add_executable(prometheus64 WIN32
   src/net.cpp
   src/netplay.cpp
   src/link.cpp
+  src/local_link.cpp
   src/gift_station.cpp
   src/cable_station.cpp
   src/gift_catalog.cpp
@@ -87,7 +88,7 @@ target_link_libraries(p64_netsim PRIVATE SDL3::SDL3-static p64_curl)
 # A GBA game without a window, driven by a script: the test bench for the event gift station
 # (tools/giftsim.cpp). Not built by default:
 #   cmake --build build --target p64_giftsim
-add_executable(p64_giftsim EXCLUDE_FROM_ALL tools/giftsim.cpp src/core.cpp src/gift_station.cpp src/cable_station.cpp src/gift_catalog.cpp src/pokemon_hints.cpp)
+add_executable(p64_giftsim EXCLUDE_FROM_ALL tools/giftsim.cpp src/core.cpp src/local_link.cpp src/gift_station.cpp src/cable_station.cpp src/gift_catalog.cpp src/pokemon_hints.cpp)
 target_include_directories(p64_giftsim PRIVATE src third_party/libretro)
 target_link_libraries(p64_giftsim PRIVATE SDL3::SDL3-static)
 

@@ -23,6 +23,7 @@
 #include "cable_station.hpp"
 #include "gift_station.hpp"
 #include "link.hpp"
+#include "local_link.hpp"
 #include "netplay.hpp"
 #include "settings.hpp"
 #include "ui.hpp"
@@ -52,6 +53,7 @@ struct Options {
   std::string online_join;           // test mode: join this invite code at start
   bool link_host = false;            // test mode: play `rom` (GBA) and host a link (prints its code)
   std::string link_join;             // test mode: play `rom` (GBA) and join this link code
+  std::filesystem::path second;      // test mode: link this GBA game to `rom` on this computer
   bool online_start = false;         // test mode: the host starts as soon as everyone is ready
   uint32_t online_exit_frame = 0;    // test mode: print the RAM hash at this online frame and quit
   std::string setup_token;           // test mode: run the online setup with this key at start
@@ -186,8 +188,9 @@ class App {
   bool start_game(const Game& game);
   void stop_game();
   void restart_game_keep_progress();
-  void apply_core_options(const Game& game);
+  void apply_core_options(const Game& game, Core* target = nullptr);
   Look current_look() const;
+  Look gba_look_for(const Game& game, const Core& core) const;
   int fill_mode(const Game* game) const;  // the game's fill mode, never one that breaks it
   // Rendering size for a game: a fixed factor, or 0 to render at exactly render_height.
   int resolution_factor(const std::string& game_id) const;
@@ -195,6 +198,17 @@ class App {
   bool supersampling(const std::string& game_id) const;
   int texture_look(const std::string& game_id) const;
   void run_frames();
+  void run_one_frame();  // the game, and the second game when two are linked here
+
+  // Local link play (local_link.hpp): a second of the player's GBA games, linked to this one.
+  std::vector<const Game*> second_game_choices() const;
+  void start_local_link(const Game& second);
+  void stop_local_link();
+  void load_second_save();
+  void sync_second_save(bool force);
+  void switch_local_focus();
+  void draw_local_link_labels();
+  std::string local_link_value() const;  // the menu row's value: the game to link, or the one linked
   int refreshes_per_frame(double fps) const;
   void check_speed(double fps);
 
@@ -220,6 +234,16 @@ class App {
   SDL_GLContext gl_ = nullptr;
   Core core_;
   Video video_;
+  // The second game of a local link, in its own copy of the GBA core, and its picture.
+  Core core2_;
+  Video video2_;
+  std::optional<Game> game2_;
+  LocalLink local_;
+  std::string local_mode_;  // the link both games use ("cable", "wireless"); empty when not linked
+  bool focus2_ = false;     // the player controls (and hears) the second game
+  int local_choice_ = 0;    // the menu's pick among second_game_choices()
+  std::vector<uint8_t> last_saved2_, pending2_;
+  uint64_t pending2_since_ = 0;
   Audio audio_;
   Input input_;
   Ui ui_;

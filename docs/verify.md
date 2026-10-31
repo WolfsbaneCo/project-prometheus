@@ -80,3 +80,9 @@ Checked against the stand-in for Google with two Linux "computers" and Pokémon 
 - **Daily hints in the real game (Emerald).** The rules were checked against planted memory, not yet on a day when the real game's numbers came up. Check that a hint appears with a save whose Mirage number or lottery number matches, and that the island and the prize are really there.
 - **Altering Cave's other Pokémon in the real cave (Emerald).** The cave's setting is checked; walk into the Altering Cave on Route 103 after the deliveryman and check that the chosen Pokémon appears.
 - **Island trips.** Every ticket is checked up to the item and the ferry flags; sail with each (Emerald and Ruby/Sapphire from Lilycove after the Hall of Fame, FireRed/LeafGreen from Vermilion once the Sevii Islands are open) and meet the island's Pokémon.
+- **Battle e-Cards in the Battle Tower (Ruby, Sapphire).** The trainer is in the save and kept by the game's own check; start a new challenge at its level after the Hall of Fame and battle them.
+- **The Visiting Trainer in Sootopolis City (Emerald).** The trainer arrives in the save; walk into the Mystery Events House and battle them.
+- **A Battle Card's three wins (Emerald),** between two friends' games over link play.
+- **The Enigma Berry tree.** Plant the berry and check it grows over about four days and bears Enigma Berries with our picture.
+- **Jirachi traded to Emerald, FireRed or LeafGreen** with two games linked on one computer (Cable Club trade), and a Cable Club trade in general between two linked games.
+- **Two linked games on Windows:** the second copy of gpSP loads beside the first.

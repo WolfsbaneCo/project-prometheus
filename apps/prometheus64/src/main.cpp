@@ -54,6 +54,8 @@ int main(int argc, char** argv) {
       o.link_host = true;
     } else if (a == "--link-join") {
       o.link_join = next();
+    } else if (a == "--second") {
+      o.second = next();
     } else if (a == "--backup-connect") {
       o.backup_connect = true;
     } else if (a == "--backup-sync") {

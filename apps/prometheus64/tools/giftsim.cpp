@@ -30,6 +30,9 @@
 //   log                        print the stations' logs
 //   until <text> <frames>      run until the station's log contains the text (or give up)
 //   hints [code]               print today's Pokémon daily hints (pokemon_hints.hpp; code: BPEE)
+//   second, first              the commands after it go to a second game (its own copy of the
+//                              core, from a copy of the library) or back to the first
+//   locallink                  join the two games' link ports (local_link.hpp); both then run
 #include <SDL3/SDL_log.h>
 
 #include <cstdio>
@@ -43,6 +46,7 @@
 #include "core.hpp"
 #include "cable_station.hpp"
 #include "gift_station.hpp"
+#include "local_link.hpp"
 #include "pokemon_hints.hpp"
 
 namespace {
@@ -94,6 +98,7 @@ struct Bench {
   p64::GiftStation station;
   p64::CableStation cable;
   std::string code;  // the game's code, from its header ("BPEE")
+  std::string rom, savefile;
 
   // Where the save block's flags and variables are in RAM, for this game.
   // Emerald and FireRed/LeafGreen point to their save blocks; Ruby and Sapphire keep them fixed.
@@ -111,13 +116,12 @@ struct Bench {
   bool is_frlg() const { return code.rfind("BPR", 0) == 0 || code.rfind("BPG", 0) == 0; }
   bool is_rs() const { return code.rfind("AXV", 0) == 0 || code.rfind("AXP", 0) == 0; }
 
-  void step(int n) {
-    for (int i = 0; i < n; ++i) {
-      core.run();
-      station.update();
-      cable.update();
-      ++frames;
-    }
+  void step(int n);
+  void frame_once() {
+    core.run();
+    station.update();
+    cable.update();
+    ++frames;
   }
 
   void shot(const std::string& path) {
@@ -132,18 +136,26 @@ struct Bench {
   }
 };
 
-}  // namespace
+Bench* g_benches[2] = {};
+p64::LocalLink g_local;
 
-int main(int argc, char** argv) {
-  if (argc < 3) {
-    std::cerr << "usage: p64_giftsim <core library> <script>\n";
-    return 2;
+// Every running game advances together (two of them when a second game is loaded).
+void Bench::step(int n) {
+  for (int i = 0; i < n; ++i) {
+    for (int k = 0; k < 2; ++k) {
+      Bench* g = g_benches[k];
+      if (!g || !g->core.game_loaded()) continue;
+      if (g_local.active()) k == 0 ? g_local.before_first() : g_local.before_second();
+      g->frame_once();
+    }
   }
-  Bench b;
+}
+
+void setup(Bench& b) {
   b.core.system_dir = std::filesystem::temp_directory_path() / "p64_giftsim";
   b.core.save_dir = b.core.system_dir;
   std::filesystem::create_directories(b.core.system_dir);
-  b.core.hooks.video = [&](const void* data, unsigned width, unsigned height, std::size_t pitch) {
+  b.core.hooks.video = [&b](const void* data, unsigned width, unsigned height, std::size_t pitch) {
     if (!data) return;
     b.w = width;
     b.h = height;
@@ -153,18 +165,31 @@ int main(int argc, char** argv) {
   };
   b.core.hooks.audio = [](const int16_t*, std::size_t) {};
   b.core.hooks.input_poll = [] {};
-  b.core.hooks.input_state = [&](unsigned port, unsigned device, unsigned, unsigned id) -> int16_t {
+  b.core.hooks.input_state = [&b](unsigned port, unsigned device, unsigned, unsigned id) -> int16_t {
     if (port != 0 || device != RETRO_DEVICE_JOYPAD) return 0;
     if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return static_cast<int16_t>(b.buttons);
     return (b.buttons >> id) & 1;
   };
   b.core.hooks.message = [](const std::string& m) { std::cerr << "[core] " << m << "\n"; };
-  if (std::string err = b.core.open(argv[1]); !err.empty()) {
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  if (argc < 3) {
+    std::cerr << "usage: p64_giftsim <core library> <script>\n";
+    return 2;
+  }
+  Bench first, second;
+  g_benches[0] = &first;
+  g_benches[1] = &second;
+  setup(first);
+  setup(second);
+  if (std::string err = first.core.open(argv[1]); !err.empty()) {
     std::cerr << "core: " << err << "\n";
     return 1;
   }
-
-  std::string rom, savefile;
+  Bench* target = &first;
   std::ifstream script(argv[2]);
   std::string line;
   int lineno = 0;
@@ -174,6 +199,9 @@ int main(int argc, char** argv) {
     std::stringstream ss(line);
     std::string cmd;
     if (!(ss >> cmd)) continue;
+    Bench& b = *target;
+    std::string& rom = b.rom;
+    std::string& savefile = b.savefile;
     auto fail = [&](const std::string& why) {
       std::cerr << "line " << lineno << ": " << why << "\n";
       std::exit(1);
@@ -200,6 +228,20 @@ int main(int argc, char** argv) {
         b.station.attach(np);
         b.cable.attach(np);
       }
+    } else if (cmd == "second") {
+      if (!second.core.info().library_name) {
+        // gpSP keeps its state in globals: a second game needs its own copy of the library.
+        const std::filesystem::path copy = first.core.system_dir / ("second-" + std::filesystem::path(argv[1]).filename().string());
+        std::error_code ec;
+        std::filesystem::copy_file(argv[1], copy, std::filesystem::copy_options::overwrite_existing, ec);
+        if (std::string err = second.core.open(copy); !err.empty()) fail("second core: " + err);
+      }
+      target = &second;
+    } else if (cmd == "first") {
+      target = &first;
+    } else if (cmd == "locallink") {
+      g_local.start(first.core.netpacket(), second.core.netpacket());
+      if (!g_local.active()) fail("could not join the two games' link ports");
     } else if (cmd == "run") {
       int n = 0;
       ss >> n;
@@ -316,8 +358,15 @@ int main(int argc, char** argv) {
       bool found = false;
       for (const p64::EventGift& g : p64::event_gifts(code)) {
         if (g.key == key && g.cable) {
+          p64::EventGift event = g;
+          if (key == "jirachi") {
+            const p64::RubySapphireSave save = p64::read_ruby_sapphire_save(b.core.save_ram(), b.core.save_ram_size());
+            std::printf("jirachi: save %s, seed %04x, already caught %s\n", save.valid ? "valid" : "INVALID", save.seed,
+                        save.has_jirachi ? "yes" : "no");
+            event.script = p64::jirachi_event(save.seed);
+          }
           b.station.close();
-          b.cable.open(g);
+          b.cable.open(event);
           found = true;
         }
       }
@@ -341,8 +390,11 @@ int main(int argc, char** argv) {
       fail("unknown command " + cmd);
     }
   }
-  b.station.close();
-  b.cable.close();
-  b.core.close();
+  g_local.stop();
+  for (Bench* g : {&first, &second}) {
+    g->station.close();
+    g->cable.close();
+    g->core.close();
+  }
   return 0;
 }

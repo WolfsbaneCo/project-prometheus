@@ -57,6 +57,8 @@ class Video {
 
   // Puts GL state back to what the presenter expects (the core shares the context).
   void begin_present(int out_w, int out_h);
+  // Draws into part of the window from now on (x, y from the bottom left), as for two games side by side.
+  void set_viewport(int x, int y, int w, int h);
   // Draws the game picture; returns where it went, in window pixels (top-left origin).
   Rect draw_game(int out_w, int out_h, const Look& look, float alpha = 1.0f);
 

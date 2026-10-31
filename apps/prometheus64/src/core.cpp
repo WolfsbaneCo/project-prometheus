@@ -21,7 +21,9 @@ std::string utf8(const std::filesystem::path& p) {
   return std::string(u.begin(), u.end());
 }
 
-Core* g_core = nullptr;  // libretro callbacks carry no user pointer
+// libretro callbacks carry no user pointer: they go to the core that was last called into (two
+// copies of the GBA core run side by side for local link play, each from its own library file).
+Core* g_core = nullptr;
 
 void RETRO_CALLCONV video_cb(const void* data, unsigned w, unsigned h, std::size_t pitch) {
   if (g_core && g_core->hooks.video) g_core->hooks.video(data, w, h, pitch);
@@ -104,6 +106,7 @@ Core::Core() = default;
 Core::~Core() { close(); }
 
 void Core::close() {
+  if (api_) g_core = this;
   if (game_loaded_) unload_game();
   if (initialised_ && api_) api_->deinit();
   initialised_ = false;
@@ -207,6 +210,7 @@ std::string Core::load_game(const std::filesystem::path& rom, std::vector<uint8_
     game.size = rom_data_.size();
   }
   hw_requested_ = false;
+  g_core = this;
   if (!api_->load_game(&game)) {
     remove_unpacked();
     return "the emulator core could not start this game";
@@ -226,6 +230,7 @@ void Core::remove_unpacked() {
 
 void Core::unload_game() {
   if (!game_loaded_) return;
+  g_core = this;
   api_->unload_game();
   game_loaded_ = false;
   hw_requested_ = false;
@@ -248,22 +253,28 @@ void Core::context_destroy() {
 }
 
 void Core::run() {
-  if (game_loaded_) api_->run();
+  if (!game_loaded_) return;
+  g_core = this;
+  api_->run();
 }
 
 void Core::reset() {
-  if (game_loaded_) api_->reset();
+  if (!game_loaded_) return;
+  g_core = this;
+  api_->reset();
 }
 
 std::vector<uint8_t> Core::save_state() {
   std::vector<uint8_t> out;
   if (!game_loaded_) return out;
+  g_core = this;
   out.resize(api_->serialize_size());
   if (out.empty() || !api_->serialize(out.data(), out.size())) out.clear();
   return out;
 }
 
 bool Core::load_state(const std::vector<uint8_t>& state) {
+  if (game_loaded_) g_core = this;
   return game_loaded_ && !state.empty() && api_->unserialize(state.data(), state.size());
 }
 

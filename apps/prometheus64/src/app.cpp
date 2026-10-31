@@ -199,7 +199,7 @@ bool App::init(std::string& error) {
     return false;
   }
   SDL_GL_SetSwapInterval(1);
-  if (!video_.init(error) || !ui_.init(assets_dir_, error)) return false;
+  if (!video_.init(error) || !video2_.init(error) || !ui_.init(assets_dir_, error)) return false;
   if (SDL_Surface* icon = SDL_LoadPNG(utf8(assets_dir_ / "icon.png").c_str())) {
     SDL_SetWindowIcon(window_, icon);
     SDL_DestroySurface(icon);
@@ -269,11 +269,11 @@ bool App::init(std::string& error) {
       }
       frames += n;
     }
-    if (!fast_) audio_.push(d, n);
+    if (!fast_ && !focus2_) audio_.push(d, n);
   };
   core_.hooks.input_poll = [] {};
-  core_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) {
-    return input_.retro_state(port, dev, idx, id);
+  core_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) -> int16_t {
+    return focus2_ ? 0 : input_.retro_state(port, dev, idx, id);  // with two games here, the one in focus
   };
   core_.hooks.rumble = [this](unsigned port, retro_rumble_effect effect, uint16_t strength) {
     if (net_.running() && online_game_) {
@@ -294,6 +294,26 @@ bool App::init(std::string& error) {
   core_.hooks.geometry_changed = [this] {
     video_.prepare_target(core_.av().geometry.max_width, core_.av().geometry.max_height);
   };
+  // The second game of a local link: its own picture; sound and controls while it has the focus.
+  core2_.system_dir = core_.system_dir;
+  core2_.save_dir = pref_dir_ / "core2";
+  core2_.unpack_dir = pref_dir_ / "unpacked2";
+  fs::create_directories(core2_.save_dir, ec);
+  core2_.hooks.video = [this](const void* data, unsigned w, unsigned h, std::size_t pitch) {
+    if (!data || data == RETRO_HW_FRAME_BUFFER_VALID || !game2_) return;
+    video2_.software_frame(data, w, h, pitch, core2_.pixel_format(), kGbaLooks[gba_look(settings_, game2_->id)].prescale);
+  };
+  core2_.hooks.audio = [this](const int16_t* d, std::size_t n) {
+    if (focus2_) audio_.push(d, n);
+  };
+  core2_.hooks.input_poll = [] {};
+  core2_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) -> int16_t {
+    return focus2_ ? input_.retro_state(port, dev, idx, id) : 0;
+  };
+  core2_.hooks.rumble = [this](unsigned port, retro_rumble_effect effect, uint16_t strength) {
+    return focus2_ && input_.rumble(port, effect == RETRO_RUMBLE_STRONG, strength);
+  };
+  core2_.hooks.message = [this](const std::string& m) { toast(m); };
   loaded_system_ = System::N64;
   error = core_.open(core_path);
   if (!error.empty()) {
@@ -339,6 +359,14 @@ bool App::init(std::string& error) {
     } else if (!start_game(found.front())) {
       error = "could not start " + utf8(opt_.rom);
       return false;
+    } else if (!opt_.second.empty()) {
+      // Test mode: link a second game to it, here.
+      auto second = read_games(opt_.second, &why);
+      if (second.empty()) {
+        error = "Could not read " + utf8(opt_.second) + ": " + why;
+        return false;
+      }
+      start_local_link(second.front());
     }
   }
   if (!opt_.save_key.empty()) save_key_file(opt_.save_key);
@@ -367,6 +395,7 @@ void App::shutdown() {
   if (gl_) {
     ui_.shutdown();
     video_.shutdown();
+    video2_.shutdown();
   }
   audio_.close();
   if (gl_) SDL_GL_DestroyContext(gl_);
@@ -425,9 +454,10 @@ int App::texture_look(const std::string& id) const {
   return t >= 0 && t < kTexCount ? t : p.textures;
 }
 
-void App::apply_core_options(const Game& game) {
+void App::apply_core_options(const Game& game, Core* target) {
   if (game.system == System::GBA) {
-    auto set = [&](const char* key, const std::string& value) { core_.set_option(key, value); };
+    Core& core = target ? *target : core_;
+    auto set = [&](const char* key, const std::string& value) { core.set_option(key, value); };
     set("gpsp_bios", "auto");        // the player's own gba_bios.bin in the system folder, else the open BIOS
     set("gpsp_boot_mode", "game");   // straight into the game, like inserting a cartridge
     set("gpsp_drc", "enabled");
@@ -435,7 +465,11 @@ void App::apply_core_options(const Game& game) {
     set("gpsp_rtc_time_source", "system");  // follows the real time, as a cartridge's battery clock does
     // Link play: the cable or the Wireless Adapter (link_mode); other games' links as gpSP knows them.
     // An open event needs the Wireless Adapter: that's how the game reaches a distribution machine.
-    const std::string link = event_key_.empty() ? link_mode(game) : event_cable_ ? "cable" : "wireless";
+    // Two games linked here use the same link (start_local_link).
+    const std::string link = !local_mode_.empty() ? local_mode_
+                             : event_key_.empty()  ? link_mode(game)
+                             : event_cable_        ? "cable"
+                                                   : "wireless";
     set("gpsp_serial", link == "cable" ? "mul_poke" : link == "wireless" ? "rfu" : "auto");
     set("gpsp_rumble", "1");
     set("gpsp_frameskip", "disabled");
@@ -568,6 +602,7 @@ bool App::start_game(const Game& game) {
 
 void App::stop_game() {
   if (!game_) return;
+  stop_local_link();  // the second game goes with the first
   close_event();  // an event belongs to the game too
   if (!guest_session_ && !online_game_) {
     // Anything newer on Drive that had to wait while the game ran comes down now.
@@ -601,6 +636,8 @@ void App::restart_game_keep_progress() {
   // Graphics options are read when a game starts, so restart it and put everything back exactly
   // where it was with a save state taken in memory.
   const Game game = *game_;
+  const bool relink = local_.active();
+  local_.stop();  // the link holds the old core's callbacks: joined again below
   const std::vector<uint8_t> state = core_.save_state();
   std::vector<uint8_t> ram;
   if (uint8_t* r = core_.save_ram()) ram.assign(r, r + core_.save_ram_size());
@@ -629,6 +666,7 @@ void App::restart_game_keep_progress() {
   if (uint8_t* r = core_.save_ram(); r && ram.size() == core_.save_ram_size()) std::memcpy(r, ram.data(), ram.size());
   if (gifts_.is_open()) gifts_.attach(core_.netpacket());
   if (cable_.is_open()) cable_.attach(core_.netpacket());
+  if (relink) local_.start(core_.netpacket(), core2_.netpacket());
   core_.run();  // let the core settle before restoring
   if (!core_.load_state(state)) toast("Picture changed. The game restarted from your last save");
 }
@@ -642,17 +680,7 @@ int App::fill_mode(const Game* game) const {
 Look App::current_look() const {
   Look l;
   const std::string id = game_ ? game_->id : "";
-  if (game_ && game_->system == System::GBA) {
-    const GbaLookDef& g = kGbaLooks[gba_look(settings_, id)];
-    l.fill = static_cast<FillMode>(fill_mode(&*game_));
-    l.pixels = g.pixels;
-    l.grid = g.grid;
-    l.whole_pixels = g.whole_pixels;
-    l.lines = 160;
-    const float a = core_.av().geometry.aspect_ratio;
-    l.aspect = a > 0 ? a : 3.0f / 2.0f;
-    return l;
-  }
+  if (game_ && game_->system == System::GBA) return gba_look_for(*game_, core_);
   const PresetDef& p = kPresets[std::clamp(settings_.game_int(id, "preset", 0), 0, 3)];
   l.fill = static_cast<FillMode>(fill_mode(game_ ? &*game_ : nullptr));
   l.overscan = std::clamp(settings_.game_int(id, "overscan", 0), 0, 8) / 100.0f;
@@ -666,6 +694,19 @@ Look App::current_look() const {
 
 // ---------------------------------------------------------------------------------------------
 // Saves
+
+Look App::gba_look_for(const Game& game, const Core& core) const {
+  Look l;
+  const GbaLookDef& g = kGbaLooks[gba_look(settings_, game.id)];
+  l.fill = static_cast<FillMode>(fill_mode(&game));
+  l.pixels = g.pixels;
+  l.grid = g.grid;
+  l.whole_pixels = g.whole_pixels;
+  l.lines = 160;
+  const float a = core.av().geometry.aspect_ratio;
+  l.aspect = a > 0 ? a : 3.0f / 2.0f;
+  return l;
+}
 
 void App::load_game_save() {
   last_saved_ram_.clear();
@@ -932,7 +973,7 @@ void App::run_frames() {
   // Speeding up (GBA, the speed key held): kFastForward times the game's speed, by the clock.
   // Not while linked or at an event, where the other side expects the game's own pace. Its sound
   // is left out (sped-up sound only stutters) and starts again cleanly afterwards.
-  const bool fast = game_ && game_->system == System::GBA && !link_.active() && event_key_.empty() &&
+  const bool fast = game_ && game_->system == System::GBA && !link_.active() && !local_.active() && event_key_.empty() &&
                     overlay_ == Overlay::None && input_.speed_held();
   if (fast != fast_) {
     fast_ = fast;
@@ -943,7 +984,7 @@ void App::run_frames() {
   if (fast) {
     acc_ns_ = opt_.screenshot.empty() ? acc_ns_ + elapsed * (kFastForward - 1) : kFastForward * frame_ns;
     for (int runs = 0; acc_ns_ >= frame_ns && runs < 2 * kFastForward; ++runs) {
-      core_.run();
+      run_one_frame();
       acc_ns_ -= frame_ns;
       ++frame_count_;
       if (frame_count_ % 30 == 0) sync_game_save(false);
@@ -961,7 +1002,7 @@ void App::run_frames() {
     acc_ns_ = 0;
     audio_.set_speed(1e9 / (refresh_ns_ * n) / fps);
     if (++refreshes_ % static_cast<uint64_t>(n) == 0) {
-      core_.run();
+      run_one_frame();
       ++frame_count_;
       if (frame_count_ % 30 == 0) sync_game_save(false);
     }
@@ -970,7 +1011,7 @@ void App::run_frames() {
   }
   audio_.set_speed(1.0);
   for (int runs = 0; acc_ns_ >= frame_ns && runs < 3; ++runs) {
-    core_.run();
+    run_one_frame();
     acc_ns_ -= frame_ns;
     ++frame_count_;
     if (frame_count_ % 30 == 0) sync_game_save(false);
@@ -1250,6 +1291,10 @@ bool App::handle_hotkey(const SDL_Event& e) {
     case SDL_SCANCODE_F1:
       overlay_ = overlay_ == Overlay::Help ? Overlay::None : Overlay::Help;
       return true;
+    case SDL_SCANCODE_F3:
+      if (!game2_) return false;
+      switch_local_focus();
+      return true;
     case SDL_SCANCODE_F10:
       if (overlay_ == Overlay::Seating) {
         input_.stop_seating();
@@ -1442,6 +1487,8 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Fullscreen", fullscreen_ ? "On" : "Off", kFullscreenItem, "F11"},
       {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers, "F10"},
       {"Controls", "", kControlsItem},
+      {"Link a second game", local_link_value(), kLocalLinkItem},
+      {"Controlling", game2_ && focus2_ ? game2_->title : game_ ? game_->title : "", kLocalFocusItem, "F3"},
       {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
       {"Daily hints", settings_.get_int("daily_hints", 1) ? "On" : "Off", kHintsItem},
       {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
@@ -1455,13 +1502,19 @@ std::vector<App::MenuItem> App::menu_items() const {
       if (it.id == kTextures || it.id == kResolution || it.id == kOverscan) continue;
       if (it.id == kEventsItem && events_for(*game_).empty()) continue;
       if (it.id == kHintsItem && !has_daily_hints(game_->id.size() >= 8 ? game_->id.substr(4, 4) : "")) continue;
+      if (it.id == kLocalFocusItem && !game2_) continue;
+      if (it.id == kLocalLinkItem && (link_.active() || online_game_)) continue;
       if (it.id == kPicture) it.value = g.name;
       if (it.id == kFill && look.fill == FillMode::Fit) it.value = "Fit (3:2)";
       gba.push_back(std::move(it));
     }
     return gba;
   }
-  items.erase(std::remove_if(items.begin(), items.end(), [](const MenuItem& it) { return it.id == kEventsItem || it.id == kHintsItem; }),
+  items.erase(std::remove_if(items.begin(), items.end(),
+                             [](const MenuItem& it) {
+                               return it.id == kEventsItem || it.id == kHintsItem || it.id == kLocalLinkItem ||
+                                      it.id == kLocalFocusItem;
+                             }),
               items.end());
   return items;
 }
@@ -1588,6 +1641,27 @@ void App::menu_change(int id, int dir) {
         online_page_ = OnlinePage::Events;
       }
       break;
+    case kLocalLinkItem: {
+      if (game2_) {
+        if (dir == 0) stop_local_link();
+        break;
+      }
+      const auto choices = second_game_choices();
+      if (choices.empty()) {
+        if (dir == 0) toast("Add another GBA game to your library to link two games here", 5);
+        break;
+      }
+      const int n = static_cast<int>(choices.size());
+      local_choice_ = ((local_choice_ + dir) % n + n) % n;
+      if (dir == 0) {
+        start_local_link(*choices[static_cast<std::size_t>(local_choice_)]);
+        overlay_ = Overlay::None;
+      }
+      break;
+    }
+    case kLocalFocusItem:
+      switch_local_focus();
+      break;
     case kHintsItem: {
       const bool on = !settings_.get_int("daily_hints", 1);
       settings_.set_int("daily_hints", on ? 1 : 0);
@@ -1616,7 +1690,15 @@ void App::menu_change(int id, int dir) {
 void App::draw() {
   SDL_GetWindowSizeInPixels(window_, &out_w_, &out_h_);
   video_.begin_present(out_w_, out_h_);
-  if (screen_ == Screen::Playing && game_) {
+  if (screen_ == Screen::Playing && game_ && game2_) {
+    // Two games linked here: side by side, the first on the left.
+    const int half = out_w_ / 2;
+    video_.set_viewport(0, 0, half, out_h_);
+    video_.draw_game(half, out_h_, current_look());
+    video2_.set_viewport(half, 0, out_w_ - half, out_h_);
+    video2_.draw_game(out_w_ - half, out_h_, gba_look_for(*game2_, core2_));
+    video_.set_viewport(0, 0, out_w_, out_h_);
+  } else if (screen_ == Screen::Playing && game_) {
     video_.draw_game(out_w_, out_h_, current_look());
   }
   ui_.begin(out_w_, out_h_);
@@ -1629,6 +1711,7 @@ void App::draw() {
     const float s = out_h_ / 1080.0f;
     draw_button(out_w_ - 32 * s, 28 * s, "Menu", s, false, false, kHitMenuButton, 0, true);
   }
+  if (playing && game2_) draw_local_link_labels();
   if (playing && fast_) {
     // Sped up: a small sign in the corner, so a game running fast is never a surprise.
     const float s = out_h_ / 1080.0f;
@@ -2302,6 +2385,178 @@ void App::draw_toasts() {
     ui_.rect((out_w_ - w) / 2, y, w, h, rgb(0x121214, 0.92f * alpha), 14 * s);
     ui_.rect((out_w_ - w) / 2 + 14 * s, y + h / 2 - 4 * s, 8 * s, 8 * s, kRed.with_alpha(alpha), 4 * s);
     ui_.text((out_w_ - w) / 2 + 32 * s, y + 13 * s, t, 20 * s, kText.with_alpha(alpha));
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Local link play: a second of the player's GBA games, linked to the one playing (local_link.hpp)
+
+void App::run_one_frame() {
+  if (!local_.active()) {
+    core_.run();
+    return;
+  }
+  local_.before_first();
+  core_.run();
+  local_.before_second();
+  core2_.run();
+  if (frame_count_ % 30 == 0) sync_second_save(false);
+}
+
+std::vector<const Game*> App::second_game_choices() const {
+  std::vector<const Game*> out;
+  if (!game_ || game_->system != System::GBA) return out;
+  for (const Game& g : games_) {
+    // Not the same game: both copies would share its one save in the library.
+    if (g.system == System::GBA && g.internal_name != game_->internal_name) out.push_back(&g);
+  }
+  return out;
+}
+
+std::string App::local_link_value() const {
+  if (game2_) return "Linked: " + game2_->title;
+  const auto choices = second_game_choices();
+  if (choices.empty()) return "No other GBA game";
+  return choices[static_cast<std::size_t>(std::clamp(local_choice_, 0, static_cast<int>(choices.size()) - 1))]->title;
+}
+
+void App::start_local_link(const Game& second) {
+  if (!game_ || game_->system != System::GBA || second.system != System::GBA) return;
+  if (second.internal_name == game_->internal_name) {
+    toast("Pick a different game: two copies of one game would share its save", 5);
+    return;
+  }
+  if (link_.active() || online_game_) {
+    toast("End the online link first", 4);
+    return;
+  }
+  stop_local_link();
+  close_event();
+  // Both games on the same link: the cable, which every generation 3 Pokémon game has, unless
+  // both are set to the Wireless Adapter; other games as gpSP knows them.
+  const std::string m1 = link_mode(*game_), m2 = link_mode(second);
+  local_mode_ = m1 == "auto" && m2 == "auto" ? "auto" : m1 == "wireless" && m2 == "wireless" ? "wireless" : "cable";
+  const std::string serial = local_mode_ == "cable" ? "mul_poke" : local_mode_ == "wireless" ? "rfu" : "auto";
+  if (core_.option("gpsp_serial") != serial) restart_game_keep_progress();  // the first game's link port too
+  // gpSP keeps its state in globals: the second game runs in its own copy of the library.
+  std::error_code ec;
+  const fs::path copy = pref_dir_ / "cores" / (gba_core_path_.stem().string() + "-second" + gba_core_path_.extension().string());
+  fs::create_directories(copy.parent_path(), ec);
+  fs::copy_file(gba_core_path_, copy, fs::copy_options::overwrite_existing, ec);
+  if (ec) {
+    toast("Could not prepare the second game: " + ec.message(), 6);
+    local_mode_.clear();
+    return;
+  }
+  if (const std::string err = core2_.open(copy); !err.empty()) {
+    toast("Could not start the second game: " + err, 6);
+    local_mode_.clear();
+    return;
+  }
+  apply_core_options(second, &core2_);
+  if (const std::string err = load_into(core2_, second); !err.empty()) {
+    toast("Could not start " + second.title + ": " + err, 6);
+    core2_.close();
+    local_mode_.clear();
+    return;
+  }
+  game2_ = second;
+  video2_.clear_frame();
+  load_second_save();
+  local_.start(core_.netpacket(), core2_.netpacket());
+  if (!local_.active()) {
+    toast("These two games can't be linked here", 5);
+    stop_local_link();
+    return;
+  }
+  focus2_ = false;
+  toast("Linked " + game_->title + " and " + second.title + " (" + (local_mode_ == "wireless" ? "Wireless Adapter" : "link cable") +
+            "). F3, or Controlling in the menu, switches which one you play",
+        8);
+}
+
+void App::stop_local_link() {
+  if (!game2_) return;
+  sync_second_save(true);
+  local_.stop();
+  core2_.close();
+  game2_.reset();
+  video2_.clear_frame();
+  local_mode_.clear();
+  if (focus2_) audio_.clear();
+  focus2_ = false;
+  last_saved2_.clear();
+  pending2_.clear();
+}
+
+void App::switch_local_focus() {
+  if (!game2_) return;
+  focus2_ = !focus2_;
+  audio_.clear();
+  toast("Playing " + (focus2_ ? game2_->title : game_->title), 2);
+}
+
+void App::load_second_save() {
+  last_saved2_.clear();
+  pending2_.clear();
+  uint8_t* ram = core2_.save_ram();
+  if (!ram || core2_.save_ram_size() != savekit::kGbaSaveSize) return;
+  try {
+    if (auto saved = savekit::load_current(gba_library_dir_, game2_->internal_name)) {
+      auto it = saved->memories.find(savekit::Memory::GbaSave);
+      if (it != saved->memories.end() && it->second.size() == savekit::kGbaSaveSize) {
+        std::memcpy(ram, it->second.data(), savekit::kGbaSaveSize);
+      }
+    }
+  } catch (const std::exception& e) {
+    toast(std::string("Could not load ") + game2_->title + "'s save: " + e.what(), 6);
+  }
+  last_saved2_.assign(ram, ram + savekit::kGbaSaveSize);
+}
+
+// As sync_game_save, for the second game.
+void App::sync_second_save(bool force) {
+  uint8_t* ram = core2_.save_ram();
+  if (!game2_ || !ram || core2_.save_ram_size() != savekit::kGbaSaveSize) return;
+  std::vector<uint8_t> now(ram, ram + savekit::kGbaSaveSize);
+  if (now == last_saved2_) {
+    pending2_.clear();
+    return;
+  }
+  if (!force && now != pending2_) {
+    pending2_ = std::move(now);
+    pending2_since_ = frame_count_;
+    return;
+  }
+  if (!force && frame_count_ - pending2_since_ < 60) return;
+  if (std::all_of(now.begin(), now.end(), [](uint8_t b) { return b == 0xFF; })) {
+    last_saved2_ = now;
+    return;
+  }
+  try {
+    savekit::StoreOptions o;
+    o.library = gba_library_dir_;
+    o.game = game2_->internal_name;
+    o.save.memories[savekit::Memory::GbaSave] = savekit::Bytes(now);
+    if (savekit::store_current(o).changed) toast(game2_->title + ": progress saved", 2);
+    last_saved2_ = now;
+    pending2_.clear();
+  } catch (const std::exception& e) {
+    toast(std::string("Could not save ") + game2_->title + "'s progress: " + e.what(), 6);
+  }
+}
+
+// Over each half: the game's name, and which one the controls go to.
+void App::draw_local_link_labels() {
+  const float s = out_h_ / 1080.0f;
+  const float half = out_w_ / 2.0f;
+  for (int i = 0; i < 2; ++i) {
+    const bool focus = (i == 1) == focus2_;
+    const std::string t = (focus ? "Playing: " : "") + (i == 0 ? game_->title : game2_->title) + (focus ? "" : "  (F3)");
+    const float w = ui_.measure(t, 20 * s, true) + 36 * s;
+    const float x = i * half + (half - w) / 2;
+    ui_.rect(x, 24 * s, w, 42 * s, focus ? kRed.with_alpha(0.85f) : rgb(0x121214, 0.75f), 12 * s);
+    ui_.text(x + w / 2, 24 * s + 10 * s, t, 20 * s, kText, true, Align::Center);
   }
 }
 

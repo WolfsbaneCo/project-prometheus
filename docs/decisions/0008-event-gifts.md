@@ -1,6 +1,6 @@
 # 0008: Event gifts
 
-- **Status:** Accepted (implemented in `apps/prometheus64` for Pokémon Emerald, English).
+- **Status:** Accepted (implemented in `apps/prometheus64` for Pokémon Emerald, FireRed, LeafGreen, Ruby and Sapphire, English).
 - **Date:** 2026-10-30
 - **Owner's choices:** no cheats: the gifts come "by recreating whatever the requirements were". The events themselves no longer exist, so the app stands in for them. Every ticket the game can use, whatever its region (the Old Sea Map was only handed out for the Japanese Emerald).
 
@@ -39,9 +39,7 @@ The pret decompilation of Emerald (`src/librfu_rfu.c`, `src/link_rfu_2.c`, `src/
 
 ## Not yet
 
-- **FireRed and LeafGreen** (Aurora and Mystic Tickets): the same machine, with FRLG's flags, items and script commands; needs one of those games to test with.
-- **Ruby and Sapphire** (Eon Ticket): they received it as an e-Reader Mystery Event over the link cable, a different path.
-- **Other Emerald languages:** the same flags and items, but untested.
+- **Other languages:** the same flags and items, but untested. (FireRed, LeafGreen, Ruby and Sapphire were added since: see below.)
 
 ## Daily hints (2026-10-30)
 
@@ -90,3 +88,50 @@ Ruby and Sapphire have no Mystery Gift. Their Eon Ticket came from an e-Reader c
 - **In the app:** the same Event gifts page; Ruby and Sapphire's event restarts the game with the link cable (gpSP `mul_poke`) and the banner says MYSTERY EVENTS.
 
 **Checked** (test bench, and in the app for Ruby): Ruby 1.0 and Sapphire 1.2, new games with Mystery Events switched on in a test copy: the game linked, asked for player data, received the 636-byte event, closed the link, showed our message and saved; DAD (placed in front of him in a test copy) said our text, the Eon Ticket went into the Key Items pocket, 0x853 went from clear to set, and he went back to his own lines. In the app: Event gifts › Open event, MYSTERY EVENTS, A: the same message and "Progress saved". Not yet seen: the ferry to Southern Island (needs the Hall of Fame).
+
+## The rest of Ruby and Sapphire's e-Reader, and Jirachi (2026-10-30)
+
+The owner asked for all of the e-Reader's content and for Jirachi. Each is one Mystery Event over the same cable station, built by `MysteryEventWriter` (`gift_catalog.cpp`): `checkcompat` (English; Ruby and Sapphire), a CRC-16, the commands, `end`, then the data they point to (word-aligned). The game runs its own command for each (pokeruby, `mystery_event_script.c`):
+
+| Event | Command | What the game does |
+|---|---|---|
+| Enigma Berry | `setenigmaberry` (7) | Copies a `struct EnigmaBerry` (1,328 bytes) into the save and sets `VAR_ENIGMA_BERRY_AVAILABLE`; DAD hands one over once his badge is won (his own script) |
+| Clock fix | `enableresetrtc` (14) | Sets `VAR_RESET_RTC_ENABLE` to 0x920 and `FLAG_SYS_RESET_RTC_ENABLE`: B + SELECT + Left on the title screen opens the game's Reset RTC screen |
+| Rare words | `addrareword` (10) x 33 | `UnlockTrendySaying` for each of the 33 trendy sayings |
+| Battle e-Card | `addtrainer` (13) | Copies a `BattleTowerEReaderTrainer` (188 bytes) into the save; the Battle Tower sends it in when the streak and level match (`ShouldBattleEReaderTrainer`), once |
+| Jirachi | `givepokemon` (12) | Copies a `struct Pokemon` (and mail) into the party, marks the Pokédex, "POKéMON was sent over!" |
+
+A short script run at once (`runscript`) sets our own message where the command's own would say less (the clock-reset buttons, the Battle Tower level).
+
+- **Events over 256 bytes.** The game reads the event from its shared buffer, where only blocks over 256 bytes land (`link.c`: smaller ones go to the link's own buffer). The clock fix and rare words are tiny, so the writer pads every event past 256 bytes. Found in testing: unpadded, the game ran an empty buffer and said "safely loaded" without doing anything.
+- **The Enigma Berry's design.** The game's own name, growth (24 hours a stage, 1 to 2 berries), flavours (40 each) and description ("A completely enigmatic BERRY. / Appears to have the power of stars.") from its berry table; firmness Hard and 155 mm from the later games' Enigma Berry; our own 48x48 picture (a five-lobed violet berry with a gold star and two leaves, drawn in code); held: `HOLD_EFFECT_RESTORE_HP` 30 (as Sitrus in these games), eaten: restores 30 HP. The checksum is the game's (bytes up to the checksum, description pointers as zero). Nintendo's own Enigma Berry cards are not copied.
+- **Battle e-Cards.** Our own trainers and teams (no card's data copied): Mira (Cool Trainer, class 9), Dorian (Expert, 34), Selene (Pokémon Ranger, 67), each at Lv. 50 and Lv. 100: six choices. Teams obey the Tower's rules (no banned species, no repeated species or held item); all IVs 31, competitive EVs, natures from the personality (never shiny); easy chat greetings and farewells. Win streak 0: the first battle of a new challenge, the only one a player can always reach without losing a streak (the two levels keep separate streaks). The checksum is the game's (sum of the 46 words before it); the game clears a trainer whose checksum is wrong.
+- **Jirachi.** The WISHMKR Jirachi of the Pokémon Colosseum Bonus Disc (North America, 2004), the only English Jirachi for these games: OT WISHMKR (male), ID 20043 (secret ID 0), Lv. 5, Wish, Confusion, Rest, a Poké Ball, met location 255, from Ruby, English, friendship 100, not fateful. The disc made everything else from a 16-bit seed, the checksum of the first section of the game's save, with the games' random numbers (LCRNG 0x41C64E6D, 0x6073): the personality from the next two numbers (high half first), the IVs from the two after, the held berry from the fifth (Salac, or Ganlon when (n / 3) is odd). Documented by PKHeX's legality checker (`Legality/RNG/ClassicEra/Gen3/Wishmkr.cs`, `EncounterGift3.cs`); our generator reproduces PKHeX's nine known shiny seeds' natures and shininess exactly. The app reads the seed from the newest copy of the save's section 0 (read only), so one save gets the same Jirachi, as from the disc. **Once per save:** the game has no flag for it, so the app checks the save's Pokédex (Jirachi caught) and refuses a second. Level and stats are computed (the game takes a sent Pokémon's stats as they are).
+- **Ribbons** (`giveribbon`): not offered. They were prizes for tournaments players entered; handing them out would be the kind of shortcut the owner ruled out.
+- **The National Pokédex** (`givenationaldex`): not offered; no English event gave it to Ruby and Sapphire.
+
+**Checked** (test bench, Ruby 1.0): every event loaded through MYSTERY EVENTS with our message. Clock fix: 0x402C = 0x920 and 0x862 set; holding B + SELECT + Left on the title screen opens the game's "Reset RTC?" screen. Rare words: the 33 bits set. Enigma Berry: the berry in the save with a valid checksum; DAD (with his badge won in a test copy) said "I just received a very rare BERRY" and gave it; the Berries pocket's tag shows our picture, "Hard", 6.1", and the description. Battle e-Card (Mira, Lv. 50): the trainer in the save, kept by the game's own validation. Jirachi: in the party, decoded: species 409, Wish/Confusion/Rest, met 255, valid checksum, OT WISHMKR; loading again with that save is refused (Jirachi caught). Not yet seen: a Battle Tower battle against an e-Card trainer (needs a save past the Hall of Fame).
+
+## Emerald's Visiting Trainer, Stamp Card and Battle Card (2026-10-30)
+
+Emerald still has Game Freak's deliveryman scripts for three Wonder Cards never sent out in English (`data/scripts/gift_trainer.inc`, `gift_stamp_card.inc`, `gift_battle_card.inc`). The app sends our own cards and scripts that work the same way:
+
+- **Visiting Trainer** (cards 1014-1016: Mira, Dorian, Selene, Lv. 50, Emerald's facility classes 0x12, 0x09, 0x45). The deliveryman gives the survey password GIVE ME AWESOME TRAINER. With the card held and those words in the questionnaire (`mysteryGift.questionnaireWords`), the station's next session sends the e-Reader trainer (`CLI_RECV_EREADER_TRAINER`, link id 26); "A new TRAINER has arrived." The Mystery Events House in Sootopolis City then opens its stairs to the battle (`frontier_checkvisittrainer`).
+- **Stamp Card** (card 1017, type 1, 7 stamps). Each later session with the card held sends the next stamp the card doesn't have (`CLI_SAVE_STAMP`, link id 24; species and an id 1-7): Treecko, Torchic, Mudkip, Pikachu, Plusle, Minun, Azurill. No prize, as Game Freak's card.
+- **Battle Card** (card 1018, type 2). The game counts link battles with players holding the same card; the deliveryman gives the prize after three wins (a Potion, as Game Freak's).
+- **The game's data** (`MysteryGiftLinkGameData`) has the card's metadata word-aligned, at offset 32 (stamps at 40 and 54, the stamp count at 68): found from the game's own bytes.
+- **Card backgrounds** are 0 to 7 (`NUM_WONDER_BGS`); a card with 8 is refused by the game without a word (found in testing).
+
+**Checked** (test bench, Emerald): the Stamp Card received, then two more sessions: "A new STAMP has been received", Treecko then Torchic on the card. A Visiting Trainer card received, the questionnaire words set in a test copy, the next session: "A new TRAINER has arrived.", the trainer in the save (class 0x12, Starmie/Snorlax/Gardevoir, Lv. 50, valid checksum). The Battle Card received and shown. Not yet seen: the battle in Sootopolis City, and a Battle Card's three wins.
+
+**Not built: Emerald's e-Reader menu (Trainer Hill e-Cards).** Emerald talks to the e-Reader differently: it sends the e-Reader a program at 115,200 bps in multiplayer mode, then receives the card's Trainer Hill data (a 3,840-byte set) in the GBA's 32-bit normal serial mode (`ereader_helpers.c`). gpSP's netpacket link carries only the multiplayer cable and the Wireless Adapter; normal mode reaches nothing. It needs a change inside gpSP's serial emulation plus the e-Reader's side of that exchange: a separate piece of work (`docs/backlog.md`).
+
+## Two games linked on one computer (2026-10-30)
+
+For trading between the player's own games (Jirachi from Ruby into Emerald, for one). `src/local_link.cpp`:
+
+- **A second core.** gpSP keeps its whole state in globals, so a second game needs a second copy of the library: the app copies `gpsp_libretro` to `cores/gpsp_libretro-second` in its own folder and loads that (a different file is loaded separately on Linux and, with a different name, on Windows). `Core`'s callbacks follow whichever core was called last (`g_core`), so each core's picture, sound and input go to the right place.
+- **The link.** The first game is the host (netpacket id 0), the second the guest (1); each core's messages are queued for the other and handed over before it runs its next frame, or when it polls. The same messages gpSP sends over the relay, so cable and wireless both work. Both games use the same link: the cable, unless both are set to wireless.
+- **In the app:** **Link a second game** in a GBA game's menu (pick with < >). The two games side by side, a label over each; F3 (or **Controlling**) moves the controls and the sound to the other. Each game's save is kept in the library as usual. Not two copies of one game (they'd share one save).
+
+**Checked:** in the test bench, two Emerald saves linked over the Wireless Adapter: one sent its Wonder Card (MYSTERY GIFT › WONDER CARDS › SEND), the other received it from FRIEND: "A WONDER CARD has been received from AAAAAAA." In the app (Linux): Emerald and Ruby side by side, each game's own picture, F3 moving the controls. Not yet seen: a Cable Club trade between two games (needs saves at a Pokémon Center), and the Windows build.

@@ -345,8 +345,23 @@ void App::open_event(const EventGift& gift) {
     return;
   }
   if (event_cable_) {
+    EventGift event = gift;
+    if (gift.key == "jirachi") {
+      // Made for this save, as the Bonus Disc did; once per Pokédex. The save is only read.
+      const RubySapphireSave save = read_ruby_sapphire_save(core_.save_ram(), core_.save_ram_size());
+      const char* refuse = !save.valid        ? "Jirachi: save your game in Ruby or Sapphire first"
+                           : save.has_jirachi ? "Jirachi: this save's POKéDEX already has Jirachi caught"
+                                              : nullptr;
+      if (refuse) {
+        event_key_.clear();
+        event_cable_ = false;
+        toast(refuse, 8);
+        return;
+      }
+      event.script = jirachi_event(save.seed);
+    }
     cable_.attach(core_.netpacket());
-    cable_.open(gift);
+    cable_.open(event);
   } else {
     gifts_.attach(core_.netpacket());
     gifts_.open(gift);
@@ -396,7 +411,17 @@ void App::update_event() {
   if (st == event_stage_) return;
   event_stage_ = st;
   if (st == GiftStation::Stage::Done && event_cable_) {
-    toast("The event went across. After your game restarts, go and see your Dad at the Petalburg City Gym", 10);
+    const std::string& k = event_key_;
+    toast(k == "clock"                 ? "The clock fix went across. To set the clock, hold B, Select and Left on the title screen"
+          : k == "words"               ? "The rare words went across: they're in your easy chat word lists"
+          : k == "jirachi"             ? "Jirachi went across: it joins your party if there was room"
+          : k.rfind("ecard-", 0) == 0  ? "The trainer went across: start a new Battle Tower challenge at that level to meet them"
+                                       : "The event went across. After your game restarts, go and see your Dad at the Petalburg City Gym",
+          10);
+  } else if (st == GiftStation::Stage::Done && event_key_.rfind("visiting-", 0) == 0) {
+    toast("Done. A new card: ask the deliveryman for the survey password. A new trainer: they're waiting in Sootopolis City", 10);
+  } else if (st == GiftStation::Stage::Done && event_key_ == "stamp") {
+    toast("Done: your game has the Stamp Card, or its next stamp. Connect again for another", 10);
   } else if (st == GiftStation::Stage::Done) {
     toast("Your game has the WONDER CARD. Collect the gift from the deliveryman upstairs in any Pokemon Center", 10);
   } else if (st == GiftStation::Stage::Failed) {
@@ -953,6 +978,8 @@ void App::draw_online() {
     title("Event gifts", "Gifts from Pokemon's old events, received the way players did: your game's own Mystery Gift "
                          "(Ruby and Sapphire: Mystery Events), from a distribution machine or e-Reader the app plays.");
     const auto rows = event_rows(gifts);
+    const bool compact = rows.size() > 5;  // Emerald's nine: shorter rows, so the page still fits
+    const float by = (compact ? 1 : 9) * s;
     for (std::size_t r = 0; r < rows.size(); ++r) {
       const std::vector<std::size_t>& row = rows[r];
       std::size_t pick = row[0];
@@ -965,28 +992,29 @@ void App::draw_online() {
       }
       const EventGift& e = gifts[pick];
       const bool open = e.key == event_key_;
-      const float h = 70 * s;
+      const float h = (compact ? 54 : 70) * s;
       ui_.rect(x, y, inner, h, open ? kTile.with_alpha(1.0f) : kTile, 14 * s);
       if (open) ui_.outline(x, y, inner, h, kRed, 14 * s, 2 * s);
-      ui_.text(x + 24 * s, y + 9 * s, e.name, 22 * s, kText, true);
-      ui_.text(x + 24 * s, y + 39 * s, ui_.fit(e.where, 17 * s, inner - 520 * s), 17 * s, kDim);
+      ui_.text(x + 24 * s, y + (compact ? 4 : 9) * s, e.name, (compact ? 20 : 22) * s, kText, true);
+      ui_.text(x + 24 * s, y + (compact ? 30 : 39) * s, ui_.fit(e.where, (compact ? 15 : 17) * s, inner - 520 * s),
+               (compact ? 15 : 17) * s, kDim);
       float right = x + inner - 20 * s;
       if (open) {
-        right -= online_button(right, y + 9 * s, "Close event", s, false, kObEventClose, true);
+        right -= online_button(right, y + by, "Close event", s, false, kObEventClose, true);
       } else {
-        right -= online_button(right, y + 9 * s, "Open event", s, false, kObEventFirst + static_cast<int>(pick), true,
+        right -= online_button(right, y + by, "Open event", s, false, kObEventFirst + static_cast<int>(pick), true,
                                !link_.active());
       }
       if (row.size() > 1 && !open) {
         // The choice: < Mareep >
         right -= 14 * s;
-        right -= online_button(right, y + 9 * s, ">", s, false, kObEventFirst + kObEventNext + static_cast<int>(r), true);
+        right -= online_button(right, y + by, ">", s, false, kObEventFirst + kObEventNext + static_cast<int>(r), true);
         const float box = std::max(ui_.measure(e.choice, 19 * s, true), 150 * s) + 20 * s;
-        ui_.text(right - box / 2, y + 21 * s, e.choice, 19 * s, kText, true, Align::Center);
+        ui_.text(right - box / 2, y + by + 12 * s, e.choice, 19 * s, kText, true, Align::Center);
         right -= box;
-        online_button(right, y + 9 * s, "<", s, false, kObEventFirst + kObEventPrev + static_cast<int>(r), true);
+        online_button(right, y + by, "<", s, false, kObEventFirst + kObEventPrev + static_cast<int>(r), true);
       }
-      y += h + 8 * s;
+      y += h + (compact ? 6 : 8) * s;
     }
     if (!event_key_.empty()) {
       ui_.text(x, y + 4 * s, "Event open: " + gifts_.status(), 20 * s, kRed, true);
@@ -1001,24 +1029,35 @@ void App::draw_online() {
         "2.  Save your game, then open the event here: the game restarts at its title screen, linked by cable to an "
         "e-Reader the app plays, as players did with an e-Reader card.",
         "3.  In the game: MYSTERY EVENTS, then press A. The game loads the event, saves and restarts.",
-        "4.  Your Dad at the Petalburg City Gym hands you the ticket. Show it at the Lilycove City harbor (after the Hall "
-        "of Fame).",
+        "4.  Then: your Dad at the Petalburg City Gym has the ticket and the berry. The README's guide has every step.",
     };
     const char* steps_wireless[] = {
         "1.  Once: unlock Mystery Gift in your game. In any Poke Mart, fill in the questionnaire on the counter with "
         "LINK TOGETHER WITH ALL (in Emerald, once you have your Pokedex), then save.",
         "2.  Save your game, then open an event here: the game restarts at its title screen, with the Wireless Adapter.",
         "3.  In the game: MYSTERY GIFT, then WONDER CARDS, then WIRELESS COMMUNICATION.",
-        "4.  Upstairs in any Pokemon Center, the deliveryman hands you the gift. Tickets: show them at the harbor he "
-        "names (Emerald: after the Hall of Fame; FireRed and LeafGreen: once the Sevii Islands are open). Altering "
-        "Cave: its Pokemon change once he has told you. One card at a time.",
+        "4.  Upstairs in any Pokemon Center, the deliveryman hands you the gift or tells you what to do next. Tickets: "
+        "show them at the harbor he names. One card at a time. The README's guide has every step.",
     };
+    // The steps, above the buttons; when the rows leave no room for them, where to find them.
+    const float steps_end = py + ph - 104 * s;
+    std::vector<std::vector<std::string>> steps;
+    float need = 0;
     for (const char* step : ruby_sapphire ? steps_ruby_sapphire : steps_wireless) {
-      for (const auto& line : wrap(ui_, step, 18 * s, inner, false, 3)) {
-        ui_.text(x, y, line, 18 * s, kDim);
-        y += 26 * s;
+      steps.push_back(wrap(ui_, step, 18 * s, inner, false, 3));
+      need += 26 * s * static_cast<float>(steps.back().size()) + 4 * s;
+    }
+    if (y + need > steps_end) {
+      ui_.text(x, y, "Every step, for each gift: the guide in the README (\"Pokemon: the lost events, restored\").", 18 * s, kDim);
+      y += 30 * s;
+    } else {
+      for (const auto& lines : steps) {
+        for (const auto& line : lines) {
+          ui_.text(x, y, line, 18 * s, kDim);
+          y += 26 * s;
+        }
+        y += 4 * s;
       }
-      y += 4 * s;
     }
     note(y + 4 * s);
     online_button(x, py + ph - 92 * s, "Back", s, false, kObBack);
