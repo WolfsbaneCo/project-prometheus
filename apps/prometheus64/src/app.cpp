@@ -152,11 +152,12 @@ bool App::init(std::string& error) {
   }
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
-  if (settings_.get_int("gba_looks", 0) < 2) {
+  if (settings_.get_int("gba_looks", 0) < 3) {
     // The GBA looks changed while the owner was choosing them (Smooth became xBRZ, Clean MMPX):
-    // choices saved before then start again from the default, Smooth.
+    // choices saved before then start again from the default, Smooth. (3: once more for 0.2.1,
+    // after looks picked while testing were still saved on the owner's computer.)
     settings_.clear_game_key("gba_look");
-    settings_.set_int("gba_looks", 2);
+    settings_.set_int("gba_looks", 3);
     settings_.save();
   }
   load_group_key();
@@ -269,7 +270,7 @@ bool App::init(std::string& error) {
       }
       frames += n;
     }
-    if (!fast_ && !focus2_) audio_.push(d, n);
+    if (!focus2_) audio_.push(d, n);
   };
   core_.hooks.input_poll = [] {};
   core_.hooks.input_state = [this](unsigned port, unsigned dev, unsigned idx, unsigned id) -> int16_t {
@@ -624,6 +625,8 @@ void App::stop_game() {
   if (const std::string err = core_.open(n64_core_path_); !err.empty()) toast(err, 8);
   input_.set_gba(false);
   audio_.close();
+  fast_ = false;  // a game left mid speed-up: the next one starts at its own pace
+  audio_.set_fast(1);
   video_.clear_frame();
   game_.reset();
   screen_ = Screen::Home;
@@ -972,12 +975,13 @@ void App::run_frames() {
   }
   // Speeding up (GBA, the speed key held): kFastForward times the game's speed, by the clock.
   // Not while linked or at an event, where the other side expects the game's own pace. Its sound
-  // is left out (sped-up sound only stutters) and starts again cleanly afterwards.
+  // plays along, sped up as much (Audio::set_fast), and back to normal the moment it ends.
   const bool fast = game_ && game_->system == System::GBA && !link_.active() && !local_.active() && event_key_.empty() &&
                     overlay_ == Overlay::None && input_.speed_held();
   if (fast != fast_) {
     fast_ = fast;
     audio_.clear();
+    audio_.set_fast(fast ? kFastForward : 1);
     acc_ns_ = 0;
     speed_since_ns_ = 0;
   }

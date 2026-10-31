@@ -52,11 +52,13 @@ void Audio::push(const int16_t* stereo, std::size_t frames) {
   const double queued = queued_seconds();
   if (queued > std::max(kMaxQueue, 3 * target_)) return;
   const double off = std::clamp((queued - target_) / target_, -1.0, 1.0);
-  SDL_SetAudioStreamFrequencyRatio(stream_, static_cast<float>(speed_ * (1.0 + kMaxAdjust * off)));
+  SDL_SetAudioStreamFrequencyRatio(stream_, static_cast<float>(speed_ * fast_ * (1.0 + kMaxAdjust * off)));
   SDL_PutAudioStreamData(stream_, stereo, static_cast<int>(frames * 4));
 }
 
 void Audio::set_speed(double ratio) { speed_ = std::clamp(ratio, 0.95, 1.05); }
+
+void Audio::set_fast(double times) { fast_ = std::clamp(times, 1.0, 8.0); }
 
 void Audio::clear() {
   if (stream_) SDL_ClearAudioStream(stream_);
