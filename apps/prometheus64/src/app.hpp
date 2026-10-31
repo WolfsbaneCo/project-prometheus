@@ -201,7 +201,8 @@ class App {
   bool supersampling(const std::string& game_id) const;
   int texture_look(const std::string& game_id) const;
   void run_frames();
-  void run_one_frame();  // the game, and the second game when two are linked here
+  void run_one_frame();
+  int fast_times() const;  // how many times faster a GBA game runs with the speed key held (2, 4, 6, 8)  // the game, and the second game when two are linked here
 
   // Local link play (local_link.hpp): a second of the player's GBA games, linked to this one.
   std::vector<const Game*> second_game_choices() const;

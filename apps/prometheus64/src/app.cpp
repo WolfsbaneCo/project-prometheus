@@ -26,7 +26,9 @@ namespace {
 
 constexpr std::size_t kSrmSize = 0x48800;  // Mupen64Plus-Next save memory layout
 constexpr const char* kOpt = "mupen64plus-";
-constexpr int kFastForward = 4;  // GBA games with the speed key held: four times the game's speed
+// GBA games with the speed key held run this many times faster; the player picks it in the menu.
+constexpr int kFastChoices[] = {2, 4, 6, 8};
+constexpr int kFastDefault = 4;
 
 
 struct PresetDef {
@@ -87,8 +89,9 @@ std::string load_into(Core& core, const Game& game) {
 
 const char* preset_name(Preset p) { return kPresets[static_cast<int>(p)].name; }
 
-// GBA pictures: 240x160 pixel art on a big screen. Smooth, the default, is xBRZ, the filter the
-// owner knew from VBA-M: smooth, clean edges without melting small details or text (xBR, used
+// GBA pictures: 240x160 pixel art on a big screen. Classic, the default, is xBRZ at 3x and crisp
+// pixels for the rest: VBA-M's usual look, edges eased while letters and sprites keep their pixels.
+// Smooth is xBRZ as big as the screen takes, the filter the owner knew from VBA-M: smooth, clean edges without melting small details or text (xBR, used
 // before, rounded a whole game pixel at a time and did). As VBA-M draws it, xBRZ is made at the
 // largest whole size that fits and stretched the last bit with crisp pixels, never blurred; then
 // a light sharpening that stays within each pixel's neighbours tightens the edges xBRZ blends,
@@ -106,6 +109,7 @@ struct GbaLookDef {
   bool colour_correction, ghosting, whole_pixels;
   Prescale prescale;  // redrawn bigger on the CPU first (Video::software_frame)
   float sharpen = 0.0f;  // halo-free sharpening after it (Look::sharpen_within): xBRZ's blended edges tightened
+  int xbrz_max = 9;      // xBRZ at most this many times the size; crisp pixels for the rest
 };
 const GbaLookDef kGbaLooks[] = {
     {"Sharp", "Crisp pixels filling the screen, in the game's own colours", Look::Pixels::Sharp, 0.0f, false, false, false,
@@ -117,8 +121,10 @@ const GbaLookDef kGbaLooks[] = {
     {"Pixel-perfect", "Every pixel exactly the same size, at a whole-number scale", Look::Pixels::Sharp, 0.0f, false, false,
      true, Prescale::None},
     {"Clean", "Crisp, with jagged edges rounded off", Look::Pixels::Sharp, 0.0f, false, false, false, Prescale::Mmpx4},
+    {"Classic", "Edges gently smoothed, the game's own pixels and text kept (xBRZ at 3x, as VBA-M shows it)",
+     Look::Pixels::Sharp, 0.0f, false, false, false, Prescale::Xbrz, 0.6f, 3},
 };
-constexpr int kGbaLookDefault = 1;  // Smooth
+constexpr int kGbaLookDefault = 5;  // Classic
 constexpr int kGbaLookCount = static_cast<int>(std::size(kGbaLooks));
 // The look chosen for a GBA game. Its own setting ("gba_look"), so N64 presets never carry over.
 int gba_look(const Settings& settings, const std::string& id) {
@@ -156,12 +162,13 @@ bool App::init(std::string& error) {
   }
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
-  if (settings_.get_int("gba_looks", 0) < 3) {
+  if (settings_.get_int("gba_looks", 0) < 4) {
     // The GBA looks changed while the owner was choosing them (Smooth became xBRZ, Clean MMPX):
     // choices saved before then start again from the default, Smooth. (3: once more for 0.2.1,
-    // after looks picked while testing were still saved on the owner's computer.)
+    // after looks picked while testing were still saved on the owner's computer; 4: for 0.2.4,
+    // when Classic became the default, so every game starts on it.)
     settings_.clear_game_key("gba_look");
-    settings_.set_int("gba_looks", 3);
+    settings_.set_int("gba_looks", 4);
     settings_.save();
   }
   load_group_key();
@@ -249,9 +256,9 @@ bool App::init(std::string& error) {
     if (data == RETRO_HW_FRAME_BUFFER_VALID) {
       video_.hardware_frame(w, h);
     } else {
-      const Prescale prescale =
-          game_ && game_->system == System::GBA ? kGbaLooks[gba_look(settings_, game_->id)].prescale : Prescale::None;
-      video_.software_frame(data, w, h, pitch, core_.pixel_format(), prescale);
+      const bool gba = game_ && game_->system == System::GBA;
+      const GbaLookDef& look = kGbaLooks[gba ? gba_look(settings_, game_->id) : 0];
+      video_.software_frame(data, w, h, pitch, core_.pixel_format(), gba ? look.prescale : Prescale::None, look.xbrz_max);
     }
   };
   core_.hooks.audio = [this](const int16_t* d, std::size_t n) {
@@ -306,7 +313,8 @@ bool App::init(std::string& error) {
   fs::create_directories(core2_.save_dir, ec);
   core2_.hooks.video = [this](const void* data, unsigned w, unsigned h, std::size_t pitch) {
     if (!data || data == RETRO_HW_FRAME_BUFFER_VALID || !game2_) return;
-    video2_.software_frame(data, w, h, pitch, core2_.pixel_format(), kGbaLooks[gba_look(settings_, game2_->id)].prescale);
+    const GbaLookDef& look = kGbaLooks[gba_look(settings_, game2_->id)];
+    video2_.software_frame(data, w, h, pitch, core2_.pixel_format(), look.prescale, look.xbrz_max);
   };
   core2_.hooks.audio = [this](const int16_t* d, std::size_t n) {
     if (focus2_) audio_.push(d, n);
@@ -704,6 +712,11 @@ Look App::current_look() const {
 // ---------------------------------------------------------------------------------------------
 // Saves
 
+int App::fast_times() const {
+  const int v = settings_.get_int("gba_speed", kFastDefault);
+  return std::find(std::begin(kFastChoices), std::end(kFastChoices), v) != std::end(kFastChoices) ? v : kFastDefault;
+}
+
 Look App::gba_look_for(const Game& game, const Core& core) const {
   Look l;
   const GbaLookDef& g = kGbaLooks[gba_look(settings_, game.id)];
@@ -981,7 +994,7 @@ void App::run_frames() {
     speed_since_ns_ = 0;
     return;
   }
-  // Speeding up (GBA, the speed key held): kFastForward times the game's speed, by the clock.
+  // Speeding up (GBA, the speed key held): fast_times() times the game's speed, by the clock.
   // Not while linked or at an event, where the other side expects the game's own pace. Its sound
   // plays along, sped up as much (Audio::set_fast), and back to normal the moment it ends.
   const bool fast = game_ && game_->system == System::GBA && !link_.active() && !local_.active() && event_key_.empty() &&
@@ -989,13 +1002,14 @@ void App::run_frames() {
   if (fast != fast_) {
     fast_ = fast;
     audio_.clear();
-    audio_.set_fast(fast ? kFastForward : 1);
+    audio_.set_fast(fast ? fast_times() : 1);
     acc_ns_ = 0;
     speed_since_ns_ = 0;
   }
   if (fast) {
-    acc_ns_ = opt_.screenshot.empty() ? acc_ns_ + elapsed * (kFastForward - 1) : kFastForward * frame_ns;
-    for (int runs = 0; acc_ns_ >= frame_ns && runs < 2 * kFastForward; ++runs) {
+    const int times = fast_times();
+    acc_ns_ = opt_.screenshot.empty() ? acc_ns_ + elapsed * (times - 1) : times * frame_ns;
+    for (int runs = 0; acc_ns_ >= frame_ns && runs < 2 * times; ++runs) {
       run_one_frame();
       acc_ns_ -= frame_ns;
       ++frame_count_;
@@ -1501,6 +1515,7 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Controls", "", kControlsItem},
       {"Link a second game", local_link_value(), kLocalLinkItem},
       {"Controlling", game2_ && focus2_ ? game2_->title : game_ ? game_->title : "", kLocalFocusItem, "F3"},
+      {"Speed-up (hold Space)", std::to_string(fast_times()) + "x", kSpeedItem},
       {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
       {"Daily hints", settings_.get_int("daily_hints", 1) ? "On" : "Off", kHintsItem},
       {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
@@ -1525,7 +1540,7 @@ std::vector<App::MenuItem> App::menu_items() const {
   items.erase(std::remove_if(items.begin(), items.end(),
                              [](const MenuItem& it) {
                                return it.id == kEventsItem || it.id == kHintsItem || it.id == kLocalLinkItem ||
-                                      it.id == kLocalFocusItem;
+                                      it.id == kLocalFocusItem || it.id == kSpeedItem;
                              }),
               items.end());
   return items;
@@ -1674,6 +1689,14 @@ void App::menu_change(int id, int dir) {
     case kLocalFocusItem:
       switch_local_focus();
       break;
+    case kSpeedItem: {
+      // 2x, 4x, 6x, 8x: left and right step through them, Enter goes round.
+      const int n = static_cast<int>(std::size(kFastChoices));
+      int i = static_cast<int>(std::find(std::begin(kFastChoices), std::end(kFastChoices), fast_times()) - std::begin(kFastChoices));
+      i = dir < 0 ? std::max(0, i - 1) : dir > 0 ? std::min(n - 1, i + 1) : (i + 1) % n;
+      settings_.set_int("gba_speed", kFastChoices[i]);
+      break;
+    }
     case kHintsItem: {
       const bool on = !settings_.get_int("daily_hints", 1);
       settings_.set_int("daily_hints", on ? 1 : 0);
@@ -1727,7 +1750,7 @@ void App::draw() {
   if (playing && fast_) {
     // Sped up: a small sign in the corner, so a game running fast is never a surprise.
     const float s = out_h_ / 1080.0f;
-    const std::string t = std::to_string(kFastForward) + "x speed";
+    const std::string t = std::to_string(fast_times()) + "x speed";
     const float w = ui_.measure(t, 20 * s, true) + 36 * s;
     ui_.rect(24 * s, 24 * s, w, 42 * s, rgb(0x121214, 0.8f), 12 * s);
     ui_.text(24 * s + w / 2, 24 * s + 10 * s, t, 20 * s, kText, true, Align::Center);
