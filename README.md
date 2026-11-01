@@ -34,7 +34,7 @@ The quick menu shows each item's shortcut next to it, and the shortcuts work whi
 
 **Changing the controls:** press **C** in the library (or Menu > Controls). Pick Keyboard, Left half, Right half or Controller, click a control and press the key or button you want. A key that is already in use swaps places, so nothing is left without a key. Changes save straight away; "Reset to defaults" undoes them.
 
-**GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger. Hold **Space** to speed the game up (4x, or 2x, 6x or 8x: **Speed-up** in the in-game menu; its sound sped up with it; not during link play or an event); change the key on the Controls screen.
+**GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger. Hold **Space** to speed the game up (4x, or 2x, 6x or 8x: **Speed-up** in the in-game menu; its sound sped up too but at its normal pitch, as in VBA-M; not during link play or an event); change the key on the Controls screen.
 
 **Each game keeps its own controls.** Change them from a game's menu (**Controls**) and they're saved for that game only, coming back whenever you start it. Controls changed from the library are your usual ones, used by every game you haven't set up on its own.
 
