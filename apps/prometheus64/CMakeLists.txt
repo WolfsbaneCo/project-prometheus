@@ -45,6 +45,7 @@ add_executable(prometheus64 WIN32
   src/cable_station.cpp
   src/gift_catalog.cpp
   src/pokemon_hints.cpp
+  src/pokemon_stats.cpp
   src/audio.cpp
   src/time_stretch.cpp
   src/core.cpp
@@ -89,7 +90,7 @@ target_link_libraries(p64_netsim PRIVATE SDL3::SDL3-static p64_curl)
 # A GBA game without a window, driven by a script: the test bench for the event gift station
 # (tools/giftsim.cpp). Not built by default:
 #   cmake --build build --target p64_giftsim
-add_executable(p64_giftsim EXCLUDE_FROM_ALL tools/giftsim.cpp src/core.cpp src/local_link.cpp src/gift_station.cpp src/cable_station.cpp src/gift_catalog.cpp src/pokemon_hints.cpp)
+add_executable(p64_giftsim EXCLUDE_FROM_ALL tools/giftsim.cpp src/core.cpp src/local_link.cpp src/gift_station.cpp src/cable_station.cpp src/gift_catalog.cpp src/pokemon_hints.cpp src/pokemon_stats.cpp)
 target_include_directories(p64_giftsim PRIVATE src third_party/libretro)
 target_link_libraries(p64_giftsim PRIVATE SDL3::SDL3-static)
 
@@ -133,4 +134,8 @@ if(BUILD_TESTING)
   target_include_directories(time_stretch_tests PRIVATE src)
   target_link_libraries(time_stretch_tests PRIVATE p64_warnings)
   add_test(NAME time_stretch COMMAND time_stretch_tests)
+add_executable(pokemon_stats_tests tests/pokemon_stats_tests.cpp src/pokemon_stats.cpp)
+target_include_directories(pokemon_stats_tests PRIVATE src)
+target_link_libraries(pokemon_stats_tests PRIVATE p64_warnings)
+add_test(NAME pokemon_stats COMMAND pokemon_stats_tests)
 endif()

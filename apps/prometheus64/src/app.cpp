@@ -720,6 +720,16 @@ int App::fast_times() const {
   return std::find(std::begin(kFastChoices), std::end(kFastChoices), v) != std::end(kFastChoices) ? v : kFastDefault;
 }
 
+void App::step_fast_times(int dir) {
+  // 2x, 4x, 6x, 8x: left and right step through them, Enter (or a click) goes round.
+  const int n = static_cast<int>(std::size(kFastChoices));
+  int i = static_cast<int>(std::find(std::begin(kFastChoices), std::end(kFastChoices), fast_times()) - std::begin(kFastChoices));
+  i = dir < 0 ? std::max(0, i - 1) : dir > 0 ? std::min(n - 1, i + 1) : (i + 1) % n;
+  settings_.set_int("gba_speed", kFastChoices[i]);
+  settings_.save();
+  if (fast_ && game_) audio_.set_fast(fast_times());  // held right now: the new speed's sound
+}
+
 Look App::gba_look_for(const Game& game, const Core& core) const {
   Look l;
   const GbaLookDef& g = kGbaLooks[gba_look(settings_, game.id)];
@@ -1537,8 +1547,8 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Controls", "", kControlsItem},
       {"Link a second game", local_link_value(), kLocalLinkItem},
       {"Controlling", game2_ && focus2_ ? game2_->title : game_ ? game_->title : "", kLocalFocusItem, "F3"},
-      {"Speed-up (hold Space)", std::to_string(fast_times()) + "x", kSpeedItem},
       {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
+      {"Pok\xC3\xA9mon stats", "EVs", kStatsItem},
       {"Daily hints", settings_.get_int("daily_hints", 1) ? "On" : "Off", kHintsItem},
       {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
       {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
@@ -1550,6 +1560,7 @@ std::vector<App::MenuItem> App::menu_items() const {
     for (MenuItem& it : items) {
       if (it.id == kTextures || it.id == kResolution || it.id == kOverscan) continue;
       if (it.id == kEventsItem && events_for(*game_).empty()) continue;
+      if (it.id == kStatsItem && !has_stats_page()) continue;
       if (it.id == kHintsItem && !has_daily_hints(game_->id.size() >= 8 ? game_->id.substr(4, 4) : "")) continue;
       if (it.id == kLocalFocusItem && !game2_) continue;
       if (it.id == kLocalLinkItem && (link_.active() || online_game_)) continue;
@@ -1561,8 +1572,8 @@ std::vector<App::MenuItem> App::menu_items() const {
   }
   items.erase(std::remove_if(items.begin(), items.end(),
                              [](const MenuItem& it) {
-                               return it.id == kEventsItem || it.id == kHintsItem || it.id == kLocalLinkItem ||
-                                      it.id == kLocalFocusItem || it.id == kSpeedItem;
+                               return it.id == kEventsItem || it.id == kStatsItem || it.id == kHintsItem || it.id == kLocalLinkItem ||
+                                      it.id == kLocalFocusItem;
                              }),
               items.end());
   return items;
@@ -1690,6 +1701,9 @@ void App::menu_change(int id, int dir) {
         online_page_ = OnlinePage::Events;
       }
       break;
+    case kStatsItem:
+      if (dir == 0) open_stats();
+      break;
     case kLocalLinkItem: {
       if (game2_) {
         if (dir == 0) stop_local_link();
@@ -1711,14 +1725,6 @@ void App::menu_change(int id, int dir) {
     case kLocalFocusItem:
       switch_local_focus();
       break;
-    case kSpeedItem: {
-      // 2x, 4x, 6x, 8x: left and right step through them, Enter goes round.
-      const int n = static_cast<int>(std::size(kFastChoices));
-      int i = static_cast<int>(std::find(std::begin(kFastChoices), std::end(kFastChoices), fast_times()) - std::begin(kFastChoices));
-      i = dir < 0 ? std::max(0, i - 1) : dir > 0 ? std::min(n - 1, i + 1) : (i + 1) % n;
-      settings_.set_int("gba_speed", kFastChoices[i]);
-      break;
-    }
     case kHintsItem: {
       const bool on = !settings_.get_int("daily_hints", 1);
       settings_.set_int("daily_hints", on ? 1 : 0);
@@ -1959,7 +1965,7 @@ void App::draw_menu() {
       ui_.text(kx + 8 * s, y + 15 * s, items[i].key, 15 * s, off ? kFaint : sel ? kText : kDim, true);
     }
     if (!items[i].value.empty()) {
-      const bool adjustable = (items[i].id >= kSlot && items[i].id <= kVolume) || items[i].id == kSpeedItem;
+      const bool adjustable = items[i].id >= kSlot && items[i].id <= kVolume;
       if (adjustable && sel) {
         // Clickable arrows either side of the value.
         const float bs = 32 * s, by = y + (row - 6 * s - bs) / 2, inc_x = px + pw - 36 * s - bs;
@@ -2219,8 +2225,8 @@ std::vector<App::ControlsEntry> App::controls_entries() const {
   std::vector<ControlsEntry> out;
   int row = 0;
   if (controls_tab_ < Input::kKeyLayouts) {
-    for (int c : std::initializer_list<int>{kStickUp, kStickDown, kStickLeft, kStickRight, kWalk, kSpeed, kDUp, kDDown,
-                                            kDLeft, kDRight}) {
+    for (int c : std::initializer_list<int>{kStickUp, kStickDown, kStickLeft, kStickRight, kWalk, kSpeed, kEntrySpeedAmount,
+                                            kDUp, kDDown, kDLeft, kDRight}) {
       out.push_back({c, 0, row++});
     }
   } else {
@@ -2257,6 +2263,10 @@ void App::controls_action(int action) {
   const int n = static_cast<int>(entries.size());
   controls_index_ = std::clamp(controls_index_, 0, n - 1);
   const ControlsEntry cur = entries[controls_index_];
+  if (cur.control == kEntrySpeedAmount && (action == kLeft || action == kRight || action == kAccept)) {
+    step_fast_times(action == kLeft ? -1 : action == kRight ? 1 : 0);
+    return;
+  }
   switch (action) {
     case kUp: controls_index_ = (controls_index_ + n - 1) % n; break;
     case kDown: controls_index_ = (controls_index_ + 1) % n; break;
@@ -2416,6 +2426,17 @@ void App::draw_controls() {
   }
   for (int i = 0; i < static_cast<int>(entries.size()); ++i) {
     const ControlsEntry& en = entries[i];
+    if (en.control == kEntrySpeedAmount) {
+      // Not a key: how much faster the speed key runs a GBA game (setting gba_speed, every GBA game).
+      const float x = colx[en.column], y = rows_top + en.row * row_h;
+      const bool focus = i == controls_index_;
+      if (focus) ui_.rect(x, y, colw, row_h - 4 * s, kRed.with_alpha(0.16f), 12 * s);
+      else if (mouse_over(x, y, colw, row_h - 4 * s)) ui_.rect(x, y, colw, row_h - 4 * s, rgb(0xFFFFFF, 0.05f), 12 * s);
+      ui_.text(x + 14 * s, y + 11 * s, "Speed-up amount", 20 * s, focus ? kText : kText.with_alpha(0.85f), focus);
+      chip(x + colw - 10 * s, y, "<   " + std::to_string(fast_times()) + "x   >", false, false);
+      add_hit(x, y, colw, row_h - 4 * s, kHitEntry, i);
+      continue;
+    }
     if (en.control < 0) continue;
     const float x = colx[en.column], y = rows_top + en.row * row_h;
     const bool focus = i == controls_index_, waiting = focus && controls_capture_;
@@ -2444,7 +2465,10 @@ void App::draw_controls() {
   draw_button(px + 40 * s, by, "Reset to defaults", s, false, controls_index_ == reset_i, kHitEntry, reset_i);
   draw_button(px + pw - 40 * s, by, "Done", s, true, controls_index_ == done_i, kHitEntry, done_i, true);
   ui_.text(px + pw / 2, by + 16 * s,
-           controls_capture_ ? "Esc cancels" : "A key that is already in use swaps places with this one",
+           controls_capture_ ? "Esc cancels"
+           : entries[std::clamp(controls_index_, 0, static_cast<int>(entries.size()) - 1)].control == kEntrySpeedAmount
+               ? "Left / Right or click: how fast holding the speed key runs GBA games"
+               : "A key that is already in use swaps places with this one",
            16 * s, kFaint, false, Align::Center);
 }
 

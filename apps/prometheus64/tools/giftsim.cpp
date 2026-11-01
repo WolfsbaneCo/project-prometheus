@@ -30,6 +30,7 @@
 //   log                        print the stations' logs
 //   until <text> <frames>      run until the station's log contains the text (or give up)
 //   hints [code]               print today's Pokémon daily hints (pokemon_hints.hpp; code: BPEE)
+//   mons [code]                the party as the Pokémon stats page reads it (pokemon_stats.hpp)
 //   second, first              the commands after it go to a second game (its own copy of the
 //                              core, from a copy of the library) or back to the first
 //   locallink                  join the two games' link ports (local_link.hpp); both then run
@@ -48,6 +49,7 @@
 #include "gift_station.hpp"
 #include "local_link.hpp"
 #include "pokemon_hints.hpp"
+#include "pokemon_stats.hpp"
 
 namespace {
 
@@ -351,6 +353,21 @@ int main(int argc, char** argv) {
       const auto hints = p64::daily_hints(code, memory);
       if (hints.empty()) std::printf("hints: none\n");
       for (const auto& h : hints) std::printf("hint %s: %s\n", h.key.c_str(), h.text.c_str());
+      std::fflush(stdout);
+    } else if (cmd == "mons") {
+      std::string code = b.code;
+      ss >> code;
+      const p64::GbaMemory memory = [&](uint32_t a, std::size_t n) -> const uint8_t* { return b.core.memory(a, n); };
+      const auto party = p64::party_pokemon(code, memory);
+      std::printf("party: %zu\n", party.size());
+      for (const auto& m : party) {
+        std::printf("  #%03d %-10s %-10s Lv.%-3d %-7s EVs", m.dex, m.species.c_str(), m.nickname.c_str(), m.level,
+                    m.nature.c_str());
+        for (int v : m.evs) std::printf(" %3d", v);
+        std::printf(" (%d)  IVs", m.ev_total());
+        for (int v : m.ivs) std::printf(" %2d", v);
+        std::printf("\n");
+      }
       std::fflush(stdout);
     } else if (cmd == "cable") {
       std::string key, code = b.code;

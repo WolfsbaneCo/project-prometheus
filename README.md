@@ -34,7 +34,7 @@ The quick menu shows each item's shortcut next to it, and the shortcuts work whi
 
 **Changing the controls:** press **C** in the library (or Menu > Controls). Pick Keyboard, Left half, Right half or Controller, click a control and press the key or button you want. A key that is already in use swaps places, so nothing is left without a key. Changes save straight away; "Reset to defaults" undoes them.
 
-**GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger. Hold **Space** to speed the game up (4x, or 2x, 6x or 8x: **Speed-up** in the in-game menu; its sound sped up too but at its normal pitch, as in VBA-M; not during link play or an event); change the key on the Controls screen.
+**GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger. Hold **Space** to speed the game up (4x, or 2x, 6x or 8x: **Speed-up amount** on the Controls screen; its sound sped up too but at its normal pitch, as in VBA-M; not during link play or an event); change the key on the Controls screen.
 
 **Each game keeps its own controls.** Change them from a game's menu (**Controls**) and they're saved for that game only, coming back whenever you start it. Controls changed from the library are your usual ones, used by every game you haven't set up on its own.
 
@@ -214,6 +214,12 @@ Project Prometheus reads your running game the way a guide would and tells you, 
 
 It never changes the odds or your game, and says nothing on ordinary days. Because the game's clock follows your computer's real clock, the daily numbers change every real day, as on a cartridge. Turn the hints off with **Daily hints** in the in-game menu.
 
+#### Pokémon stats: your party's EVs (Ruby, Sapphire, Emerald, FireRed, LeafGreen)
+
+The games never show a Pokémon's **effort values** (EVs), the points it earns from battles and vitamins that raise its stats: up to 252 in one stat and 510 in all. To see them, open the in-game menu (Esc) and choose **Pokémon stats**. Your party is listed on the left; pick a Pokémon (click it, or the arrow keys) to see its EVs stat by stat, with its total out of 510, how many it can still earn, its IVs (0 to 31, fixed when it was met) and its nature, with the stat the nature raises (+) and lowers (-) marked.
+
+Nothing is shown unless you open the page. It reads your party as the game's own summary screen does, and changes nothing.
+
 #### Not included
 
 - **Emerald's own e-Reader menu (Trainer Hill e-Cards).** Emerald talks to the e-Reader differently from Ruby and Sapphire: it first sends the e-Reader a program, then receives the card over a link mode the GBA emulator doesn't provide. It needs work inside the emulator core itself; it's on the list in [`docs/backlog.md`](docs/backlog.md).
@@ -226,6 +232,7 @@ It never changes the odds or your game, and says nothing on ordinary days. Becau
 - **Ruby, Sapphire:** the app is the second Game Boy on gpSP's link cable emulation, as the e-Reader was. It answers the game's link handshake and player data exchange, then sends one Mystery Event, which the game checks and runs with its own commands (the berry, the clock reset, the words, the trainer, the Pokémon).
 - **Two games here:** each game runs in its own copy of the GBA core, and their link messages go straight from one to the other in memory.
 - **Daily hints:** the app reads the game's own numbers (the daily Mirage and lottery values, your Pokémon's IDs) and applies the game's own rules to them.
+- **Pokémon stats:** the app reads your party from the running game and decodes each Pokémon as the game does (its data is kept encrypted, in four blocks whose order depends on the Pokémon, with a checksum).
 - All of it was written from the [pret](https://github.com/pret) decompilations of the games, which document what the games expect (and, for Jirachi, from [PKHeX](https://github.com/kwsch/PKHeX)'s documentation of how the Bonus Disc made it), and tested against the games themselves. The details, and what has been checked, are in [decision 0008](docs/decisions/0008-event-gifts.md).
 
 ### GBA pictures for big screens

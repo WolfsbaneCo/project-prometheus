@@ -21,7 +21,7 @@ enum UiAction { kUp, kDown, kLeft, kRight, kAccept, kBack, kMenu, kPrevTab, kNex
 enum DialogKind { kFolderChosen = 1, kSaveChosen = 2, kKeyChosen = 3, kKeySaveAs = 4 };
 enum MenuId {
   kResume, kSaveState, kLoadState, kSlot, kPicture, kTextures, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
-  kPlayers, kControlsItem, kEventsItem, kHintsItem, kLocalLinkItem, kLocalFocusItem, kSpeedItem, kReset, kQuit,
+  kPlayers, kControlsItem, kEventsItem, kHintsItem, kLocalLinkItem, kLocalFocusItem, kStatsItem, kReset, kQuit,
   kPickBack, kPickGame  // the chooser for "Link a second game": Back, then one row per game (kPickGame + i)
 };
 // Clickable areas (App::Hit::kind).
@@ -33,7 +33,7 @@ enum HitKind {
 enum HintId {
   kHintPlay, kHintFolder, kHintImport, kHintOnline, kHintBackup, kHintControls, kHintPlayers, kHintFullscreen, kHintHelp
 };
-inline constexpr int kEntryReset = -1, kEntryDone = -2;
+inline constexpr int kEntryReset = -1, kEntryDone = -2, kEntrySpeedAmount = -3;  // -3: the speed-up amount row
 inline constexpr int kResSuper = 9;  // "resolution" setting: 0 auto, 1-8 fixed factor, 9 supersampled
 inline constexpr uint64_t kMouseIdleNs = 2'500'000'000;  // in a game, the cursor hides after this
 
