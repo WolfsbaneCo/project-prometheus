@@ -20,6 +20,7 @@ bool Audio::open(double sample_rate) {
   if (!stream_) return false;
   rate_ = sample_rate;
   primed_ = false;
+  stretch_.set_rate(sample_rate);
   // The sound card takes its sound in chunks: keep at least two of them queued.
   SDL_AudioSpec device{};
   int chunk = 0;
@@ -52,17 +53,31 @@ void Audio::push(const int16_t* stereo, std::size_t frames) {
   const double queued = queued_seconds();
   if (queued > std::max(kMaxQueue, 3 * target_)) return;
   const double off = std::clamp((queued - target_) / target_, -1.0, 1.0);
-  SDL_SetAudioStreamFrequencyRatio(stream_, static_cast<float>(speed_ * fast_ * (1.0 + kMaxAdjust * off)));
+  SDL_SetAudioStreamFrequencyRatio(stream_, static_cast<float>(speed_ * (1.0 + kMaxAdjust * off)));
+  if (fast_ > 1.0) {
+    // Sped up: shortened at its own pitch, played at the normal rate. The game is only about as
+    // fast as asked (a slow moment, a busy computer), so the stretch follows the queue, up to a
+    // quarter either way: it keeps up without piling up or running dry. Pitch never changes.
+    stretch_.set_speed(fast_ * std::clamp(1.0 + 0.5 * off, 0.75, 1.25));
+    const std::vector<int16_t> out = stretch_.process(stereo, frames);
+    if (!out.empty()) SDL_PutAudioStreamData(stream_, out.data(), static_cast<int>(out.size() * sizeof(int16_t)));
+    return;
+  }
   SDL_PutAudioStreamData(stream_, stereo, static_cast<int>(frames * 4));
 }
 
 void Audio::set_speed(double ratio) { speed_ = std::clamp(ratio, 0.95, 1.05); }
 
-void Audio::set_fast(double times) { fast_ = std::clamp(times, 1.0, 8.0); }
+void Audio::set_fast(double times) {
+  fast_ = std::clamp(times, 1.0, 8.0);
+  stretch_.set_speed(fast_);
+  stretch_.reset();
+}
 
 void Audio::clear() {
   if (stream_) SDL_ClearAudioStream(stream_);
   primed_ = false;
+  stretch_.reset();
 }
 
 void Audio::set_volume(float volume) {

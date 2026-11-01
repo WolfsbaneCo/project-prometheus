@@ -46,6 +46,7 @@ add_executable(prometheus64 WIN32
   src/gift_catalog.cpp
   src/pokemon_hints.cpp
   src/audio.cpp
+  src/time_stretch.cpp
   src/core.cpp
   src/gl.cpp
   src/input.cpp
@@ -127,4 +128,9 @@ if(BUILD_TESTING)
   target_link_libraries(input_tests PRIVATE SDL3::SDL3-static p64_warnings)
   add_test(NAME controls_bindings COMMAND input_tests)
   set_tests_properties(controls_bindings PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=dummy")
+  # Fast-forward sound: sped up, pitch kept.
+  add_executable(time_stretch_tests tests/time_stretch_tests.cpp src/time_stretch.cpp)
+  target_include_directories(time_stretch_tests PRIVATE src)
+  target_link_libraries(time_stretch_tests PRIVATE p64_warnings)
+  add_test(NAME time_stretch COMMAND time_stretch_tests)
 endif()
