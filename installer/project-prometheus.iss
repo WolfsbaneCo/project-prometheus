@@ -3,7 +3,7 @@
 ; Installs for the current user only, so it needs no administrator rights.
 
 #ifndef AppVersion
-  #define AppVersion "0.2.5"
+  #define AppVersion "0.2.6"
 #endif
 #ifndef StageDir
   #define StageDir "..\stage"

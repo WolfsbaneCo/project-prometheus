@@ -25,6 +25,7 @@
 #include "link.hpp"
 #include "local_link.hpp"
 #include "netplay.hpp"
+#include "pokemon_stats.hpp"
 #include "settings.hpp"
 #include "ui.hpp"
 #include "video.hpp"
@@ -70,7 +71,7 @@ class App {
  private:
   enum class Screen { Home, Playing };
   enum class Overlay { None, Menu, Seating, Help, Controls, Online, Backup };
-  enum class OnlinePage { Main, Setup, Join, Lobby, Link, Events };
+  enum class OnlinePage { Main, Setup, Join, Lobby, Link, Events, Stats };
   enum class TextField { None, Name, Token, Code };
   struct Toast {
     std::string text;
@@ -151,6 +152,11 @@ class App {
   void open_event(const EventGift& gift);
   void close_event();
   void update_event();
+  // Pokémon stats (pokemon_stats.hpp): the party of the game being controlled, read when shown.
+  std::vector<OwnedPokemon> stats_party();
+  bool has_stats_page() const;
+  void open_stats();
+  void draw_stats(float x, float y, float inner, float s);
   // A link needs the link hardware the game was started with: restart it (keeping its progress)
   // when an event left the Wireless Adapter in.
   void ensure_link_hardware();
@@ -202,7 +208,8 @@ class App {
   int texture_look(const std::string& game_id) const;
   void run_frames();
   void run_one_frame();
-  int fast_times() const;  // how many times faster a GBA game runs with the speed key held (2, 4, 6, 8)  // the game, and the second game when two are linked here
+  int fast_times() const;  // how many times faster a GBA game runs with the speed key held (2, 4, 6, 8)
+  void step_fast_times(int dir);  // the next choice down (-1) or up (1), or round (0): the Controls screen
 
   // Local link play (local_link.hpp): a second of the player's GBA games, linked to this one.
   std::vector<const Game*> second_game_choices() const;
@@ -291,6 +298,7 @@ class App {
   GiftStation::Stage event_station_stage() const;  // the open station's stage, as GiftStation's
   std::string event_station_status() const;
   OnlinePage online_page_ = OnlinePage::Main;
+  int stats_pick_ = 0;  // the party Pokémon shown on the Pokémon stats page
   std::map<std::string, int> event_choice_;  // Event gifts page: the choice picked in each group
   TextField text_field_ = TextField::None;
   std::string name_input_, token_input_, code_input_, online_note_;

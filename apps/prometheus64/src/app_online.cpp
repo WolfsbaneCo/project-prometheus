@@ -32,6 +32,7 @@ enum OnlineButton {
   kObEventFirst  // kObEventFirst + i opens the i-th event of the game; + kObEventPrev/Next + row picks a choice
 };
 constexpr int kObEventPrev = 100, kObEventNext = 200;
+constexpr int kObStatsFirst = 900;  // + i: the Pokémon stats page's i-th party Pokémon
 
 // The Event gifts page's rows: a gift of its own, or the gifts of one group (picked with < >).
 std::vector<std::vector<std::size_t>> event_rows(const std::vector<EventGift>& gifts) {
@@ -980,6 +981,15 @@ void App::draw_online() {
     return;
   }
 
+  if (online_page_ == OnlinePage::Stats) {
+    title("Pok\xC3\xA9mon stats", "Pick a Pok\xC3\xA9mon from your party to see its effort values (EVs): the points it "
+                                  "earns from battles and vitamins, up to 252 in a stat and 510 in all.");
+    draw_stats(x, y, inner, s);
+    online_button(x, py + ph - 92 * s, "Back", s, false, kObBack);
+    online_button(px + pw - 48 * s, py + ph - 92 * s, "Back to the game", s, true, kObDone, true);
+    return;
+  }
+
   if (online_page_ == OnlinePage::Events) {
     const Game* g = link_game();
     const std::vector<EventGift> gifts = g ? events_for(*g) : std::vector<EventGift>{};
@@ -1301,6 +1311,10 @@ void App::draw_online_status() {
 
 void App::online_click(int id) {
   if (id != kObRemoveKey) confirm_remove_key_ = false;
+  if (id >= kObStatsFirst && id < kObStatsFirst + 6) {
+    stats_pick_ = id - kObStatsFirst;
+    return;
+  }
   if (id >= kObEventFirst) {
     if (const Game* g = link_game()) {
       const std::vector<EventGift> gifts = events_for(*g);
@@ -1353,6 +1367,10 @@ void App::online_click(int id) {
       break;
     case kObBack:
       focus_field(TextField::None);
+      if (online_page_ == OnlinePage::Stats) {  // opened from the in-game menu: back to it
+        overlay_ = Overlay::Menu;
+        break;
+      }
       online_page_ = OnlinePage::Main;
       online_focus_ = 0;
       break;
@@ -1455,7 +1473,9 @@ void App::online_action(int action) {
       break;
     case kBack:
     case kMenu:
-      if (online_page_ == OnlinePage::Link) {
+      if (online_page_ == OnlinePage::Stats) {
+        overlay_ = Overlay::Menu;  // opened from the in-game menu: back to it
+      } else if (online_page_ == OnlinePage::Link) {
         overlay_ = Overlay::None;  // the link stays open: back to the game
       } else if (online_page_ == OnlinePage::Setup || online_page_ == OnlinePage::Join || online_page_ == OnlinePage::Events) {
         online_page_ = OnlinePage::Main;
@@ -1469,6 +1489,107 @@ void App::online_action(int action) {
       break;
     default:
       break;
+  }
+  // On the Pokémon stats page, the Pokémon the arrow keys move to is the one shown.
+  if (online_page_ == OnlinePage::Stats && (action == kUp || action == kDown || action == kLeft || action == kRight) && n) {
+    const int id = online_buttons_[std::clamp(online_focus_, 0, n - 1)];
+    if (id >= kObStatsFirst && id < kObStatsFirst + 6) stats_pick_ = id - kObStatsFirst;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Pokémon stats: a party Pokémon's EVs, on request (pokemon_stats.hpp)
+
+bool App::has_stats_page() const {
+  const Game* g = game2_ && focus2_ ? &*game2_ : game_ ? &*game_ : nullptr;
+  return g && g->system == System::GBA && g->id.size() >= 8 && has_pokemon_stats(g->id.substr(4, 4));
+}
+
+std::vector<OwnedPokemon> App::stats_party() {
+  if (!has_stats_page()) return {};
+  const bool second = game2_ && focus2_;
+  Core& core = second ? core2_ : core_;
+  const std::string code = (second ? *game2_ : *game_).id.substr(4, 4);
+  const GbaMemory memory = [&core](uint32_t address, std::size_t size) -> const uint8_t* { return core.memory(address, size); };
+  return party_pokemon(code, memory);
+}
+
+void App::open_stats() {
+  open_online();
+  online_page_ = OnlinePage::Stats;
+  stats_pick_ = 0;
+  online_focus_ = 0;
+}
+
+void App::draw_stats(float x, float y, float inner, float s) {
+  const std::vector<OwnedPokemon> party = stats_party();
+  if (party.empty()) {
+    ui_.text(x, y + 10 * s, "No Pok\xC3\xA9mon to show yet: continue your saved game, then open this page again.", 21 * s, kDim);
+    return;
+  }
+  stats_pick_ = std::clamp(stats_pick_, 0, static_cast<int>(party.size()) - 1);
+
+  // The party, as the game orders it: one tile each, the one shown outlined.
+  const float list_w = 300 * s, tile_h = 70 * s;
+  for (std::size_t i = 0; i < party.size(); ++i) {
+    const OwnedPokemon& m = party[i];
+    const float ty = y + static_cast<float>(i) * (tile_h + 10 * s);
+    const int id = kObStatsFirst + static_cast<int>(i);
+    const int index = static_cast<int>(online_buttons_.size());
+    online_buttons_.push_back(id);
+    const bool picked = static_cast<int>(i) == stats_pick_;
+    const bool focused = index == online_focus_;
+    ui_.rect(x, ty, list_w, tile_h, picked ? rgb(0x2A2A30) : kTile, 14 * s);
+    if (picked) ui_.outline(x, ty, list_w, tile_h, kRed, 14 * s, 2 * s);
+    else if (focused || mouse_over(x, ty, list_w, tile_h)) ui_.outline(x, ty, list_w, tile_h, rgb(0xFFFFFF, 0.25f), 14 * s, 1.5f * s);
+    ui_.text(x + 20 * s, ty + 10 * s, ui_.fit(m.species, 22 * s, list_w - 40 * s, true), 22 * s, kText, true);
+    ui_.text(x + 20 * s, ty + 40 * s, "Lv. " + std::to_string(m.level) + "   " + std::to_string(m.ev_total()) + " EVs", 17 * s, kDim);
+    add_hit(x, ty, list_w, tile_h, kHitOnline, id);
+  }
+
+  // The one picked: its EVs stat by stat, each bar out of 255 (the most a stat can hold).
+  const OwnedPokemon& m = party[static_cast<std::size_t>(stats_pick_)];
+  const float dx = x + list_w + 40 * s, dw = inner - list_w - 40 * s;
+  float dy = y;
+  std::string head = m.species;
+  std::string nick = m.nickname;
+  std::string upper = m.species;
+  for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  if (!nick.empty() && nick != upper) head = nick + "  (" + m.species + ")";  // renamed: both
+  ui_.text(dx, dy, ui_.fit(head, 30 * s, dw, true), 30 * s, kText, true);
+  dy += 44 * s;
+  ui_.text(dx, dy, "Lv. " + std::to_string(m.level) + "   \xC2\xB7   " + m.nature + " nature", 19 * s, kDim);
+  dy += 46 * s;
+  static const char* const kStat[6] = {"HP", "Attack", "Defense", "Sp. Atk", "Sp. Def", "Speed"};
+  const float label_w = 150 * s, num_w = 70 * s, iv_w = 90 * s;
+  const float bar_x = dx + label_w, bar_w = dw - label_w - num_w - iv_w - 20 * s, bar_h = 14 * s;
+  const Color kTrack = rgb(0x0E0E10), kUp = rgb(0xF2C12E), kDown = rgb(0x6FA8FF);
+  for (int i = 0; i < 6; ++i) {
+    const bool up = i == m.nature_up, down = i == m.nature_down;
+    ui_.text(dx, dy, kStat[i], 20 * s, up ? kUp : down ? kDown : kText, up || down);
+    if (up || down) ui_.text(dx + ui_.measure(kStat[i], 20 * s, true) + 6 * s, dy, up ? "+" : "-", 20 * s, up ? kUp : kDown, true);
+    ui_.rect(bar_x, dy + 8 * s, bar_w, bar_h, kTrack, bar_h / 2);
+    const float fill = bar_w * static_cast<float>(m.evs[static_cast<std::size_t>(i)]) / 255.0f;
+    if (fill > 0) ui_.rect(bar_x, dy + 8 * s, std::max(fill, bar_h), bar_h, kRed, bar_h / 2);
+    ui_.text(bar_x + bar_w + num_w, dy, std::to_string(m.evs[static_cast<std::size_t>(i)]), 20 * s, kText, true, Align::Right);
+    ui_.text(dx + dw, dy + 2 * s, "IV " + std::to_string(m.ivs[static_cast<std::size_t>(i)]), 17 * s, kFaint, false, Align::Right);
+    dy += 46 * s;
+  }
+  // In all: out of 510.
+  dy += 6 * s;
+  ui_.rect(dx, dy - 10 * s, dw, 1.5f * s, rgb(0xFFFFFF, 0.08f));
+  ui_.text(dx, dy + 4 * s, "Total", 20 * s, kText, true);
+  ui_.rect(bar_x, dy + 12 * s, bar_w, bar_h, kTrack, bar_h / 2);
+  const float total_fill = bar_w * static_cast<float>(m.ev_total()) / static_cast<float>(kMaxEvTotal);
+  if (total_fill > 0) ui_.rect(bar_x, dy + 12 * s, std::max(total_fill, bar_h), bar_h, kRed, bar_h / 2);
+  ui_.text(bar_x + bar_w + num_w, dy + 4 * s, std::to_string(m.ev_total()), 20 * s, kText, true, Align::Right);
+  ui_.text(dx + dw, dy + 6 * s, "of 510", 17 * s, kFaint, false, Align::Right);
+  dy += 52 * s;
+  const int left = kMaxEvTotal - m.ev_total();
+  ui_.text(dx, dy, left > 0 ? "Room for " + std::to_string(left) + " more EVs." : "Fully trained: no more EVs to earn.", 18 * s, kDim);
+  dy += 30 * s;
+  if (m.nature_up >= 0) {
+    ui_.text(dx, dy, std::string(m.nature) + " raises " + kStat[m.nature_up] + " (+) and lowers " + kStat[m.nature_down] + " (-).", 18 * s, kFaint);
   }
 }
 
