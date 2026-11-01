@@ -1,4 +1,4 @@
-// Fast-forward sound: sped up without raising its pitch (src/time_stretch.cpp).
+// Fast-forward sound: sped up without raising its pitch (src/time_stretch.cpp), at every speed-up choice.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -28,7 +28,7 @@ static std::vector<int16_t> run(double speed, double seconds) {
 }
 
 int main() {
-  for (double speed : {2.0, 4.0, 8.0}) {
+  for (double speed : {2.0, 4.0, 6.0, 8.0}) {
     const auto out = run(speed, 4.0);
     const std::size_t frames = out.size() / 2;
     const double expected = 44100 * 4.0 / speed;
