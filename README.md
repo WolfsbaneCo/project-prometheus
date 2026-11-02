@@ -20,7 +20,7 @@ The **mouse** works everywhere: click a game to pick it and double-click to play
 | Esc, right-click, or Back/Guide on a controller | Quick menu: save states, picture, fill mode, resolution, volume, players, controls |
 | C (in the library) | Controls: change any key or controller button |
 | N (in the library) | Play online with friends in your group |
-| F5 / F7 | Save state / load state (in the slot chosen in the menu) |
+| F5 / F7 | Save state / load state (in the slot chosen in the menu). For GBA games a save state also keeps the game's own save, so loading it puts both back exactly as they were |
 | F8 / F9 | Volume down / up |
 | F10 | Who's playing: seat controllers and keyboards for up to 4 players |
 | F11 or Alt+Enter | Fullscreen |
@@ -220,6 +220,34 @@ The games never show a Pokémon's **effort values** (EVs), the points it earns f
 
 Nothing is shown unless you open the page. It reads your party as the game's own summary screen does, and changes nothing.
 
+#### Training competitive Pokémon: copying held TMs in Emerald (the Battle Tower glitch)
+
+Competitive teams need TMs that every game hands out only once (Toxic, Calm Mind, Dragon Claw, Bulk Up, and 18 more). Emerald has a bug of its own that copies a Pokémon together with the item it holds, and a TM can be held, so it copies TMs. It's the game's code doing it, the way Game Freak shipped it: the app adds nothing and edits nothing. What the app adds is safety: done as below, nothing can be lost.
+
+**Why it works.** When you start a Link Multi Battle challenge at the Battle Tower, Emerald first saves your party and bag but **not your PC boxes**, then offers a full save that you can turn down. Turn it down and reset: your party is as it was then, but your PC is as it was at your last full save. A Pokémon you took out of the PC since that save is now in both places, still holding its item. (Checked in the app's test bench on English Emerald: the copy and the original both held the TM, and both pass the game's own checks.)
+
+**You'll need**
+
+- Emerald after the Hall of Fame (the Battle Frontier, by ferry from Slateport or Lilycove).
+- Two Pokémon that can enter the Battle Tower: not Mewtwo, Mew, Lugia, Ho-Oh, Celebi, Kyogre, Groudon, Rayquaza, Jirachi or Deoxys, not two of the same species, and not holding the same item. They only start the challenge; they aren't copied.
+- **Carriers:** disposable wild Pokémon (a Zigzagoon from any route will do), one for each TM to copy, up to four with your two entrants. They're the only Pokémon that move, so a slip can't touch your team.
+
+**Steps**
+
+1. At the Battle Frontier's Pokémon Center, give each carrier a TM to hold (BAG, the TM, GIVE). Put the carriers in a PC box.
+2. Save the game (START, SAVE, YES).
+3. Press **F5**: a save state, which also keeps the game's save. It's your undo button: **F7** puts everything back to this moment.
+4. Take the carriers out of the PC into your party. Don't save.
+5. In the Battle Tower, talk to the right-hand attendant, the **LINK MULTI BATTLE ROOMS** guide. Choose **CHALLENGE**, then **LV. 50** (or OPEN LEVEL), pick your two entrants (not the carriers), and **CONFIRM**.
+6. *"Before entering a BATTLE ROOM, your progress must be saved. Is that okay?"* **YES.**
+7. *"Would you like to save the game?"* **NO.**
+8. *"We look forward to seeing you on another challenge!"* Now reset straight away: **Ctrl+R** (or **Reset game** in the menu). Don't save, and don't use the PC.
+9. **CONTINUE.** Each carrier is in your party and in the PC box, each holding its TM. Take the TMs off (party: the Pokémon, ITEM, TAKE; PC: MOVE ITEMS), then release the spare carriers (PC, RELEASE) or keep them for the next round.
+
+Each round copies every carrier you took out: with four carriers, that's four more TMs a round, as many rounds as you like.
+
+**The one rule.** Between step 2 and the reset, only take Pokémon *out* of the PC, never put any *in*: a Pokémon deposited after the save vanishes on reset (the same bug the other way round). If anything ever looks wrong, press **F7** before saving in the game, and you're back at step 3 with everything as it was. The app also keeps your last ten saves in its library.
+
 #### Not included
 
 - **Emerald's own e-Reader menu (Trainer Hill e-Cards).** Emerald talks to the e-Reader differently from Ruby and Sapphire: it first sends the e-Reader a program, then receives the card over a link mode the GBA emulator doesn't provide. It needs work inside the emulator core itself; it's on the list in [`docs/backlog.md`](docs/backlog.md).
@@ -284,6 +312,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0006 Google Drive backup](docs/decisions/0006-drive-backup.md)
   - [0007 GBA games](docs/decisions/0007-gba.md)
   - [0008 Pokémon event gifts and daily hints](docs/decisions/0008-event-gifts.md)
+  - [0009 The games' own glitches are allowed; the app never edits a game](docs/decisions/0009-game-glitches.md)
 - **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
 - **Privacy policy and terms of use** (shared by every Wolfsbane app): [wolfsbanecompany.com/apps/privacy](https://wolfsbanecompany.com/apps/privacy/) and [/apps/terms](https://wolfsbanecompany.com/apps/terms/), from the website repository [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company)
 - **To build next, with the plan for each:** [`docs/backlog.md`](docs/backlog.md)
