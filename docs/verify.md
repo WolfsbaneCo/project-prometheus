@@ -84,5 +84,5 @@ Checked against the stand-in for Google with two Linux "computers" and Pokémon 
 - **The Visiting Trainer in Sootopolis City (Emerald).** The trainer arrives in the save; walk into the Mystery Events House and battle them.
 - **A Battle Card's three wins (Emerald),** between two friends' games over link play.
 - **The Enigma Berry tree.** Plant the berry and check it grows over about four days and bears Enigma Berries with our picture.
-- **Jirachi traded to Emerald, FireRed or LeafGreen** with two games linked on one computer (Cable Club trade), and a Cable Club trade in general between two linked games.
+- **Jirachi traded from Ruby or Sapphire to Emerald, FireRed or LeafGreen** with two games linked on one computer. A Cable Club trade between two linked games is checked in the test bench (Emerald and Emerald, 2026-11-02: into the Trade Center, sat down, traded Jirachi, both saved, left the room together, back in the Pokémon Center, with the link's queues empty throughout); a Ruby and Emerald trade, the owner's, still to be played through once in the app.
 - **Two linked games on Windows:** the second copy of gpSP loads beside the first.
