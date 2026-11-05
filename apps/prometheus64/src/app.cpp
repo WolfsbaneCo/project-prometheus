@@ -861,6 +861,15 @@ void App::save_state() {
     fs::remove(file, ec);
     fs::rename(tmp, file, ec);
   }
+  // A GBA game's own save (the cartridge's) beside it: the core's state holds the game but not
+  // its save, so loading the state puts both back as they were (slotN.sav).
+  const fs::path sav = fs::path(file).replace_extension(".sav");
+  if (game_->system == System::GBA && core_.save_ram() && core_.save_ram_size() == savekit::kGbaSaveSize) {
+    std::ofstream(sav, std::ios::binary | std::ios::trunc)
+        .write(reinterpret_cast<const char*>(core_.save_ram()), static_cast<std::streamsize>(savekit::kGbaSaveSize));
+  } else {
+    fs::remove(sav, ec);
+  }
   // Save states only load in the same emulator core version, so record which one made it.
   std::ofstream(fs::path(file).replace_extension(".json"))
       << "{\n  \"core\": \"" << (core_.info().library_name ? core_.info().library_name : "") << "\",\n  \"version\": \""
@@ -877,7 +886,19 @@ void App::load_state() {
   }
   std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   if (core_.load_state(data)) {
-    toast("Loaded state " + std::to_string(slot_));
+    // A GBA state made since 0.2.8 also holds the game's save from that moment: put it back too, so
+    // the state is exactly as it was (the save it replaces stays in the library's history).
+    bool with_save = false;
+    if (game_->system == System::GBA && core_.save_ram() && core_.save_ram_size() == savekit::kGbaSaveSize) {
+      std::ifstream sav_in(fs::path(state_path(slot_)).replace_extension(".sav"), std::ios::binary);
+      std::vector<uint8_t> sav((std::istreambuf_iterator<char>(sav_in)), std::istreambuf_iterator<char>());
+      if (sav.size() == savekit::kGbaSaveSize) {
+        std::memcpy(core_.save_ram(), sav.data(), sav.size());
+        sync_game_save(true);
+        with_save = true;
+      }
+    }
+    toast("Loaded state " + std::to_string(slot_) + (with_save ? ", with the game's save from then" : ""));
   } else {
     toast("State " + std::to_string(slot_) + " was made by a different emulator version and cannot be loaded");
   }
@@ -1195,6 +1216,12 @@ void App::loop() {
         text.resize(8, ' ');
         for (int w = 0; w < 8; w += 4) std::reverse(text.begin() + w, text.begin() + w + 4);  // the core's word order
         std::memcpy(ram + 0x20800, text.data(), 8);
+      }
+      // A GBA game: the start of its save (cartridge memory as the game sees it).
+      if (uint8_t* ram = core_.save_ram(); ram && core_.save_ram_size() == savekit::kGbaSaveSize) {
+        std::string text = opt_.poke_text.empty() ? std::string("PROMETHE") : opt_.poke_text;
+        text.resize(8, ' ');
+        std::memcpy(ram, text.data(), 8);
       }
     }
     if (!opt_.screenshot.empty() && !opt_.online_exit_frame && static_cast<int>(frames_drawn) >= opt_.frames) {

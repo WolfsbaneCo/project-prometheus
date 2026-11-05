@@ -30,7 +30,12 @@
 //   log                        print the stations' logs
 //   until <text> <frames>      run until the station's log contains the text (or give up)
 //   hints [code]               print today's Pokémon daily hints (pokemon_hints.hpp; code: BPEE)
+//   dumpat <ptr> <off> <len> <file> dump memory at the address stored at <ptr>, plus <off>
 //   mons [code]                the party as the Pokémon stats page reads it (pokemon_stats.hpp)
+//   putat <ptr> <off> <file>   write a file's bytes at the address stored at <ptr>, plus <off>
+//                              (hex; for data the game moves around, as Emerald's PC; <ptr> "abs":
+//                              <off> is the address); <file> "zero:N"
+//                              writes N zero bytes
 //   second, first              the commands after it go to a second game (its own copy of the
 //                              core, from a copy of the library) or back to the first
 //   locallink                  join the two games' link ports (local_link.hpp); both then run
@@ -354,6 +359,27 @@ int main(int argc, char** argv) {
       if (hints.empty()) std::printf("hints: none\n");
       for (const auto& h : hints) std::printf("hint %s: %s\n", h.key.c_str(), h.text.c_str());
       std::fflush(stdout);
+    } else if (cmd == "putat") {
+      std::string ptr_s, off_s, what;
+      ss >> ptr_s >> off_s >> what;
+      uint32_t base = 0;
+      if (ptr_s != "abs")  // "abs": <off> is the address itself
+        if (const uint8_t* p = b.core.memory(static_cast<uint32_t>(std::stoul(ptr_s, nullptr, 16)), 4)) std::memcpy(&base, p, 4);
+      std::vector<uint8_t> bytes =
+          what.rfind("zero:", 0) == 0 ? std::vector<uint8_t>(std::stoul(what.substr(5))) : read_file(what);
+      const uint32_t at = base + static_cast<uint32_t>(std::stoul(off_s, nullptr, 16));
+      uint8_t* dst = b.core.memory(at, bytes.size());
+      if (!dst || bytes.empty()) fail("putat: nothing written");
+      std::memcpy(dst, bytes.data(), bytes.size());
+    } else if (cmd == "dumpat") {
+      std::string ptr_s, off_s, path;
+      std::size_t len = 0;
+      ss >> ptr_s >> off_s >> len >> path;
+      uint32_t base = 0;
+      if (const uint8_t* p = b.core.memory(static_cast<uint32_t>(std::stoul(ptr_s, nullptr, 16)), 4)) std::memcpy(&base, p, 4);
+      const uint8_t* src = b.core.memory(base + static_cast<uint32_t>(std::stoul(off_s, nullptr, 16)), len);
+      if (!src) fail("dumpat: not mapped");
+      write_file(path, src, len);
     } else if (cmd == "mons") {
       std::string code = b.code;
       ss >> code;
