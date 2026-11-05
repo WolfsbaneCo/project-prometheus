@@ -58,8 +58,9 @@ Each computer runs the game itself and only controller presses travel, so everyo
 
 GBA games don't play in lockstep like N64 games: each player plays their own game on their own computer at full speed, and only what goes over the link cable travels. Nothing waits on the network except the link itself, so the game never slows down or stutters for anyone.
 
-- **Hosting a link:** pick the GBA game in the library, press **N**, then **Host a link**. You get a link code like `K7Q2M`; send it to your friend.
-- **Joining:** your friend picks their own GBA game, presses N, then **Join a link** and types the code.
+- **Hosting a link:** in a running GBA game, open the menu (Esc) and choose **Link play**, then **Online: host a link**. (Or, in the library, pick the game, press **N**, then **Host a link**.) You get a link code like `K7Q2M`; send it to your friend. Usually the game carries on as it is; if it has to restart to switch its link port (after an event, or after changing cable / wireless), the menu says so first, so save before.
+- **Joining:** your friend, in their own running GBA game, chooses **Link play**, then **Online: join a link**, and types the code (or presses N in the library, then **Join a link**).
+- **Both of you need the same version of Project Prometheus.** The link cable's timing changed in 0.2.7: with an older version on either side, the link breaks in the Cable Club with "Communication error". When the versions differ, the app says so as soon as you link.
 - In Pokémon Ruby, Sapphire, Emerald, FireRed and LeafGreen, walk into a Pokémon Center and go upstairs to the Cable Club to trade or battle, as with a real link cable. FireRed, LeafGreen and Emerald can use the Wireless Adapter instead (**Link: cable / wireless** on the Play online page); both players need the same choice, and the app says so if they differ.
 - Both players need the group's key file, as for online play above. The games don't have to be the same: Ruby trades with FireRed, as on real consoles.
 - **Two of your own games on this computer:** no key or friend needed: see [Two of your games linked on this computer](#two-of-your-games-linked-on-this-computer-trading-between-them).
@@ -184,12 +185,12 @@ Ruby and Sapphire have no Mystery Gift. Their events came from Nintendo e-Reader
 
 #### Two of your games linked on this computer (trading between them)
 
-In the menu of a running GBA game: **Link a second game**, then choose the other game from the list of your GBA games (click it, or the arrow keys and **Enter**). The second game starts beside the first, with its own save from your library, and the two are joined as if by a link cable (or by Wireless Adapters, if both games are set to wireless).
+In the menu of a running GBA game: **Link play**, then choose the other game from the list of your GBA games under the two online choices ("This computer: ...", click it, or the arrow keys and **Enter**). The second game starts beside the first, with its own save from your library, and the two are joined as if by a link cable (or by Wireless Adapters, if both games are set to wireless).
 
 - Both games show side by side. **F3** (or **Controlling** in the menu) switches which game your keys and controller drive, and which one you hear. The label over each game says which is in play.
 - Both games always keep running, even the one you're not controlling and even with the menu open, as two consoles would: a link that stopped mid-trade would drop you out of the Cable Club. While a menu is open, neither game takes your button presses.
 - Play each game into a Pokémon Center and upstairs to the **Cable Club**, as two players would: then trade, battle or mix records. Switch with F3 to make each game's choices.
-- Each game saves its own progress into the library, as usual. **Link a second game** again (it shows "Linked") closes the second game; quitting closes both.
+- Each game saves its own progress into the library, as usual. **Link play** again (it shows "Linked") closes the second game; quitting closes both.
 - Two copies of the same game can't be linked this way (they'd share one save). Ruby with Emerald, Sapphire with FireRed, and so on all work, as on real consoles. FireRed and LeafGreen trade with Ruby, Sapphire and Emerald once they have the National Pokédex and the Sevii Islands' Network Machine is fixed, as in the original games.
 
 #### If something doesn't work
@@ -327,7 +328,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 | 2: Saves | **Working.** In-game saves stored in the library with history; imports from other emulators; `n64save` tool and converters |
 | 3: Google Drive sync | **Working.** Connect in the app, automatic backups (on close, hourly, at start), carrying on across computers with in-game saves, choosing when two computers both saved, offline retries, save states as a per-computer backup. Checked against a stand-in for Google with two Linux computers and a Windows one; waiting for the project's Google registration ([setup](docs/google-drive-setup.md)). Still to come: syncing settings, device-to-device sharing on a home network, optional encryption |
 | 4: Netplay | **Working.** Private groups with a shared key file and a relay on the group owner's free Cloudflare account (set up from inside the app), game codes, lockstep with game and version checks, an input delay that adjusts itself during the game, the host's save. Checked with Harvest Moon 64 and Super Smash Bros. between two copies on Linux and between Linux and Windows; not yet over the internet |
-| GBA | **Working.** gpSP core picked by the game's header, five looks for big screens, saves in the library with imports and Drive backup, link play over the relay (link cable and Wireless Adapter) and between two games on one computer, Pokémon events restored for Emerald, FireRed, LeafGreen, Ruby and Sapphire (tickets, Enigma Berry, clock fix, rare words, Battle e-Cards, Jirachi, Pichu, Altering Cave, Visiting Trainer, Stamp and Battle Cards), daily hints. Still to be tried in real play: a trade over the internet, the island trips, a Battle e-Card and Visiting Trainer battle. Not built: Emerald's e-Reader menu (Trainer Hill) |
+| GBA | **Working.** gpSP core picked by the game's header, five looks for big screens, saves in the library with imports and Drive backup, link play over the relay (link cable and Wireless Adapter) and between two games on one computer, Pokémon events restored for Emerald, FireRed, LeafGreen, Ruby and Sapphire (tickets, Enigma Berry, clock fix, rare words, Battle e-Cards, Jirachi, Pichu, Altering Cave, Visiting Trainer, Stamp and Battle Cards), daily hints. Still to be tried in real play: a trade over the internet (checked in the test bench with up to 300 ms each way and jitter: in, sit, trade, save, leave), the island trips, a Battle e-Card and Visiting Trainer battle. Not built: Emerald's e-Reader menu (Trainer Hill) |
 | 5: Cartridge | Not started |
 
 ## Building from source

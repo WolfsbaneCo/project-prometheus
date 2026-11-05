@@ -221,6 +221,7 @@ class App {
   void draw_local_link_labels();
   std::string local_link_value() const;
   void back_from_picking();  // the menu row's value: the game to link, or the one linked
+  bool link_needs_restart() const;  // linking online would restart the game (its link port differs)
   int refreshes_per_frame(double fps) const;
   void check_speed(double fps);
 

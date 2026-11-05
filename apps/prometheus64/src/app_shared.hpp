@@ -22,7 +22,7 @@ enum DialogKind { kFolderChosen = 1, kSaveChosen = 2, kKeyChosen = 3, kKeySaveAs
 enum MenuId {
   kResume, kSaveState, kLoadState, kSlot, kPicture, kTextures, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
   kPlayers, kControlsItem, kEventsItem, kHintsItem, kLocalLinkItem, kLocalFocusItem, kStatsItem, kReset, kQuit,
-  kPickBack, kPickGame  // the chooser for "Link a second game": Back, then one row per game (kPickGame + i)
+  kPickHost, kPickJoin, kPickBack, kPickGame  // the "Link play" chooser: online host / join, Back, then one row per game here (kPickGame + i)
 };
 // Clickable areas (App::Hit::kind).
 enum HitKind {

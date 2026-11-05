@@ -1177,7 +1177,7 @@ void App::draw_online() {
       ui_.text(x + 28 * s, y + 46 * s, link_.code(), 40 * s, kText, true);
       online_button(x + inner - 28 * s, y + 29 * s, "Copy", s, false, kObCopyLinkCode, true);
       y += 124 * s;
-      ui_.text(x, y, "Send this code to your friends. They need your group's key file too, then Play online > Join a link.",
+      ui_.text(x, y, "Send this code to your friends. With your group's key file, they choose Link play > Online: join a link in their game's menu.",
                19 * s, kDim);
       y += 46 * s;
     }

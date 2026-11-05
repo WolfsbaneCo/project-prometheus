@@ -145,9 +145,24 @@ void Link::on_binary(const std::string& data) {
   const int from = static_cast<uint8_t>(data[0]);
   const uint8_t kind = static_cast<uint8_t>(data[1]);
   if (kind == kCore) {
+    // A partner whose hello came without a version runs an app from before 0.2.9.
+    if (auto it = peers_.find(from); it != peers_.end() && !it->second.mode.empty() && it->second.version.empty() &&
+                                     !it->second.version_told && !version_.empty()) {
+      it->second.version_told = true;
+      messages_.push_back(it->second.name + " has an older Project Prometheus than this one (" + version_ +
+                          "). If the link breaks, both of you need the same version (Releases page)");
+    }
     if (core_started_ && core_ && core_->receive) {
       ++g_received;
       core_->receive(data.data() + 2, data.size() - 2, static_cast<uint16_t>(from));
+    }
+  } else if (kind == kVersion) {
+    Peer& p = peers_[from];
+    p.version = data.substr(2);
+    if (!p.version_told && !version_.empty() && p.version != version_) {
+      p.version_told = true;
+      messages_.push_back((p.name.empty() ? std::string("Your friend") : p.name) + " has Project Prometheus " + p.version +
+                          ", this computer " + version_ + ": the link needs the same version on both (Releases page)");
     }
   } else if (kind == kHello) {
     // mode \n game \n name
@@ -173,6 +188,13 @@ void Link::say_hello(int to) {
   msg += static_cast<char>(kHello);
   msg += mode_ + "\n" + game_ + "\n" + name_;
   ws_.send(std::move(msg));
+  if (!version_.empty()) {
+    std::string v;
+    v += static_cast<char>(to);
+    v += static_cast<char>(kVersion);
+    v += version_;
+    ws_.send(std::move(v));
+  }
 }
 
 void RETRO_CALLCONV Link::send_cb(int /*flags*/, const void* buf, size_t len, uint16_t client_id) {

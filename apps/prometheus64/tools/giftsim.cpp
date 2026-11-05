@@ -38,7 +38,9 @@
 //                              writes N zero bytes
 //   second, first              the commands after it go to a second game (its own copy of the
 //                              core, from a copy of the library) or back to the first
-//   locallink                  join the two games' link ports (local_link.hpp); both then run
+//   locallink [delay] [jitter]  join the two games' link ports (local_link.hpp); both then run.
+//                              With a delay (frames one way, plus up to `jitter` more), as two
+//                              distant computers over the relay
 #include <SDL3/SDL_log.h>
 
 #include <cstdio>
@@ -155,6 +157,7 @@ void Bench::step(int n) {
       if (g_local.active()) k == 0 ? g_local.before_first() : g_local.before_second();
       g->frame_once();
     }
+    g_local.tick();
   }
 }
 
@@ -247,6 +250,9 @@ int main(int argc, char** argv) {
     } else if (cmd == "first") {
       target = &first;
     } else if (cmd == "locallink") {
+      int delay = 0, jitter = 0;
+      ss >> delay >> jitter;
+      g_local.set_delay(delay, jitter);
       g_local.start(first.core.netpacket(), second.core.netpacket());
       if (!g_local.active()) fail("could not join the two games' link ports");
     } else if (cmd == "run") {
