@@ -6,7 +6,9 @@
 //
 // Room ids come from the relay: the host is 0, the others 1 to 3, which is what the netpacket
 // interface uses too. Every message starts with a byte saying what it is: a packet from the
-// core, or "hello" (the player's name and link mode, so both ends can say when they differ).
+// core, "hello" (the player's name and link mode, so both ends can say when they differ), or the
+// app's version (since 0.2.9; apps before it ignore it and don't send one), since both ends need
+// the same emulator core: the link cable's timing changed in 0.2.7.
 #pragma once
 
 #include <cstdint>
@@ -23,7 +25,8 @@ class Link {
  public:
   enum class Phase { Off, Connecting, Open };
   struct Peer {
-    std::string name, mode, game;
+    std::string name, mode, game, version;
+    bool version_told = false;
   };
 
   ~Link();
@@ -34,6 +37,8 @@ class Link {
   void join(const std::string& relay_url, const std::string& key, const std::string& code, const std::string& name,
             const std::string& mode, const std::string& game);
   void leave();
+  // This app's version, sent to the others so a mismatch can be told.
+  void set_version(const std::string& version) { version_ = version; }
 
   // The running core's netpacket interface (nullptr: none, or no game). Set when a game starts and
   // cleared before it stops; the session starts in the core once both are there.
@@ -53,7 +58,7 @@ class Link {
   std::string mode() const { return mode_; }
 
  private:
-  enum Kind : uint8_t { kCore = 1, kHello = 2 };
+  enum Kind : uint8_t { kCore = 1, kHello = 2, kVersion = 3 };
   static constexpr uint8_t kBroadcast = 255;
 
   void open(const std::string& url);
@@ -70,7 +75,7 @@ class Link {
   net::WebSocket ws_;
   Phase phase_ = Phase::Off;
   int me_ = -1;
-  std::string code_, status_, name_, mode_, game_;
+  std::string code_, status_, name_, mode_, game_, version_;
   std::map<int, Peer> peers_;
   std::vector<std::string> messages_;
   const retro_netpacket_callback* core_ = nullptr;

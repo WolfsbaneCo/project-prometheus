@@ -27,16 +27,29 @@ class LocalLink {
   void before_first();
   void before_second();
 
+  // For the test bench: hold each message back as a connection between two distant computers
+  // would, `frames` frames one way plus up to `jitter` more (messages stay in order, as over the
+  // relay's connection). The app links with none. `tick` marks each frame of both games.
+  void set_delay(int frames, int jitter) { delay_ = frames; jitter_ = jitter; }
+  void tick() { ++now_; }
+
  private:
   static void RETRO_CALLCONV send_first(int flags, const void* buf, size_t len, uint16_t client_id);
   static void RETRO_CALLCONV send_second(int flags, const void* buf, size_t len, uint16_t client_id);
   static void RETRO_CALLCONV poll_first();
   static void RETRO_CALLCONV poll_second();
-  void deliver(const retro_netpacket_callback* to, std::deque<std::vector<uint8_t>>& queue, uint16_t from);
+  struct Message {
+    uint64_t due;  // the frame it arrives in
+    std::vector<uint8_t> data;
+  };
+  void deliver(const retro_netpacket_callback* to, std::deque<Message>& queue, uint16_t from);
+  void queue(std::deque<Message>& q, const void* buf, size_t len);
 
   const retro_netpacket_callback* first_ = nullptr;
   const retro_netpacket_callback* second_ = nullptr;
-  std::deque<std::vector<uint8_t>> to_first_, to_second_;
+  std::deque<Message> to_first_, to_second_;
+  int delay_ = 0, jitter_ = 0;
+  uint64_t now_ = 0, rng_ = 0x9E3779B97F4A7C15ull;
 };
 
 }  // namespace p64

@@ -32,12 +32,23 @@ void LocalLink::stop() {
   if (g_local == this) g_local = nullptr;
 }
 
-void LocalLink::deliver(const retro_netpacket_callback* to, std::deque<std::vector<uint8_t>>& queue, uint16_t from) {
-  while (to && to->receive && !queue.empty()) {
-    std::vector<uint8_t> p = std::move(queue.front());
+void LocalLink::deliver(const retro_netpacket_callback* to, std::deque<Message>& queue, uint16_t from) {
+  while (to && to->receive && !queue.empty() && queue.front().due <= now_) {
+    std::vector<uint8_t> p = std::move(queue.front().data);
     queue.pop_front();
     to->receive(p.data(), p.size(), from);
   }
+}
+
+void LocalLink::queue(std::deque<Message>& q, const void* buf, size_t len) {
+  uint64_t due = now_;
+  if (delay_ || jitter_) {
+    rng_ = rng_ * 6364136223846793005ull + 1442695040888963407ull;
+    due += static_cast<uint64_t>(delay_) + (jitter_ ? (rng_ >> 33) % static_cast<uint64_t>(jitter_ + 1) : 0);
+    if (!q.empty() && q.back().due > due) due = q.back().due;  // in order, as over one connection
+  }
+  const auto* b = static_cast<const uint8_t*>(buf);
+  q.push_back({due, std::vector<uint8_t>(b, b + len)});
 }
 
 void LocalLink::before_first() {
@@ -54,14 +65,12 @@ void LocalLink::before_second() {
 
 void RETRO_CALLCONV LocalLink::send_first(int /*flags*/, const void* buf, size_t len, uint16_t client_id) {
   if (!g_local || !buf || (client_id != kSecond && client_id != kEveryone)) return;
-  const auto* b = static_cast<const uint8_t*>(buf);
-  g_local->to_second_.emplace_back(b, b + len);
+  g_local->queue(g_local->to_second_, buf, len);
 }
 
 void RETRO_CALLCONV LocalLink::send_second(int /*flags*/, const void* buf, size_t len, uint16_t client_id) {
   if (!g_local || !buf || (client_id != kFirst && client_id != kEveryone)) return;
-  const auto* b = static_cast<const uint8_t*>(buf);
-  g_local->to_first_.emplace_back(b, b + len);
+  g_local->queue(g_local->to_first_, buf, len);
 }
 
 // The cores ask for what has arrived: hand it over at once.

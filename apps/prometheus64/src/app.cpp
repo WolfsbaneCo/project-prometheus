@@ -341,6 +341,7 @@ bool App::init(std::string& error) {
   input_.load_bindings(settings_);
   net::init();
   init_backup();
+  link_.set_version(P64_VERSION);
   rescan();
   set_fullscreen(opt_.fullscreen || settings_.get_int("fullscreen", 0) == 1);
   if (opt_.rom.extension() == ".prometheuskey") {
@@ -1540,10 +1541,15 @@ void App::ui_action(int action) {
 
 std::vector<App::MenuItem> App::menu_items() const {
   if (picking_second_) {
-    // "Link a second game": the player's other GBA games, one row each, and Back.
+    // "Link play": online (host or join a friend's link), or another of the player's GBA games on
+    // this computer, and Back. Going online says first when it restarts the game.
     std::vector<MenuItem> pick;
+    const std::string restart = link_needs_restart() ? "restarts the game: save first" : "";
+    pick.push_back({"Online: host a link", restart.empty() ? "get a code for a friend" : restart, kPickHost});
+    pick.push_back({"Online: join a link", restart.empty() ? "type a friend's code" : restart, kPickJoin});
     const auto choices = second_game_choices();
-    for (std::size_t i = 0; i < choices.size(); ++i) pick.push_back({choices[i]->title, "", kPickGame + static_cast<int>(i)});
+    for (std::size_t i = 0; i < choices.size(); ++i)
+      pick.push_back({"This computer: " + choices[i]->title, "", kPickGame + static_cast<int>(i)});
     pick.push_back({"Back", "", kPickBack, "Esc"});
     return pick;
   }
@@ -1572,7 +1578,7 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Fullscreen", fullscreen_ ? "On" : "Off", kFullscreenItem, "F11"},
       {"Who's playing", std::to_string(input_.seated_count()) + (input_.seated_count() == 1 ? " player" : " players"), kPlayers, "F10"},
       {"Controls", "", kControlsItem},
-      {"Link a second game", local_link_value(), kLocalLinkItem},
+      {"Link play", local_link_value(), kLocalLinkItem},
       {"Controlling", game2_ && focus2_ ? game2_->title : game_ ? game_->title : "", kLocalFocusItem, "F3"},
       {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
       {"Pok\xC3\xA9mon stats", "EVs", kStatsItem},
@@ -1590,7 +1596,7 @@ std::vector<App::MenuItem> App::menu_items() const {
       if (it.id == kStatsItem && !has_stats_page()) continue;
       if (it.id == kHintsItem && !has_daily_hints(game_->id.size() >= 8 ? game_->id.substr(4, 4) : "")) continue;
       if (it.id == kLocalFocusItem && !game2_) continue;
-      if (it.id == kLocalLinkItem && (link_.active() || online_game_)) continue;
+      if (it.id == kLocalLinkItem && online_game_) continue;
       if (it.id == kPicture) it.value = g.name;
       if (it.id == kFill && look.fill == FillMode::Fit) it.value = "Fit (3:2)";
       gba.push_back(std::move(it));
@@ -1736,8 +1742,8 @@ void App::menu_change(int id, int dir) {
         if (dir == 0) stop_local_link();
         break;
       }
-      if (second_game_choices().empty()) {
-        if (dir == 0) toast("Add another GBA game to your library to link two games here", 5);
+      if (link_.active()) {
+        if (dir == 0) open_online();  // the link's page: its code, who's in, End link
         break;
       }
       if (dir == 0) {
@@ -1748,6 +1754,21 @@ void App::menu_change(int id, int dir) {
     }
     case kPickBack:
       if (dir == 0) back_from_picking();
+      break;
+    case kPickHost:
+    case kPickJoin:
+      if (dir == 0) {
+        picking_second_ = false;
+        open_online();  // without the group's key file, its first page says how to get one
+        if (has_group_key()) {
+          if (id == kPickHost) {
+            host_link();
+          } else {
+            online_page_ = OnlinePage::Join;
+            focus_field(TextField::Code);
+          }
+        }
+      }
       break;
     case kLocalFocusItem:
       switch_local_focus();
@@ -1784,7 +1805,7 @@ void App::menu_change(int id, int dir) {
   settings_.save();
 }
 
-// From the chooser back to the menu, on its "Link a second game" row.
+// From the chooser back to the menu, on its "Link play" row.
 void App::back_from_picking() {
   picking_second_ = false;
   const auto items = menu_items();
@@ -1969,7 +1990,7 @@ void App::draw_menu() {
   add_hit(px, py, pw, ph, kHitPanel);
   ui_.image(ui_.logo(), px + 30 * s, py + 30 * s, 48 * s, 48 * s);
   ui_.text(px + 94 * s, py + 30 * s, ui_.fit(game_ ? game_->title : "", 28 * s, pw - 130 * s, true), 28 * s, kText, true);
-  const std::string state = picking_second_ ? "Link a second game: choose the game to link with this one"
+  const std::string state = picking_second_ ? "Link play: online with a friend, or another of your games here"
                             : local_.active() || link_.active() ? "Linked: the game keeps running behind this menu"
                             : !online_game_ ? "Paused"
                             : net_.is_host() ? "Online: paused for everyone"
@@ -2549,7 +2570,18 @@ std::vector<const Game*> App::second_game_choices() const {
 
 std::string App::local_link_value() const {
   if (game2_) return "Linked: " + game2_->title + " (Enter ends it)";
-  return second_game_choices().empty() ? "No other GBA game" : "Choose a game";
+  if (link_.active()) return link_.phase() == Link::Phase::Open ? "Online: code " + link_.code() : "Online: connecting";
+  return "Online, or a game here";
+}
+
+bool App::link_needs_restart() const {
+  // A link goes through the link port the game was started with: the cable for the Pokémon games
+  // (or the Wireless Adapter, if chosen), so only a game started for an event, or with the other
+  // port, needs restarting (keeping its progress) before it links online.
+  if (!game_ || game_->system != System::GBA) return false;
+  const std::string link = link_mode(*game_);
+  const std::string want = link == "cable" ? "mul_poke" : link == "wireless" ? "rfu" : "auto";
+  return !event_key_.empty() || core_.option("gpsp_serial") != want;
 }
 
 void App::start_local_link(const Game& second) {
