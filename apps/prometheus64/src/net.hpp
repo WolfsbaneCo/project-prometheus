@@ -49,13 +49,15 @@ class WebSocket {
   void close();
   std::vector<Event> poll();  // everything that happened since the last call
   bool active() const { return thread_.joinable() && !finished_; }
+  // Messages queued and not yet handed to the connection (for the log: a line that can't keep up).
+  std::size_t backlog() const;
 
  private:
   void run(std::string url);
   void push(Event::Kind kind, std::string data);
 
   std::thread thread_;
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::vector<Event> events_;
   std::deque<std::string> outgoing_;
   std::atomic<bool> stop_{false};

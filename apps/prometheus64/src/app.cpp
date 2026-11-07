@@ -429,6 +429,8 @@ void App::rescan() {
 }
 
 void App::toast(const std::string& text, double seconds) {
+  // What the player saw, for the link log (the link's own messages too, as it ends).
+  if (link_.active() || link_monitor_.active()) SDL_Log("shown: %s", text.c_str());
   toasts_.push_back({text, SDL_GetTicksNS() + static_cast<uint64_t>(seconds * 1e9)});
   while (toasts_.size() > 4) toasts_.pop_front();
 }
@@ -1014,8 +1016,18 @@ void SDLCALL log_to_file(void* data, int category, SDL_LogPriority priority, con
   if (g_default_log) g_default_log(g_default_log_data, category, priority, message);
   (void)data;
   if (!g_log || !message) return;
+  // The time of day in UTC, so two players' logs line up whatever their time zones, and the
+  // seconds since the app started.
   const uint64_t ms = SDL_GetTicks();
-  std::fprintf(g_log, "[%6llu.%03llu] %s\n", static_cast<unsigned long long>(ms / 1000), static_cast<unsigned long long>(ms % 1000), message);
+  SDL_Time t = 0;
+  SDL_DateTime d{};
+  if (SDL_GetCurrentTime(&t) && SDL_TimeToDateTime(t, &d, false)) {
+    std::fprintf(g_log, "[%04d-%02d-%02d %02d:%02d:%02d.%03dZ %6llu.%03llu] %s\n", d.year, d.month, d.day, d.hour, d.minute,
+                 d.second, d.nanosecond / 1000000, static_cast<unsigned long long>(ms / 1000),
+                 static_cast<unsigned long long>(ms % 1000), message);
+  } else {
+    std::fprintf(g_log, "[%6llu.%03llu] %s\n", static_cast<unsigned long long>(ms / 1000), static_cast<unsigned long long>(ms % 1000), message);
+  }
   std::fflush(g_log);
 }
 }  // namespace
@@ -1033,7 +1045,7 @@ void App::open_log() {
   if (!g_log) return;
   SDL_GetLogOutputFunction(&g_default_log, &g_default_log_data);
   SDL_SetLogOutputFunction(log_to_file, nullptr);
-  SDL_Log("Project Prometheus %s", P64_VERSION);
+  SDL_Log("Project Prometheus %s on %s", P64_VERSION, SDL_GetPlatform());
 }
 
 void App::run_frames() {
@@ -1060,6 +1072,13 @@ void App::run_frames() {
   // Two games linked here keep running too: stopping either mid-trade breaks the link (the
   // Cable Club drops both players), so F3, the menu and a window losing focus pause neither.
   const bool linked = (link_.active() || local_.active()) && game_ && game_->system == System::GBA;
+  // The link log: what each layer of an online link is doing (link_monitor.hpp).
+  if (link_.active() && game_ && game_->system == System::GBA && game_->id.size() >= 8) {
+    const GbaMemory memory = [this](uint32_t address, std::size_t size) -> const uint8_t* { return core_.memory(address, size); };
+    link_monitor_.update(now, link_, game_->id.substr(4, 4), memory, link_.waiting(), overlay_ != Overlay::None);
+  } else if (link_monitor_.active()) {
+    link_monitor_.stop(now, link_);
+  }
   if (screen_ != Screen::Playing || (overlay_ != Overlay::None && !linked)) {
     acc_ns_ = 0;
     speed_since_ns_ = 0;
@@ -1249,7 +1268,6 @@ void App::loop() {
     process_net_events();
     link_.update();
     for (auto& m : link_.take_messages()) {
-      SDL_Log("link: %s", m.c_str());
       toast(m, 5);
     }
     if (opt_.link_host && !printed_link_ && !link_.code().empty()) {
@@ -1372,6 +1390,13 @@ void App::handle(const SDL_Event& e) {
       toast(archive::is_archive(file) ? "No N64 game in that archive" : "That file is not an N64 game");
     }
     return;
+  }
+  if (link_.active()) {
+    // For the link log: the window in the background or minimised can slow a game down.
+    if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST) SDL_Log("window: in the background");
+    if (e.type == SDL_EVENT_WINDOW_FOCUS_GAINED) SDL_Log("window: in front");
+    if (e.type == SDL_EVENT_WINDOW_MINIMIZED) SDL_Log("window: minimised");
+    if (e.type == SDL_EVENT_WINDOW_RESTORED) SDL_Log("window: restored");
   }
   if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST && game_ && overlay_ == Overlay::None && screen_ == Screen::Playing &&
       opt_.screenshot.empty() && !online_game_) {

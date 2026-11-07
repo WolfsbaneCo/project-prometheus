@@ -1,6 +1,9 @@
 #include "link.hpp"
 
+#include <cstring>
+
 #include <SDL3/SDL_log.h>
+#include <SDL3/SDL_timer.h>
 
 #include "json.hpp"
 
@@ -69,7 +72,10 @@ void Link::start_core() {
   core_started_ = true;
   frames_ = 0;
   pacers_.clear();
-  SDL_Log("link: open as player %d%s", me_, is_host() ? " (host)" : "");
+  stats_ = Stats{};
+  ping_sum_ = 0;
+  SDL_Log("link: open as player %d%s, room %s, %s, game %s", me_, is_host() ? " (host)" : "", code_.c_str(), mode_.c_str(),
+          game_.c_str());
   core_->start(static_cast<uint16_t>(me_), send_cb, poll_cb);
   // The host tells the core about everyone already in the room.
   if (is_host() && core_->connected) {
@@ -102,6 +108,60 @@ void Link::update() {
     }
   }
   if (core_started_ && core_ && core_->poll) core_->poll();
+  // Every 2 seconds, the time to the others' apps and back (for the log).
+  if (phase_ == Phase::Open && !peers_.empty()) {
+    const uint64_t now = SDL_GetTicksNS();
+    if (now - last_ping_ns_ >= 2'000'000'000ull) {
+      last_ping_ns_ = now;
+      std::string msg;
+      msg += static_cast<char>(kBroadcast);
+      msg += static_cast<char>(kPing);
+      for (int i = 0; i < 8; ++i) msg += static_cast<char>((now >> (8 * i)) & 0xFF);
+      ws_.send(std::move(msg));
+    }
+  }
+}
+
+// The core's packets, counted for the log. In the Pokémon cable mode each is gpSP's MPK1 packet:
+// "MPK1", then its cable state (0 starting, 1 handshake, 2 connected; top bit: game data follows),
+// then 8 words of the game's data. A change of either side's state is logged as it happens.
+void Link::count_core(const void* data, std::size_t len, bool sent) {
+  const auto* p = static_cast<const uint8_t*>(data);
+  (sent ? stats_.sent : stats_.received)++;
+  (sent ? stats_.bytes_sent : stats_.bytes_received) += len;
+  if (len != 24 || std::memcmp(p, "MPK1", 4) != 0) return;
+  const int state = p[6] << 8 | p[7];
+  if (p[4] & 0x80) (sent ? stats_.sent_data : stats_.received_data)++;
+  int& last = sent ? stats_.my_cable : stats_.their_cable;
+  if (state != last) {
+    static const char* const kNames[] = {"starting", "handshake", "connected"};
+    const auto name = [](int st) { return st >= 0 && st <= 2 ? kNames[st] : "?"; };
+    SDL_Log("link: %s cable: %s -> %s", sent ? "this game's" : "the other game's", last < 0 ? "-" : name(last), name(state));
+    last = state;
+  }
+}
+
+Link::Stats Link::take_stats() {
+  Stats out = stats_;
+  out.frames = frames_;
+  out.backlog = ws_.backlog();
+  for (const auto& [id, pacer] : pacers_) {
+    if (!pacer.known()) continue;
+    const int64_t lead = pacer.lead(frames_);
+    if (!out.paced || lead > out.lead) {
+      out.lead = lead;
+      out.their_frames = pacer.theirs();
+    }
+    out.paced = true;
+  }
+  if (out.pings) out.ping_avg = ping_sum_ / out.pings;
+  // A new window: counts start again; the cable states carry on.
+  const int mine = stats_.my_cable, theirs = stats_.their_cable;
+  stats_ = Stats{};
+  stats_.my_cable = mine;
+  stats_.their_cable = theirs;
+  ping_sum_ = 0;
+  return out;
 }
 
 std::vector<std::string> Link::take_messages() {
@@ -159,17 +219,46 @@ void Link::on_binary(const std::string& data) {
     }
     if (core_started_ && core_ && core_->receive) {
       ++g_received;
+      count_core(data.data() + 2, data.size() - 2, false);
       core_->receive(data.data() + 2, data.size() - 2, static_cast<uint16_t>(from));
     }
   } else if (kind == kTick) {
     if (data.size() >= 10 && core_started_) {
       uint64_t frames = 0;
       for (int i = 0; i < 8; ++i) frames |= static_cast<uint64_t>(static_cast<uint8_t>(data[2 + i])) << (8 * i);
-      pacers_[from].heard(frames, frames_);
+      LinkPacer& pacer = pacers_[from];
+      const bool restarted = pacer.known() && frames < pacer.theirs();
+      const bool first = !pacer.known();
+      pacer.heard(frames, frames_);
+      if (first || restarted)
+        SDL_Log("link: pacing with player %d%s: their frame %llu, ours %llu, starting gap %lld frames", from,
+                restarted ? " (their link started again)" : "", static_cast<unsigned long long>(frames),
+                static_cast<unsigned long long>(frames_), static_cast<long long>(pacer.base()));
+    }
+  } else if (kind == kPing) {
+    if (data.size() >= 10 && from != me_) {
+      std::string msg = data.substr(2, 8);
+      msg.insert(0, 1, static_cast<char>(kPong));
+      msg.insert(0, 1, static_cast<char>(from));
+      ws_.send(std::move(msg));
+    }
+  } else if (kind == kPong) {
+    if (data.size() >= 10) {
+      uint64_t sent = 0;
+      for (int i = 0; i < 8; ++i) sent |= static_cast<uint64_t>(static_cast<uint8_t>(data[2 + i])) << (8 * i);
+      const uint64_t now = SDL_GetTicksNS();
+      if (sent <= now && now - sent < 60'000'000'000ull) {
+        const double ms = static_cast<double>(now - sent) / 1e6;
+        if (!stats_.pings || ms < stats_.ping_min) stats_.ping_min = ms;
+        if (!stats_.pings || ms > stats_.ping_max) stats_.ping_max = ms;
+        ping_sum_ += ms;
+        ++stats_.pings;
+      }
     }
   } else if (kind == kVersion) {
     Peer& p = peers_[from];
     p.version = data.substr(2);
+    SDL_Log("link: player %d has Project Prometheus %s", from, p.version.c_str());
     if (!p.version_told && !version_.empty() && p.version != version_) {
       p.version_told = true;
       messages_.push_back((p.name.empty() ? std::string("Your friend") : p.name) + " has Project Prometheus " + p.version +
@@ -185,6 +274,7 @@ void Link::on_binary(const std::string& data) {
     p.mode = body.substr(0, a);
     p.game = body.substr(a + 1, b - a - 1);
     p.name = body.substr(b + 1);
+    if (!known) SDL_Log("link: player %d is %s, playing %s, %s", from, p.name.c_str(), p.game.c_str(), p.mode.c_str());
     if (!known && p.mode != mode_) {
       messages_.push_back(p.name + " uses the " + (p.mode == "wireless" ? "Wireless Adapter" : "link cable") +
                           ", this game the " + (mode_ == "wireless" ? "Wireless Adapter" : "link cable") +
@@ -242,6 +332,7 @@ void RETRO_CALLCONV Link::send_cb(int /*flags*/, const void* buf, size_t len, ui
   msg.append(static_cast<const char*>(buf), len);
   g_running->ws_.send(std::move(msg));
   ++g_sent;
+  g_running->count_core(buf, len, true);
 }
 
 void RETRO_CALLCONV Link::poll_cb() {

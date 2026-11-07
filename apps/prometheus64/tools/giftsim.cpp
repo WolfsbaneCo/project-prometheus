@@ -52,6 +52,7 @@
 //                              second), and a game waits as the app holds it
 //   realtime                   frames at the console's pace from here, linked or not
 #include <SDL3/SDL_log.h>
+#include <SDL3/SDL_timer.h>
 
 #include <chrono>
 #include <cstdio>
@@ -69,6 +70,7 @@
 #include "cable_station.hpp"
 #include "gift_station.hpp"
 #include "link.hpp"
+#include "link_monitor.hpp"
 #include "local_link.hpp"
 #include "net.hpp"
 #include "pokemon_hints.hpp"
@@ -164,6 +166,7 @@ struct Bench {
 Bench* g_benches[2] = {};
 p64::LocalLink g_local;
 p64::Link g_link;  // the online link (`online`)
+p64::LinkMonitor g_monitor;  // its log, as the app writes it
 bool g_realtime = false;
 std::chrono::steady_clock::time_point g_next_frame;
 
@@ -174,6 +177,11 @@ void link_messages() {
 
 // Every running game advances together (two of them when a second game is loaded).
 void Bench::step(int n) {
+  const auto monitor = [this](bool held) {
+    if (!g_link.active()) return;
+    const p64::GbaMemory memory = [this](uint32_t address, std::size_t size) -> const uint8_t* { return core.memory(address, size); };
+    g_monitor.update(SDL_GetTicksNS(), g_link, code, memory, held, false);
+  };
   for (int i = 0; i < n; ++i) {
     if (g_link.active() || g_realtime) {
       // As the app: the link first, then the game unless it waits on the other's, at 60 frames
@@ -182,6 +190,7 @@ void Bench::step(int n) {
         g_link.update();
         link_messages();
         if (!g_link.active() || !g_link.waiting()) break;
+        monitor(true);
         static int told = 0;
         if (std::getenv("P64_PACE_LOG") && told++ % 60 == 0) std::printf("pace: waits at frame %llu\n", static_cast<unsigned long long>(frames));
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -191,6 +200,7 @@ void Bench::step(int n) {
       std::this_thread::sleep_until(g_next_frame);
       frame_once();
       if (g_link.active()) g_link.frame_done();
+      monitor(false);
       continue;
     }
     for (int k = 0; k < 2; ++k) {
@@ -531,7 +541,10 @@ int main(int argc, char** argv) {
     }
   }
   g_local.stop();
-  if (g_link.active()) g_link.leave();  // before its core closes
+  if (g_link.active()) {
+    g_link.leave();  // before its core closes
+    g_monitor.stop(SDL_GetTicksNS(), g_link);
+  }
   for (Bench* g : {&first, &second}) {
     g->station.close();
     g->cable.close();

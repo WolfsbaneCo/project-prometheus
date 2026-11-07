@@ -23,6 +23,7 @@
 #include "cable_station.hpp"
 #include "gift_station.hpp"
 #include "link.hpp"
+#include "link_monitor.hpp"
 #include "local_link.hpp"
 #include "netplay.hpp"
 #include "pokemon_stats.hpp"
@@ -292,6 +293,7 @@ class App {
   // Online play.
   Netplay net_;
   Link link_;
+  LinkMonitor link_monitor_;  // the link log (link_monitor.hpp)
   GiftStation gifts_;   // Wonder Cards over the Wireless Adapter (Emerald, FireRed, LeafGreen)
   CableStation cable_;  // Mystery Events over the link cable, as the e-Reader (Ruby, Sapphire)
   std::string event_key_;  // the open event's gift ("aurora"); empty when none

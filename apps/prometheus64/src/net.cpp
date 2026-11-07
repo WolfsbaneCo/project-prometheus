@@ -177,6 +177,11 @@ void WebSocket::close() {
   outgoing_.clear();
 }
 
+std::size_t WebSocket::backlog() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return outgoing_.size();
+}
+
 std::vector<WebSocket::Event> WebSocket::poll() {
   std::lock_guard<std::mutex> lock(mutex_);
   std::vector<Event> out;
@@ -241,6 +246,23 @@ void WebSocket::run(std::string url) {
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
     if (res == CURLE_OK || status != 0) {
       if (doh) SDL_Log("relay reached after looking it up over DNS-over-HTTPS (%s)", doh);
+      if (res == CURLE_OK && status == 101) {
+        // Where and how fast: the name lookup, the connection, the secure connection and the
+        // WebSocket's upgrade, each counted from the start. The address only, never the
+        // query (it carries the group key).
+        const auto ms = [c](CURLINFO what) {
+          curl_off_t us = 0;
+          curl_easy_getinfo(c, what, &us);
+          return static_cast<long long>(us / 1000);
+        };
+        const std::size_t a = url.find("://"), b = url.find_first_of("/?", a == std::string::npos ? 0 : a + 3);
+        const std::string host = a == std::string::npos ? std::string() : url.substr(a + 3, b == std::string::npos ? b : b - a - 3);
+        char* ip = nullptr;
+        curl_easy_getinfo(c, CURLINFO_PRIMARY_IP, &ip);
+        SDL_Log("relay connected: %s at %s; name %lld ms, connected %lld ms, secure %lld ms, ready %lld ms", host.c_str(),
+                ip && ip[0] ? ip : "?", ms(CURLINFO_NAMELOOKUP_TIME_T), ms(CURLINFO_CONNECT_TIME_T),
+                ms(CURLINFO_APPCONNECT_TIME_T), ms(CURLINFO_TOTAL_TIME_T));
+      }
       break;
     }
     // No answer from the relay at all: keep what went wrong (name lookup, connection, secure
