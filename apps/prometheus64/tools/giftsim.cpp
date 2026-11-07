@@ -43,9 +43,20 @@
 //                              With a delay (frames one way, plus up to `jitter` more), as two
 //                              distant computers over the relay; and a stall of `length` frames
 //                              every `every` frames, as over a VPN
+//   online host|join <relay> <key> <codefile> [nowait]
+//                              link the first game over a relay with the app's own online link
+//                              (link.hpp), as the app does: the host writes its link code to
+//                              <codefile> and waits for a guest (unless `nowait`: its game runs
+//                              on, as in the app); a guest waits for the file and joins. Run two
+//                              benches, one each. Frames then go at the console's pace (60 a
+//                              second), and a game waits as the app holds it
+//   realtime                   frames at the console's pace from here, linked or not
 #include <SDL3/SDL_log.h>
 
+#include <chrono>
 #include <cstdio>
+#include <filesystem>
+#include <thread>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -57,7 +68,9 @@
 #include "core.hpp"
 #include "cable_station.hpp"
 #include "gift_station.hpp"
+#include "link.hpp"
 #include "local_link.hpp"
+#include "net.hpp"
 #include "pokemon_hints.hpp"
 #include "pokemon_stats.hpp"
 
@@ -150,10 +163,36 @@ struct Bench {
 
 Bench* g_benches[2] = {};
 p64::LocalLink g_local;
+p64::Link g_link;  // the online link (`online`)
+bool g_realtime = false;
+std::chrono::steady_clock::time_point g_next_frame;
+
+// The online link's messages ("Berna joined the link"), printed as the app logs them.
+void link_messages() {
+  for (const auto& m : g_link.take_messages()) std::printf("link: %s\n", m.c_str());
+}
 
 // Every running game advances together (two of them when a second game is loaded).
 void Bench::step(int n) {
   for (int i = 0; i < n; ++i) {
+    if (g_link.active() || g_realtime) {
+      // As the app: the link first, then the game unless it waits on the other's, at 60 frames
+      // a second.
+      for (; g_link.active();) {
+        g_link.update();
+        link_messages();
+        if (!g_link.active() || !g_link.waiting()) break;
+        static int told = 0;
+        if (std::getenv("P64_PACE_LOG") && told++ % 60 == 0) std::printf("pace: waits at frame %llu\n", static_cast<unsigned long long>(frames));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        g_next_frame = std::chrono::steady_clock::now();
+      }
+      g_next_frame += std::chrono::nanoseconds(16'742'706);
+      std::this_thread::sleep_until(g_next_frame);
+      frame_once();
+      if (g_link.active()) g_link.frame_done();
+      continue;
+    }
     for (int k = 0; k < 2; ++k) {
       Bench* g = g_benches[k];
       if (!g || !g->core.game_loaded()) continue;
@@ -268,6 +307,43 @@ int main(int argc, char** argv) {
       g_local.set_stalls(every, length);
       g_local.start(first.core.netpacket(), second.core.netpacket());
       if (!g_local.active()) fail("could not join the two games' link ports");
+    } else if (cmd == "online") {
+      std::string role, relay, key, codefile;
+      ss >> role >> relay >> key >> codefile;
+      p64::net::init();
+      g_link.set_version("bench");
+      auto wait_for = [&](auto done, const char* what) {
+        for (int t = 0; !done(); ++t) {
+          g_link.update();
+          link_messages();
+          if (!g_link.active() || t > 60000) fail(std::string("online: ") + what);
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+      };
+      if (role == "host") {
+        std::filesystem::remove(codefile);
+        g_link.host(relay, key, "Host", "cable", b.code);
+        g_link.attach(b.core.netpacket());
+        wait_for([&] { return !g_link.code().empty(); }, "no link code");
+        std::ofstream(codefile) << g_link.code();
+        std::string nowait;
+        ss >> nowait;
+        if (nowait != "nowait") wait_for([&] { return !g_link.peers().empty(); }, "no guest came");
+      } else {
+        std::string code;
+        for (int t = 0; code.empty() && t < 600; ++t) {
+          std::ifstream(codefile) >> code;
+          if (code.empty()) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (code.empty()) fail("online: no link code in " + codefile);
+        g_link.join(relay, key, code, "Guest", "cable", b.code);
+        g_link.attach(b.core.netpacket());
+        wait_for([&] { return g_link.phase() == p64::Link::Phase::Open; }, "could not join");
+      }
+      g_next_frame = std::chrono::steady_clock::now();
+    } else if (cmd == "realtime") {
+      g_realtime = true;
+      g_next_frame = std::chrono::steady_clock::now();
     } else if (cmd == "run") {
       int n = 0;
       ss >> n;
@@ -455,6 +531,7 @@ int main(int argc, char** argv) {
     }
   }
   g_local.stop();
+  if (g_link.active()) g_link.leave();  // before its core closes
   for (Bench* g : {&first, &second}) {
     g->station.close();
     g->cable.close();
