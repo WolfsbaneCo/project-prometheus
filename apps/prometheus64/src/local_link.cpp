@@ -27,6 +27,9 @@ void LocalLink::stop() {
     if (second_ && second_->stop) second_->stop();
   }
   first_ = second_ = nullptr;
+  pace_first_.reset();
+  pace_second_.reset();
+  frames_first_ = frames_second_ = 0;
   to_first_.clear();
   to_second_.clear();
   if (g_local == this) g_local = nullptr;
@@ -34,21 +37,37 @@ void LocalLink::stop() {
 
 void LocalLink::deliver(const retro_netpacket_callback* to, std::deque<Message>& queue, uint16_t from) {
   while (to && to->receive && !queue.empty() && queue.front().due <= now_) {
-    std::vector<uint8_t> p = std::move(queue.front().data);
+    Message m = std::move(queue.front());
     queue.pop_front();
-    to->receive(p.data(), p.size(), from);
+    if (m.tick) {
+      if (to == first_) pace_first_.heard(m.frames, frames_first_);
+      else pace_second_.heard(m.frames, frames_second_);
+      continue;
+    }
+    to->receive(m.data.data(), m.data.size(), from);
   }
 }
 
 void LocalLink::queue(std::deque<Message>& q, const void* buf, size_t len) {
   uint64_t due = now_;
-  if (delay_ || jitter_) {
+  if (delay_ || jitter_ || stall_every_) {
     rng_ = rng_ * 6364136223846793005ull + 1442695040888963407ull;
     due += static_cast<uint64_t>(delay_) + (jitter_ ? (rng_ >> 33) % static_cast<uint64_t>(jitter_ + 1) : 0);
+    // Inside a stall, a message waits for its end.
+    if (stall_every_ > 0 && stall_length_ > 0 && due % static_cast<uint64_t>(stall_every_) < static_cast<uint64_t>(stall_length_))
+      due += static_cast<uint64_t>(stall_length_) - due % static_cast<uint64_t>(stall_every_);
     if (!q.empty() && q.back().due > due) due = q.back().due;  // in order, as over one connection
   }
   const auto* b = static_cast<const uint8_t*>(buf);
   q.push_back({due, std::vector<uint8_t>(b, b + len)});
+}
+
+void LocalLink::ran(uint64_t& frames, std::deque<Message>& to_other) {
+  ++frames;
+  if (!(delay_ || stall_every_) || frames % LinkPacer::kEvery) return;
+  queue(to_other, nullptr, 0);
+  to_other.back().tick = true;
+  to_other.back().frames = frames;
 }
 
 void LocalLink::before_first() {

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "libretro.h"
+#include "link_pacer.hpp"
 
 namespace p64 {
 
@@ -31,7 +32,17 @@ class LocalLink {
   // would, `frames` frames one way plus up to `jitter` more (messages stay in order, as over the
   // relay's connection). The app links with none. `tick` marks each frame of both games.
   void set_delay(int frames, int jitter) { delay_ = frames; jitter_ = jitter; }
+  // ...and every `every` frames, nothing gets through for `length` frames (a connection that
+  // stalls, as over a VPN), then all of it at once.
+  void set_stalls(int every, int length) { stall_every_ = every; stall_length_ = length; }
   void tick() { ++now_; }
+  // With a delay, the two games are paced as the online link paces them (link_pacer.hpp): after
+  // each frame a game runs, `ran`; whether a game has run too far beyond the other, `waiting`.
+  // Without one the two run frame for frame and never drift apart.
+  void first_ran() { ran(frames_first_, to_second_); }
+  void second_ran() { ran(frames_second_, to_first_); }
+  bool first_waiting() const { return (delay_ || stall_every_) && pace_first_.behind(frames_first_); }
+  bool second_waiting() const { return (delay_ || stall_every_) && pace_second_.behind(frames_second_); }
 
  private:
   static void RETRO_CALLCONV send_first(int flags, const void* buf, size_t len, uint16_t client_id);
@@ -41,14 +52,19 @@ class LocalLink {
   struct Message {
     uint64_t due;  // the frame it arrives in
     std::vector<uint8_t> data;
+    bool tick = false;  // a pacing tick (the sender's frame count), not the core's
+    uint64_t frames = 0;
   };
+  void ran(uint64_t& frames, std::deque<Message>& to_other);
   void deliver(const retro_netpacket_callback* to, std::deque<Message>& queue, uint16_t from);
   void queue(std::deque<Message>& q, const void* buf, size_t len);
 
   const retro_netpacket_callback* first_ = nullptr;
   const retro_netpacket_callback* second_ = nullptr;
   std::deque<Message> to_first_, to_second_;
-  int delay_ = 0, jitter_ = 0;
+  int delay_ = 0, jitter_ = 0, stall_every_ = 0, stall_length_ = 0;
+  LinkPacer pace_first_, pace_second_;
+  uint64_t frames_first_ = 0, frames_second_ = 0;
   uint64_t now_ = 0, rng_ = 0x9E3779B97F4A7C15ull;
 };
 

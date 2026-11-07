@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "libretro.h"
+#include "link_pacer.hpp"
 #include "net.hpp"
 
 namespace p64 {
@@ -56,9 +57,15 @@ class Link {
   const std::string& status() const { return status_; }
   const std::map<int, Peer>& peers() const { return peers_; }
   std::string mode() const { return mode_; }
+  // After each frame the game runs while linked: counts it, and every few frames tells the others.
+  void frame_done();
+  // The game has run too far beyond another player's (a stalled connection) and should wait for
+  // it (link_pacer.hpp).
+  bool waiting() const;
+  void give_up_waiting();
 
  private:
-  enum Kind : uint8_t { kCore = 1, kHello = 2, kVersion = 3 };
+  enum Kind : uint8_t { kCore = 1, kHello = 2, kVersion = 3, kTick = 4 };
   static constexpr uint8_t kBroadcast = 255;
 
   void open(const std::string& url);
@@ -80,6 +87,8 @@ class Link {
   std::vector<std::string> messages_;
   const retro_netpacket_callback* core_ = nullptr;
   bool core_started_ = false;
+  uint64_t frames_ = 0;              // frames run since the core's link started
+  std::map<int, LinkPacer> pacers_;  // one for each other player
 };
 
 }  // namespace p64

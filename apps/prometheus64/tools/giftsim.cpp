@@ -38,12 +38,15 @@
 //                              writes N zero bytes
 //   second, first              the commands after it go to a second game (its own copy of the
 //                              core, from a copy of the library) or back to the first
-//   locallink [delay] [jitter]  join the two games' link ports (local_link.hpp); both then run.
+//   locallink [delay] [jitter] [every] [length]
+//                              join the two games' link ports (local_link.hpp); both then run.
 //                              With a delay (frames one way, plus up to `jitter` more), as two
-//                              distant computers over the relay
+//                              distant computers over the relay; and a stall of `length` frames
+//                              every `every` frames, as over a VPN
 #include <SDL3/SDL_log.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -154,8 +157,17 @@ void Bench::step(int n) {
     for (int k = 0; k < 2; ++k) {
       Bench* g = g_benches[k];
       if (!g || !g->core.game_loaded()) continue;
-      if (g_local.active()) k == 0 ? g_local.before_first() : g_local.before_second();
+      if (g_local.active()) {
+        k == 0 ? g_local.before_first() : g_local.before_second();
+        const bool held = k == 0 ? g_local.first_waiting() : g_local.second_waiting();
+        static bool was_held[2] = {};
+        if (held != was_held[k] && std::getenv("P64_PACE_LOG"))
+          std::printf("pace: game %d %s at step %llu\n", k + 1, held ? "waits" : "goes on", static_cast<unsigned long long>(g->frames));
+        was_held[k] = held;
+        if (held) continue;  // held, as the app holds it
+      }
       g->frame_once();
+      if (g_local.active()) k == 0 ? g_local.first_ran() : g_local.second_ran();
     }
     g_local.tick();
   }
@@ -250,9 +262,10 @@ int main(int argc, char** argv) {
     } else if (cmd == "first") {
       target = &first;
     } else if (cmd == "locallink") {
-      int delay = 0, jitter = 0;
-      ss >> delay >> jitter;
+      int delay = 0, jitter = 0, every = 0, length = 0;
+      ss >> delay >> jitter >> every >> length;
       g_local.set_delay(delay, jitter);
+      g_local.set_stalls(every, length);
       g_local.start(first.core.netpacket(), second.core.netpacket());
       if (!g_local.active()) fail("could not join the two games' link ports");
     } else if (cmd == "run") {
@@ -266,7 +279,9 @@ int main(int argc, char** argv) {
       ss >> names >> n;
       if (n <= 0) n = 6;
       b.buttons = parse_buttons(names);
-      b.step(n);
+      // Held for this game's own frames: a game waiting on its link (link_pacer.hpp) doesn't run,
+      // and a press it never saw would be lost.
+      for (const uint64_t until = b.frames + static_cast<uint64_t>(n); b.frames < until;) b.step(1);
       b.buttons = 0;
       if (cmd == "press") b.step(10);
     } else if (cmd == "shot") {

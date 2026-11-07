@@ -160,6 +160,7 @@ bool App::init(std::string& error) {
     pref_dir_ = from_utf8(pref);
     SDL_free(pref);
   }
+  open_log();
   assets_dir_ = from_utf8(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "assets";
   settings_.load(pref_dir_ / "settings.ini");
   if (settings_.get_int("gba_looks", 0) < 4) {
@@ -1002,6 +1003,39 @@ int App::refreshes_per_frame(double fps) const {
   return n >= 1 && n <= 4 && std::abs(per / n - 1.0) < 0.02 ? n : 0;
 }
 
+// What the app reports (link play, the relay, saves, Drive) also goes to a file the player can
+// send when something goes wrong: prometheus.log next to the settings, the run before kept as
+// prometheus-previous.log. Nothing private goes into it: no keys, no saves.
+namespace {
+std::FILE* g_log = nullptr;
+SDL_LogOutputFunction g_default_log = nullptr;
+void* g_default_log_data = nullptr;
+void SDLCALL log_to_file(void* data, int category, SDL_LogPriority priority, const char* message) {
+  if (g_default_log) g_default_log(g_default_log_data, category, priority, message);
+  (void)data;
+  if (!g_log || !message) return;
+  const uint64_t ms = SDL_GetTicks();
+  std::fprintf(g_log, "[%6llu.%03llu] %s\n", static_cast<unsigned long long>(ms / 1000), static_cast<unsigned long long>(ms % 1000), message);
+  std::fflush(g_log);
+}
+}  // namespace
+
+void App::open_log() {
+  if (pref_dir_.empty() || g_log) return;
+  std::error_code ec;
+  const fs::path file = pref_dir_ / "prometheus.log";
+  fs::rename(file, pref_dir_ / "prometheus-previous.log", ec);
+#ifdef _WIN32
+  g_log = _wfopen(file.c_str(), L"w");
+#else
+  g_log = std::fopen(file.c_str(), "w");
+#endif
+  if (!g_log) return;
+  SDL_GetLogOutputFunction(&g_default_log, &g_default_log_data);
+  SDL_SetLogOutputFunction(log_to_file, nullptr);
+  SDL_Log("Project Prometheus %s", P64_VERSION);
+}
+
 void App::run_frames() {
   const uint64_t now = SDL_GetTicksNS();
   uint64_t elapsed = now - last_ns_;
@@ -1030,6 +1064,28 @@ void App::run_frames() {
     acc_ns_ = 0;
     speed_since_ns_ = 0;
     return;
+  }
+  // Online link play: when the connection stalls, this game waits for the other's link messages
+  // instead of running on without them, as two consoles on a cable would (link_pacer.hpp).
+  if (linked && link_.waiting()) {
+    acc_ns_ = 0;
+    speed_since_ns_ = 0;
+    if (!link_wait_since_ns_) link_wait_since_ns_ = now;
+    if (now - link_wait_since_ns_ > 30'000'000'000ull) {
+      // Too long for a stall: let the link's own error show rather than hold the game for ever.
+      link_.give_up_waiting();
+      toast("The other player's connection has stopped. If it doesn't come back, end the link and start again", 8);
+    } else if (now - link_wait_since_ns_ > 500'000'000ull && now - link_wait_told_ns_ > 2'000'000'000ull) {
+      link_wait_told_ns_ = now;
+      toast("Waiting for the other player's connection...", 2);
+    }
+    return;
+  }
+  if (link_wait_since_ns_) {
+    // Short waits (a moment's jitter, or one computer running a touch faster) aren't worth a line.
+    if (now - link_wait_since_ns_ > 250'000'000ull)
+      SDL_Log("link: waited %.1f s for the other player's connection", static_cast<double>(now - link_wait_since_ns_) / 1e9);
+    link_wait_since_ns_ = 0;
   }
   // Speeding up (GBA, the speed key held): fast_times() times the game's speed, by the clock.
   // Not while linked or at an event, where the other side expects the game's own pace. Its sound
@@ -2549,6 +2605,7 @@ void App::draw_toasts() {
 void App::run_one_frame() {
   if (!local_.active()) {
     core_.run();
+    if (link_.active()) link_.frame_done();
     return;
   }
   local_.before_first();

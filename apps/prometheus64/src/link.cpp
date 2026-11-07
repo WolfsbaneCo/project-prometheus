@@ -67,6 +67,8 @@ void Link::start_core() {
   if (!core_ || phase_ != Phase::Open || core_started_ || (g_running && g_running != this)) return;
   g_running = this;
   core_started_ = true;
+  frames_ = 0;
+  pacers_.clear();
   SDL_Log("link: open as player %d%s", me_, is_host() ? " (host)" : "");
   core_->start(static_cast<uint16_t>(me_), send_cb, poll_cb);
   // The host tells the core about everyone already in the room.
@@ -76,6 +78,8 @@ void Link::start_core() {
 }
 
 void Link::stop_core() {
+  pacers_.clear();
+  frames_ = 0;
   if (!core_started_) return;
   if (core_ && core_->stop) core_->stop();
   core_started_ = false;
@@ -135,6 +139,7 @@ void Link::on_text(const std::string& text) {
     if (it == peers_.end()) return;
     messages_.push_back(it->second.name + " left the link");
     peers_.erase(it);
+    pacers_.erase(id);
     if (core_started_ && is_host() && core_ && core_->disconnected) core_->disconnected(static_cast<uint16_t>(id));
   }
 }
@@ -155,6 +160,12 @@ void Link::on_binary(const std::string& data) {
     if (core_started_ && core_ && core_->receive) {
       ++g_received;
       core_->receive(data.data() + 2, data.size() - 2, static_cast<uint16_t>(from));
+    }
+  } else if (kind == kTick) {
+    if (data.size() >= 10 && core_started_) {
+      uint64_t frames = 0;
+      for (int i = 0; i < 8; ++i) frames |= static_cast<uint64_t>(static_cast<uint8_t>(data[2 + i])) << (8 * i);
+      pacers_[from].heard(frames, frames_);
     }
   } else if (kind == kVersion) {
     Peer& p = peers_[from];
@@ -180,6 +191,29 @@ void Link::on_binary(const std::string& data) {
                           ": both need the same (Play online > Link)");
     }
   }
+}
+
+void Link::frame_done() {
+  if (!core_started_) return;
+  ++frames_;
+  if (frames_ % LinkPacer::kEvery) return;
+  std::string msg;
+  msg += static_cast<char>(kBroadcast);
+  msg += static_cast<char>(kTick);
+  for (int i = 0; i < 8; ++i) msg += static_cast<char>((frames_ >> (8 * i)) & 0xFF);
+  ws_.send(std::move(msg));
+}
+
+bool Link::waiting() const {
+  if (!core_started_) return false;
+  for (const auto& [id, pacer] : pacers_) {
+    if (pacer.behind(frames_)) return true;
+  }
+  return false;
+}
+
+void Link::give_up_waiting() {
+  for (auto& [id, pacer] : pacers_) pacer.give_up();
 }
 
 void Link::say_hello(int to) {
