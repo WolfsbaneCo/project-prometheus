@@ -64,8 +64,25 @@ class Link {
   bool waiting() const;
   void give_up_waiting();
 
+  // For the log (link_monitor.hpp): what went over the link since the last call, which resets it.
+  struct Stats {
+    uint64_t sent = 0, received = 0;            // the core's packets
+    uint64_t sent_data = 0, received_data = 0;  // of those, the cable packets carrying game data
+    uint64_t bytes_sent = 0, bytes_received = 0;
+    int my_cable = -1, their_cable = -1;  // gpSP's cable state last sent and heard (-1: none yet)
+    uint64_t frames = 0;                  // this game's frames since the link started
+    bool paced = false;                   // the other's frames are known
+    uint64_t their_frames = 0;
+    int64_t lead = 0;  // frames this game is ahead of the other, past their starting gap
+    int pings = 0;     // round trips to the other player's app, in milliseconds
+    double ping_min = 0, ping_max = 0, ping_avg = 0;
+    std::size_t backlog = 0;  // messages queued, not yet sent
+  };
+  Stats take_stats();
+
  private:
-  enum Kind : uint8_t { kCore = 1, kHello = 2, kVersion = 3, kTick = 4 };
+  // kPing and kPong (since 0.2.12) measure the time to the other player and back; older apps ignore them.
+  enum Kind : uint8_t { kCore = 1, kHello = 2, kVersion = 3, kTick = 4, kPing = 5, kPong = 6 };
   static constexpr uint8_t kBroadcast = 255;
 
   void open(const std::string& url);
@@ -89,6 +106,10 @@ class Link {
   bool core_started_ = false;
   uint64_t frames_ = 0;              // frames run since the core's link started
   std::map<int, LinkPacer> pacers_;  // one for each other player
+  Stats stats_;
+  double ping_sum_ = 0;
+  uint64_t last_ping_ns_ = 0;
+  void count_core(const void* data, std::size_t len, bool sent);
 };
 
 }  // namespace p64

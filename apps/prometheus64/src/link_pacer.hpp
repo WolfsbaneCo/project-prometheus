@@ -44,6 +44,12 @@ class LinkPacer {
   // After a wait too long to be a stall (the other game gone without a word), stop holding this
   // game, so the link's own error can show.
   void give_up() { gave_up_ = true; }
+  // For the log: whether the other has been heard, its frames, and how far this game is past the
+  // baseline gap (positive: ahead; the game waits beyond kWindow).
+  bool known() const { return heard_; }
+  uint64_t theirs() const { return theirs_; }
+  int64_t base() const { return base_; }
+  int64_t lead(uint64_t mine) const { return static_cast<int64_t>(mine) - static_cast<int64_t>(theirs_) - base_; }
   void reset() {
     heard_ = gave_up_ = false;
     theirs_ = 0;
