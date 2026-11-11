@@ -20,15 +20,16 @@ const KeySet kDefaultKeys[Input::kKeyLayouts] = {
     {SDL_SCANCODE_X, SDL_SCANCODE_C, SDL_SCANCODE_Z, SDL_SCANCODE_RETURN, SDL_SCANCODE_A, SDL_SCANCODE_S,
      SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L, SDL_SCANCODE_T, SDL_SCANCODE_G, SDL_SCANCODE_F,
      SDL_SCANCODE_H, SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_LSHIFT,
-     SDL_SCANCODE_SPACE},
+     SDL_SCANCODE_SPACE, SDL_SCANCODE_P},
     {SDL_SCANCODE_F, SDL_SCANCODE_G, SDL_SCANCODE_Q, SDL_SCANCODE_TAB, SDL_SCANCODE_R, SDL_SCANCODE_E,
      SDL_SCANCODE_T, SDL_SCANCODE_B, SDL_SCANCODE_V, SDL_SCANCODE_N, SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3,
      SDL_SCANCODE_4, SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_LSHIFT,
-     SDL_SCANCODE_SPACE},
+     SDL_SCANCODE_SPACE, SDL_SCANCODE_Y},
     {SDL_SCANCODE_PERIOD, SDL_SCANCODE_COMMA, SDL_SCANCODE_M, SDL_SCANCODE_RETURN, SDL_SCANCODE_O,
      SDL_SCANCODE_SLASH, SDL_SCANCODE_P, SDL_SCANCODE_SEMICOLON, SDL_SCANCODE_L, SDL_SCANCODE_APOSTROPHE,
      SDL_SCANCODE_HOME, SDL_SCANCODE_END, SDL_SCANCODE_DELETE, SDL_SCANCODE_PAGEDOWN, SDL_SCANCODE_UP,
-     SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_SPACE},
+     SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_SPACE,
+     SDL_SCANCODE_RIGHTBRACKET},
 };
 const char* const kLayoutNames[Input::kKeyLayouts] = {"Keyboard", "Keyboard (left side)", "Keyboard (right side)"};
 
@@ -243,6 +244,14 @@ bool Input::handle_event(const SDL_Event& e) {
 
 void Input::update(float dt) {
   const bool* keys = SDL_GetKeyboardState(nullptr);
+  // The Pokémon stats shortcut: any layout's key, or its button on any gamepad.
+  bool stats = test_stats_;
+  for (const KeySet& l : keys_) stats = stats || (l[kStats] != SDL_SCANCODE_UNKNOWN && keys[l[kStats]]);
+  for (const Pad& pad : pads_) {
+    for (const PadInput& in : pad_stats_) stats = stats || pad_input_held(pad.handle, in);
+  }
+  if (stats && !stats_held_) stats_pressed_ = true;
+  stats_held_ = stats;
   for (int p = 0; p < kPlayers; ++p) {
     const Seat& s = seats_[p];
     PadState st;
@@ -303,6 +312,7 @@ void Input::test_press(int player, const std::string& button, bool down) {
     }
   }
   if (button == "SPEED") test_speed_ = down;
+  if (button == "STATS") test_stats_ = down;
   const float v = down ? 1.0f : 0.0f;
   if (button == "UP") test_y_[player] = -v;
   if (button == "DOWN") test_y_[player] = v;
@@ -317,6 +327,21 @@ bool Input::speed_held() const {
     if (l[kSpeed] != SDL_SCANCODE_UNKNOWN && keys[l[kSpeed]]) return true;
   }
   return false;
+}
+
+bool Input::take_stats_press() {
+  const bool pressed = stats_pressed_;
+  stats_pressed_ = false;
+  return pressed;
+}
+
+std::string Input::stats_label() const {
+  std::string out;
+  for (int l = 0; l < kKeyLayouts && out.empty(); ++l) {
+    if (keys_[l][kStats] != SDL_SCANCODE_UNKNOWN) out = key_label(l, kStats);
+  }
+  if (!pad_stats_.empty() && !pads_.empty()) out += (out.empty() ? "" : " / ") + pad_label(kStats);
+  return out;
 }
 
 int16_t Input::retro_state(unsigned port, unsigned device, unsigned index, unsigned id) const {
@@ -379,7 +404,7 @@ namespace {
 // Names used in the settings file; they must never change.
 const char* const kControlIds[kControlCount] = {"a",   "b",     "z",     "start", "l",  "r",    "cup",
                                                 "cdown", "cleft", "cright", "dup", "ddown", "dleft", "dright",
-                                                "up",  "down",  "left",  "right", "walk", "speed"};
+                                                "up",  "down",  "left",  "right", "walk", "speed", "stats"};
 
 std::string encode(const std::vector<PadInput>& list) {
   std::string out;
@@ -438,7 +463,8 @@ const char* Input::control_name(int control) {
   static const char* const names[kControlCount] = {
       "A",        "B",          "Z",          "Start",       "L",          "R",           "C-Up",
       "C-Down",   "C-Left",     "C-Right",    "D-pad up",    "D-pad down", "D-pad left",  "D-pad right",
-      "Stick up", "Stick down", "Stick left", "Stick right", "Walk (hold)", "Speed up GBA (hold)"};
+      "Stick up", "Stick down", "Stick left", "Stick right", "Walk (hold)", "Speed up GBA (hold)",
+      "Pok\xC3\xA9mon stats"};
   return control >= 0 && control < kControlCount ? names[control] : "";
 }
 
@@ -493,7 +519,7 @@ std::string Input::pad_label(int button) const {
     }
   };
   std::string out;
-  for (const PadInput& in : pad_[button]) out += (out.empty() ? "" : " or ") + one(in);
+  for (const PadInput& in : pad_list(button)) out += (out.empty() ? "" : " or ") + one(in);
   return out.empty() ? "None" : out;
 }
 
@@ -525,10 +551,13 @@ bool Input::bind_pad(int button, const SDL_Event& e) {
   } else {
     return false;
   }
-  const std::vector<PadInput> old = pad_[button];
-  for (int b = 0; b < kButtonCount; ++b) {
-    if (b == button) continue;
-    auto& list = pad_[b];
+  // What another control lost to this one, it gets back from this one's old inputs. (The
+  // stats shortcut may have none: then that control is left without, to be given another.)
+  const std::vector<PadInput> old = pad_list(button);
+  for (int b = 0; b <= kButtonCount; ++b) {
+    const int control = b == kButtonCount ? static_cast<int>(kStats) : b;
+    if (control == button) continue;
+    auto& list = pad_list(control);
     const auto before = list.size();
     list.erase(std::remove(list.begin(), list.end(), in), list.end());
     if (list.empty() && before > 0) {
@@ -537,13 +566,16 @@ bool Input::bind_pad(int button, const SDL_Event& e) {
       }
     }
   }
-  pad_[button] = {in};
+  pad_list(button) = {in};
   return true;
 }
 
 void Input::reset_keys(int layout) { keys_[layout] = kDefaultKeys[layout]; }
 
-void Input::reset_pad() { pad_ = default_pad(); }
+void Input::reset_pad() {
+  pad_ = default_pad();
+  pad_stats_.clear();
+}
 
 bool Input::pad_input_held(SDL_Gamepad* g, const PadInput& in) const {
   if (in.kind == PadInput::Button) return SDL_GetGamepadButton(g, static_cast<SDL_GamepadButton>(in.code));
@@ -567,7 +599,15 @@ void Input::load_bindings(const Settings& settings, const std::string& game_id) 
         keys_[l][kSpeed] = SDL_SCANCODE_UNKNOWN;
       }
     }
+    // The same for the Pokémon stats shortcut, which came later still.
+    for (int c = 0; c < kStats; ++c) {
+      if (keys_[l][c] == keys_[l][kStats] && settings.game_int(game_id, "keys." + std::to_string(l) + ".stats", -1) <= 0) {
+        keys_[l][kStats] = SDL_SCANCODE_UNKNOWN;
+      }
+    }
   }
+  pad_stats_.clear();
+  decode(settings.game(game_id, "pad.stats", ""), pad_stats_);
   pad_ = default_pad();
   for (int b = 0; b < kButtonCount; ++b) {
     std::vector<PadInput> list;
@@ -589,6 +629,7 @@ void Input::save_bindings(Settings& settings, const std::string& game_id) const 
     }
   }
   for (int b = 0; b < kButtonCount; ++b) set(std::string("pad.") + kControlIds[b], encode(pad_[b]));
+  set("pad.stats", encode(pad_stats_));
 }
 
 }  // namespace p64

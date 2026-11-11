@@ -26,6 +26,8 @@ The app then does the rest:
 
 Setting up again replaces the group key, and older key files stop working.
 
+**Update relay** (Play online, once a group has its key) installs the newest relay on the same account and keeps the group key, so the key files keep working. The relay from Project Prometheus 0.2.13 on lets a player whose connection dropped come back to the same room (a host to its own code); older apps work with it unchanged.
+
 ### The key file
 
 A small JSON file. Every Project Prometheus app reads it the same way:

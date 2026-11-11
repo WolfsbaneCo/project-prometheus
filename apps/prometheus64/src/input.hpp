@@ -25,9 +25,10 @@ enum N64Button : int {
   kA, kB, kZ, kStart, kL, kR, kCUp, kCDown, kCLeft, kCRight, kDUp, kDDown, kDLeft, kDRight, kButtonCount
 };
 // Everything a key can drive: the 14 buttons, then the control stick's four directions, the
-// walk modifier (keyboard only; a gamepad uses its left stick) and, for GBA games, speeding the
-// game up while held.
-enum Control : int { kStickUp = kButtonCount, kStickDown, kStickLeft, kStickRight, kWalk, kSpeed, kControlCount };
+// walk modifier (keyboard only; a gamepad uses its left stick), for GBA games, speeding the
+// game up while held, and the shortcut that opens the Pokémon stats page (a key, and a gamepad
+// button if the player gives it one).
+enum Control : int { kStickUp = kButtonCount, kStickDown, kStickLeft, kStickRight, kWalk, kSpeed, kStats, kControlCount };
 
 struct PadState {
   uint32_t buttons = 0;  // bit per N64Button
@@ -74,6 +75,11 @@ class Input {
   bool rumble(unsigned port, bool strong, uint16_t strength);
   // A speed key is held (any keyboard layout's: speeding up is for the whole game, not a player).
   bool speed_held() const;
+  // The Pokémon stats shortcut was pressed since the last call (any keyboard layout's key, or
+  // the button given to it on any gamepad).
+  bool take_stats_press();
+  // What opens the Pokémon stats page, for the menu ("P", "P or Back"); empty: nothing does.
+  std::string stats_label() const;
 
   void start_seating();  // "Who's playing": seated players stay, free seats can be claimed
   void stop_seating();   // if nobody is seated, the keyboard takes player 1 again
@@ -128,6 +134,10 @@ class Input {
   std::array<uint32_t, kPlayers> test_buttons_{};
   std::array<float, kPlayers> test_x_{}, test_y_{};
   bool test_speed_ = false;
+  bool test_stats_ = false, stats_held_ = false, stats_pressed_ = false;
+  std::vector<PadInput> pad_stats_;  // the gamepad's Pokémon stats shortcut (none by default)
+  std::vector<PadInput>& pad_list(int control) { return control == kStats ? pad_stats_ : pad_[control]; }
+  const std::vector<PadInput>& pad_list(int control) const { return control == kStats ? pad_stats_ : pad_[control]; }
   std::array<std::array<SDL_Scancode, kControlCount>, kKeyLayouts> keys_{};
   std::array<std::vector<PadInput>, kButtonCount> pad_{};
   bool seating_ = false;

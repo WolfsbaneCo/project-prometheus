@@ -95,7 +95,8 @@ std::string new_group_key() {
   return key;
 }
 
-Result install_relay(const std::string& raw_token, const std::function<void(const std::string&)>& progress) {
+Result install_relay(const std::string& raw_token, const std::function<void(const std::string&)>& progress,
+                     const std::string& keep_key, const std::string& expect_url) {
   Result res;
   std::string token;
   for (char c : raw_token) {
@@ -149,8 +150,14 @@ Result install_relay(const std::string& raw_token, const std::function<void(cons
     return res;
   }
 
-  progress("Installing the relay for your group...");
-  const std::string group_key = new_group_key();
+  const std::string relay_host = std::string(kScriptName) + "." + subdomain + ".workers.dev";
+  if (!keep_key.empty() && !expect_url.empty() && expect_url != "wss://" + relay_host) {
+    res.message = "This Cloudflare account isn't the one your group's relay is on, so nothing was changed. Only "
+                  "whoever set the group up can update its relay";
+    return res;
+  }
+  progress(keep_key.empty() ? "Installing the relay for your group..." : "Updating your group's relay...");
+  const std::string group_key = keep_key.empty() ? new_group_key() : keep_key;
   // The room storage is created once (migration "v1"); later installs only update the code.
   bool exists = api.call("GET", base + "/services/" + kScriptName);
   const std::string tag = exists ? api.last["result"]["default_environment"]["script"]["migration_tag"].str() : "";
@@ -176,8 +183,11 @@ Result install_relay(const std::string& raw_token, const std::function<void(cons
 
   res.ok = true;
   res.group_key = group_key;
-  const std::string relay_host = std::string(kScriptName) + "." + subdomain + ".workers.dev";
   res.relay_url = "wss://" + relay_host;
+  if (!keep_key.empty()) {
+    res.message = "The relay is updated. Your key file stays the same: nobody needs a new one";
+    return res;
+  }
 
   // A brand-new address can take a minute to appear on the internet.
   progress("Testing the relay...");

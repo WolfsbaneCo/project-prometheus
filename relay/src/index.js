@@ -10,6 +10,13 @@
 //   wss  /v1/host?app=..&key=..&v=2&name=..           open a room; the first message names its code
 //   wss  /v1/rooms/<CODE>?app=..&key=..&v=2&name=..   join a room
 //
+// Coming back after a dropped connection (an app whose link broke takes it up again where it
+// stopped): the welcome carries a `token`, known only to that player's app. A host comes back
+// with /v1/host?..&code=<CODE>&resume=<token> and gets its room and code again; a guest with
+// /v1/rooms/<CODE>?..&resume=<token>&id=<its id> gets its id again. A connection the relay still
+// held for that player (it hadn't noticed the break) is replaced, and the others hear a `join`
+// with the id they already know. Without these, nothing changes for older apps.
+//
 // Messages from the apps are binary: the first byte names the recipient (255 = everyone else),
 // the rest is passed on unchanged, with that first byte replaced by the sender's player id
 // (0 = host). [254, 1] from the host is for the relay: the game started, nobody else can join.
@@ -58,6 +65,10 @@ function inner(request, code, role) {
   return new Request(request.url, { headers });
 }
 
+function randomToken() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -80,6 +91,13 @@ export default {
       return new Response("Expected a WebSocket connection", { status: 426 });
     }
     if (join) return stub(env, `${app}:${join[1]}`).fetch(inner(request, join[1], "guest"));
+    // A host coming back asks for its own code again: it gets it if the room is empty by now, or
+    // still holds the connection this host had (its token proves it).
+    const wanted = param(url, "code", CODE_LENGTH);
+    if (new RegExp(`^[${CODE_CHARS}]{${CODE_LENGTH}}$`).test(wanted)) {
+      const response = await stub(env, `${app}:${wanted}`).fetch(inner(request, wanted, "host"));
+      if (response.status !== 409) return response;
+    }
     // A new room: try a few random codes until one is free.
     for (let attempt = 0; attempt < 8; attempt++) {
       const code = randomCode();
@@ -99,28 +117,70 @@ export class Room {
     const url = new URL(request.url);
     const code = request.headers.get("X-Room-Code");
     const role = request.headers.get("X-Room-Role");
-    const sockets = this.ctx.getWebSockets();
-    const players = sockets.map((ws) => ws.deserializeAttachment());
+    let sockets = this.ctx.getWebSockets();
+    let players = sockets.map((ws) => ws.deserializeAttachment());
+
+    // A player coming back after a dropped connection: the connection the relay still holds
+    // for them, if any (found by the token only their app knows).
+    const resume = param(url, "resume", 64);
+    const old = resume ? sockets.find((ws) => ws.deserializeAttachment().token === resume) : undefined;
+    const was = old ? old.deserializeAttachment() : undefined;
 
     let id = 0;
+    let started = false;
     if (role === "host") {
-      if (sockets.length > 0) return new Response("Room code in use", { status: 409 });
+      if (was && was.id === 0) {
+        started = !!was.started;
+      } else if (players.some((p) => p.id === 0)) {
+        return new Response("Room code in use", { status: 409 });
+      } else {
+        // No host: what is left are guests the relay is still sending away from the room the
+        // host just lost (its connection dropped). The room starts again, empty.
+        for (const ws of sockets) {
+          try {
+            ws.close(4000, "The host left the game");
+          } catch {
+            // closed
+          }
+        }
+        sockets = [];
+        players = [];
+      }
+    } else if (was && was.id !== 0) {
+      id = was.id;
     } else {
       const host = players.find((p) => p.id === 0);
       if (!host) return new Response("This game isn't open any more", { status: 404 });
       if (host.started) return new Response("This game has already started", { status: 423 });
       if (sockets.length >= MAX_PLAYERS) return new Response("This game is full", { status: 403 });
       const used = new Set(players.map((p) => p.id));
-      id = 1;
+      // The id it had before, when it asks for it and it's free; otherwise the lowest free one.
+      const asked = Number(param(url, "id", 1));
+      id = asked >= 1 && asked < MAX_PLAYERS && !used.has(asked) ? asked : 1;
       while (used.has(id)) id++;
+    }
+    if (was && was.id === id) {
+      // Replaced quietly: nobody is told this player left.
+      old.serializeAttachment({ ...was, replaced: true });
+      try {
+        old.close(4001, "Replaced by a new connection");
+      } catch {
+        // closed
+      }
+      sockets = sockets.filter((ws) => ws !== old);
+      players = sockets.map((ws) => ws.deserializeAttachment());
     }
 
     const name = param(url, "name", 24) || "Player";
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    const me = { id, name };
+    const token = randomToken();
+    const me = { id, name, token };
+    if (started) me.started = true;
     server.serializeAttachment(me);
-    server.send(JSON.stringify({ t: "welcome", code, you: id, players: players.map((p) => ({ id: p.id, name: p.name })) }));
+    server.send(
+      JSON.stringify({ t: "welcome", code, you: id, token, players: players.map((p) => ({ id: p.id, name: p.name })) }),
+    );
     for (const ws of sockets) send(ws, JSON.stringify({ t: "join", id, name }));
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -153,6 +213,7 @@ export class Room {
 
   leave(ws) {
     const gone = ws.deserializeAttachment();
+    if (gone.replaced) return; // its player came back on a new connection
     for (const other of this.ctx.getWebSockets()) {
       if (other === ws) continue;
       if (gone.id === 0) {

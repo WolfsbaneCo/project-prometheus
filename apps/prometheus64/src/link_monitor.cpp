@@ -153,8 +153,12 @@ void LinkMonitor::log_changes(const Game& g, const GbaMemory& memory) {
                                     g.queue_full != was.queue_full || g.lag != was.lag ||
                                     (g.status & 0x7F000) != (was.status & 0x7F000)))) {
     if (errors) {
-      SDL_Log("game: LINK ERROR: %s (send queue %d, receive queue %d of %d)",
-              errors_text(g.status, g.hardware, g.checksum, g.queue_full, g.lag).c_str(), g.send, g.recv, kQueueCapacity);
+      const std::string what = errors_text(g.status, g.hardware, g.checksum, g.queue_full, g.lag);
+      SDL_Log("game: LINK ERROR: %s (send queue %d, receive queue %d of %d)", what.c_str(), g.send, g.recv, kQueueCapacity);
+      if (!were) {
+        notes_.push_back("Your game reports a link error (" + what + "). If it stops, both of you restart your games and "
+                         "link again; the log (prometheus.log) has the details");
+      }
     } else if (were) {
       SDL_Log("game: link errors cleared");
     }
@@ -203,17 +207,21 @@ void LinkMonitor::heartbeat(uint64_t now_ns, Link& link) {
   char ping[96] = "no reply";
   if (s.pings)
     std::snprintf(ping, sizeof ping, "%.0f ms (%.0f-%.0f, %d)", s.ping_avg, s.ping_min, s.ping_max, s.pings);
+  char relay[48] = "not yet";
+  if (s.relay_silent_ms >= 0) std::snprintf(relay, sizeof relay, "%d ms ago", s.relay_silent_ms);
   char game[200] = "not read for this game";
   if (last_.read)
     std::snprintf(game, sizeof game, "%s, %s, %d players, send queue max %d, receive queue max %d of %d, errors %s",
                   link_state_name(last_.state), last_.master ? "master" : "slave", last_.count, send_max_, recv_max_,
                   kQueueCapacity, errors_text(last_.status, last_.hardware, last_.checksum, last_.queue_full, last_.lag).c_str());
   SDL_Log("link status (%.1f s): %.1f frames/s, held %.1f s, %s | sent %llu (%llu with game data), received %llu (%llu) | "
-          "%llu/%llu bytes | queued %zu | round trip %s | cable: this game %s, other %s | game: %s%s",
+          "%llu/%llu bytes | queued %zu | round trip %s | relay heard %s | reconnected %d, sent again %llu, duplicates %llu | "
+          "cable: this game %s, other %s | game: %s%s",
           secs, secs > 0 ? static_cast<double>(frames) / secs : 0.0, static_cast<double>(held_ns_) / 1e9, pace,
           static_cast<unsigned long long>(s.sent), static_cast<unsigned long long>(s.sent_data),
           static_cast<unsigned long long>(s.received), static_cast<unsigned long long>(s.received_data),
           static_cast<unsigned long long>(s.bytes_sent), static_cast<unsigned long long>(s.bytes_received), s.backlog, ping,
+          relay, s.reconnects, static_cast<unsigned long long>(s.resent), static_cast<unsigned long long>(s.dropped),
           cable_name(s.my_cable), cable_name(s.their_cable), game, menu_ ? " | menu open" : "");
   window_ns_ = now_ns;
   frames_at_window_ = s.frames;
