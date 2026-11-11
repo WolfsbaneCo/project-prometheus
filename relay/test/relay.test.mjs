@@ -74,6 +74,58 @@ host.send(new Uint8Array([254, 1]));
 await sleep(200);
 await assert.rejects(open(`/v1/rooms/${code}${q("&name=Late")}`));
 
+// Coming back after a dropped connection. A second room, so the first stays as it is.
+{
+  const h = await open(`/v1/host${q("&name=Ana")}`);
+  const hw = await h.next();
+  assert.match(hw.token, /^[0-9a-f]{24}$/);
+  const g = await open(`/v1/rooms/${hw.code}${q("&name=Ben")}`);
+  const gw1 = await g.next();
+  assert.equal(gw1.you, 1);
+  assert.ok(gw1.token && gw1.token !== hw.token);
+  assert.equal((await h.next()).t, "join");
+
+  // The guest's line broke without the relay noticing: it comes back with its token, gets its
+  // id again, the old connection is closed quietly and the host hears a join (not a leave).
+  const g2b = await open(`/v1/rooms/${hw.code}${q(`&name=Ben&resume=${gw1.token}&id=1`)}`);
+  const gw2 = await g2b.next();
+  assert.equal(gw2.you, 1);
+  assert.deepEqual(gw2.players, [{ id: 0, name: "Ana" }]);
+  assert.equal((await g.closed).code, 4001);
+  assert.deepEqual(await h.next(), { t: "join", id: 1, name: "Ben" });
+  g2b.send(new Uint8Array([255, 5]));
+  assert.deepEqual(Array.from(await h.next()), [1, 5]);
+
+  // The same for the host: it keeps its code, and the guest stays connected.
+  const h2 = await open(`/v1/host${q(`&name=Ana&code=${hw.code}&resume=${hw.token}`)}`);
+  const hw2 = await h2.next();
+  assert.equal(hw2.code, hw.code);
+  assert.equal(hw2.you, 0);
+  assert.deepEqual(hw2.players, [{ id: 1, name: "Ben" }]);
+  assert.equal((await h.closed).code, 4001);
+  assert.deepEqual(await g2b.next(), { t: "join", id: 0, name: "Ana" });
+  h2.send(new Uint8Array([1, 9]));
+  assert.deepEqual(Array.from(await g2b.next()), [0, 9]);
+
+  // Someone else can't take a room's code, with a wrong token or none: they get a new room.
+  const thief = await open(`/v1/host${q(`&name=Eve&code=${hw.code}&resume=000000000000000000000000`)}`);
+  assert.notEqual((await thief.next()).code, hw.code);
+  thief.close();
+
+  // The host's line broke and the relay did notice: the room closed (the guest is sent away),
+  // and the host opens it again under the same code; the guest joins again with the id it had.
+  h2.close();
+  assert.equal((await g2b.closed).code, 4000);
+  await sleep(200);
+  const h3 = await open(`/v1/host${q(`&name=Ana&code=${hw.code}&resume=${hw2.token}`)}`);
+  assert.equal((await h3.next()).code, hw.code);
+  const g3b = await open(`/v1/rooms/${hw.code}${q(`&name=Ben&resume=${gw2.token}&id=1`)}`);
+  assert.equal((await g3b.next()).you, 1);
+  assert.deepEqual(await h3.next(), { t: "join", id: 1, name: "Ben" });
+  h3.close();
+  await g3b.closed;
+}
+
 // The host leaving closes the room for everyone, and its code stops working.
 host.close();
 const closed = await guest.closed;

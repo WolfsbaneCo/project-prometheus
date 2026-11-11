@@ -173,6 +173,7 @@ bool App::init(std::string& error) {
     settings_.save();
   }
   load_group_key();
+  net::set_relay_lookup(settings_.get_int("relay_lookup", 0));
   // Saves for every console share one folder: Memories\N64, Memories\GBA.
   // Earlier versions used Documents\N64 Saves; a computer that has it keeps using it (nothing moves).
   const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
@@ -1076,6 +1077,7 @@ void App::run_frames() {
   if (link_.active() && game_ && game_->system == System::GBA && game_->id.size() >= 8) {
     const GbaMemory memory = [this](uint32_t address, std::size_t size) -> const uint8_t* { return core_.memory(address, size); };
     link_monitor_.update(now, link_, game_->id.substr(4, 4), memory, link_.waiting(), overlay_ != Overlay::None);
+    for (const auto& note : link_monitor_.take_notes()) toast(note, 10);
   } else if (link_monitor_.active()) {
     link_monitor_.stop(now, link_);
   }
@@ -1089,8 +1091,15 @@ void App::run_frames() {
   if (linked && link_.waiting()) {
     acc_ns_ = 0;
     speed_since_ns_ = 0;
+    // A broken connection is being taken up again (link.hpp): the link keeps its own time limit.
+    const bool reconnecting = link_.waiting_for() == Link::Wait::Reconnect;
     if (!link_wait_since_ns_) link_wait_since_ns_ = now;
-    if (now - link_wait_since_ns_ > 30'000'000'000ull) {
+    if (reconnecting) {
+      if (now - link_wait_told_ns_ > 2'000'000'000ull) {
+        link_wait_told_ns_ = now;
+        toast("The connection dropped. Reconnecting: the game carries on when it's back...", 2.5);
+      }
+    } else if (now - link_wait_since_ns_ > 30'000'000'000ull) {
       // Too long for a stall: let the link's own error show rather than hold the game for ever.
       link_.give_up_waiting();
       toast("The other player's connection has stopped. If it doesn't come back, end the link and start again", 8);
@@ -1265,8 +1274,23 @@ void App::loop() {
     const uint64_t t0 = SDL_GetTicksNS();
     input_.update(static_cast<float>(std::min<uint64_t>(t0 - last_ns_, 100'000'000)) / 1e9f);
     for (auto& n : input_.take_notices()) toast(n, 4);
+    // The Pokémon stats shortcut (Controls): opens the page from the game or its menu, and
+    // closes it again.
+    if (input_.take_stats_press() && screen_ == Screen::Playing && has_stats_page()) {
+      if (overlay_ == Overlay::None || overlay_ == Overlay::Menu) {
+        stats_return_ = overlay_;
+        open_stats();
+      } else if (overlay_ == Overlay::Online && online_page_ == OnlinePage::Stats) {
+        overlay_ = stats_return_;
+      }
+    }
     process_net_events();
     link_.update();
+    // Which name lookup reached the relay (net.hpp), kept for next time.
+    if (const int lookup = net::relay_lookup(); lookup != settings_.get_int("relay_lookup", 0)) {
+      settings_.set_int("relay_lookup", lookup);
+      settings_.save();
+    }
     for (auto& m : link_.take_messages()) {
       toast(m, 5);
     }
@@ -1662,7 +1686,7 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Link play", local_link_value(), kLocalLinkItem},
       {"Controlling", game2_ && focus2_ ? game2_->title : game_ ? game_->title : "", kLocalFocusItem, "F3"},
       {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
-      {"Pok\xC3\xA9mon stats", "EVs", kStatsItem},
+      {"Pok\xC3\xA9mon stats", "EVs", kStatsItem, input_.stats_label()},
       {"Daily hints", settings_.get_int("daily_hints", 1) ? "On" : "Off", kHintsItem},
       {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
       {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
@@ -1816,7 +1840,10 @@ void App::menu_change(int id, int dir) {
       }
       break;
     case kStatsItem:
-      if (dir == 0) open_stats();
+      if (dir == 0) {
+        stats_return_ = Overlay::Menu;
+        open_stats();
+      }
       break;
     case kLocalLinkItem: {
       if (game2_) {
@@ -2205,7 +2232,8 @@ void App::draw_help() {
   column(px + 2 * pw / 3, "Shortcuts", hotkeys, 7);
   ui_.text(px + 40 * s, py + ph - 154 * s,
            "GBA games: A, B, L, R and Start as above, Select on Z, the +Control Pad on the D-pad or the stick. Hold " +
-               k(kSpeed) + " to speed the game up.",
+               k(kSpeed) + " to speed the game up." +
+               (input_.stats_label().empty() ? std::string() : " Pok\xC3\xA9mon stats: " + input_.stats_label() + "."),
            18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 122 * s,
            "Change any key or button on the Controls screen: press C in the library, or Menu > Controls.", 18 * s, kText);
@@ -2362,8 +2390,10 @@ std::vector<App::ControlsEntry> App::controls_entries() const {
     row = 1;  // row 0 shows the control stick, which is always the left stick
     for (int c : {kDUp, kDDown, kDLeft, kDRight}) out.push_back({c, 0, row++});
   }
+  if (controls_tab_ == Input::kKeyLayouts) out.push_back({kStats, 0, row++});  // the gamepad's shortcut, below the D-pad
   row = 0;
   for (int c : {kA, kB, kZ, kStart, kL, kR, kCUp, kCDown, kCLeft, kCRight}) out.push_back({c, 1, row++});
+  if (controls_tab_ < Input::kKeyLayouts) out.push_back({kStats, 1, row++});
   out.push_back({kEntryReset, 0, 100});
   out.push_back({kEntryDone, 1, 100});
   return out;
@@ -2652,7 +2682,11 @@ std::vector<const Game*> App::second_game_choices() const {
 
 std::string App::local_link_value() const {
   if (game2_) return "Linked: " + game2_->title + " (Enter ends it)";
-  if (link_.active()) return link_.phase() == Link::Phase::Open ? "Online: code " + link_.code() : "Online: connecting";
+  if (link_.active()) {
+    return link_.phase() == Link::Phase::Open           ? "Online: code " + link_.code()
+           : link_.phase() == Link::Phase::Reconnecting ? "Online: reconnecting"
+                                                        : "Online: connecting";
+  }
   return "Online, or a game here";
 }
 

@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "link.hpp"
 #include "pokemon_hints.hpp"  // GbaMemory
@@ -29,6 +30,12 @@ class LinkMonitor {
   // The link ended: a last line, and the next link starts afresh.
   void stop(uint64_t now_ns, Link& link);
   bool active() const { return started_ns_ != 0; }
+  // Things worth telling the player as they happen (the game's own link error, in plain words).
+  std::vector<std::string> take_notes() {
+    std::vector<std::string> out;
+    out.swap(notes_);
+    return out;
+  }
 
   // Where a game keeps its link layer (0: not known).
   struct Layout {
@@ -59,6 +66,7 @@ class LinkMonitor {
   int send_max_ = 0, recv_max_ = 0;
   uint32_t pending_ = 0, logged_ = 0;  // the player count and status word: as seen, as last logged
   int pending_samples_ = 0;
+  std::vector<std::string> notes_;
 };
 
 }  // namespace p64

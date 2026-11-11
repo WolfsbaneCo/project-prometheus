@@ -1,6 +1,7 @@
 #include "net.hpp"
 
 #include <SDL3/SDL_log.h>
+#include <SDL3/SDL_timer.h>
 #include <curl/curl.h>
 
 #ifdef _WIN32
@@ -9,6 +10,7 @@
 #include <sys/select.h>
 #endif
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 
@@ -159,6 +161,10 @@ Response request(const std::string& method, const std::string& url, const std::v
 
 void WebSocket::open(const std::string& url) {
   close();
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    events_.clear();  // nothing left over from a connection before this one
+  }
   stop_ = false;
   finished_ = false;
   thread_ = std::thread(&WebSocket::run, this, url);
@@ -189,10 +195,23 @@ std::vector<WebSocket::Event> WebSocket::poll() {
   return out;
 }
 
-void WebSocket::push(Event::Kind kind, std::string data) {
+void WebSocket::push(Event::Kind kind, std::string data, long status, int close_code) {
   std::lock_guard<std::mutex> lock(mutex_);
-  events_.push_back({kind, std::move(data)});
+  events_.push_back({kind, std::move(data), status, close_code});
 }
+
+int WebSocket::silent_ms() const {
+  const uint64_t heard = heard_ms_;
+  if (!heard || !active()) return -1;
+  const uint64_t now = SDL_GetTicks();
+  return now > heard ? static_cast<int>(std::min<uint64_t>(now - heard, 3'600'000)) : 0;
+}
+
+namespace {
+std::atomic<int> g_lookup{0};
+}
+int relay_lookup() { return g_lookup; }
+void set_relay_lookup(int which) { g_lookup = which >= 0 && which <= 3 ? which : 0; }
 
 void WebSocket::run(std::string url) {
   // Some internet providers block workers.dev addresses by answering the name lookup with another
@@ -206,7 +225,17 @@ void WebSocket::run(std::string url) {
   long status = 0;
   std::string why, tried;
   char detail[CURL_ERROR_SIZE] = {};  // curl's own words for a failure; the handle keeps writing here
-  for (const char* doh : kLookups) {
+  // The lookup that worked last time goes first.
+  int order[4] = {0, 1, 2, 3};
+  if (const int first = g_lookup; first > 0) {
+    order[0] = first;
+    for (int i = 1, k = 0; i < 4; ++k) {
+      if (k != first) order[i++] = k;
+    }
+  }
+  heard_ms_ = 0;
+  for (const int which : order) {
+    const char* doh = kLookups[which];
     if (c) curl_easy_cleanup(c);
     c = curl_easy_init();
     if (!c) {
@@ -247,6 +276,7 @@ void WebSocket::run(std::string url) {
     if (res == CURLE_OK || status != 0) {
       if (doh) SDL_Log("relay reached after looking it up over DNS-over-HTTPS (%s)", doh);
       if (res == CURLE_OK && status == 101) {
+        g_lookup = which;
         // Where and how fast: the name lookup, the connection, the secure connection and the
         // WebSocket's upgrade, each counted from the start. The address only, never the
         // query (it carries the group key).
@@ -267,7 +297,7 @@ void WebSocket::run(std::string url) {
     }
     // No answer from the relay at all: keep what went wrong (name lookup, connection, secure
     // connection), which tells a blocked address apart from an antivirus or firewall.
-    if (!doh) why = detail[0] ? detail : curl_easy_strerror(res);
+    if (why.empty()) why = detail[0] ? detail : curl_easy_strerror(res);
     SDL_Log("relay connection failed%s: %s (tried %s)", doh ? " (looked up over DNS-over-HTTPS)" : "",
             detail[0] ? detail : curl_easy_strerror(res), tried.empty() ? "no address" : tried.c_str());
     if (res != CURLE_PEER_FAILED_VERIFICATION && res != CURLE_COULDNT_RESOLVE_HOST && res != CURLE_SSL_CONNECT_ERROR &&
@@ -282,7 +312,7 @@ void WebSocket::run(std::string url) {
     return;
   }
   if (res != CURLE_OK || (status != 0 && status != 101)) {
-    push(Event::Closed, refusal(status));
+    push(Event::Closed, refusal(status), status);
     curl_easy_cleanup(c);
     finished_ = true;
     return;
@@ -294,9 +324,37 @@ void WebSocket::run(std::string url) {
   std::string message;  // a message can arrive in several pieces
   std::string reason = "Disconnected";
   bool open = true;
+  int close_code = 0;
   char buffer[64 * 1024];
+  uint64_t asked_ms = 0;
+  bool ponged = false;
+
+  // Sends one message whole (curl may take a long one in several calls); false: the connection broke.
+  const auto send_all = [&](const std::string& msg, unsigned flags, int patience_ms) {
+    size_t done = 0;
+    do {
+      size_t sent = 0;
+      const CURLcode r = curl_ws_send(c, msg.data() + done, msg.size() - done, &sent, 0, flags);
+      if (r == CURLE_AGAIN) {
+        if (patience_ms <= 0) return true;  // a full line: give up on this one quietly
+        wait_socket(sock, true, 50);
+        patience_ms -= 50;
+      } else if (r != CURLE_OK) {
+        reason = lost(r, detail);
+        return false;
+      }
+      done += sent;
+    } while (done < msg.size());
+    return true;
+  };
 
   while (open && !stop_) {
+    // Every 3 seconds, ask the relay for a sign of life (a WebSocket ping, which it answers
+    // itself): silent_ms() then tells a dead connection from a quiet partner.
+    if (const uint64_t now = SDL_GetTicks(); now - asked_ms >= 3000) {
+      asked_ms = now;
+      if (!send_all(std::string(), CURLWS_PING, 0)) break;
+    }
     // Send everything queued.
     std::deque<std::string> out;
     {
@@ -304,16 +362,24 @@ void WebSocket::run(std::string url) {
       out.swap(outgoing_);
     }
     for (const auto& msg : out) {
+      if (!open) break;
+      // A line that takes nothing for 20 seconds is as good as gone.
       size_t done = 0;
-      while (open && done < msg.size()) {
+      int waited = 0;
+      while (open && done < msg.size() && !stop_) {
         size_t sent = 0;
-        // curl may take a long message in several calls: pass on what is left each time.
         const CURLcode r = curl_ws_send(c, msg.data() + done, msg.size() - done, &sent, 0, CURLWS_BINARY);
         if (r == CURLE_AGAIN) {
           wait_socket(sock, true, 50);
+          if ((waited += 50) > 20000) {
+            reason = "Connection lost (nothing could be sent for 20 seconds)";
+            open = false;
+          }
         } else if (r != CURLE_OK) {
           reason = lost(r, detail);
           open = false;
+        } else {
+          waited = 0;
         }
         done += sent;
       }
@@ -332,8 +398,13 @@ void WebSocket::run(std::string url) {
         open = false;
         break;
       }
+      // Counted from the relay's first answer to a ping: a relay that never answers one would
+      // look dead whenever the other players were quiet.
+      if (meta->flags & CURLWS_PONG) ponged = true;
+      if (ponged) heard_ms_ = std::max<uint64_t>(SDL_GetTicks(), 1);
       if (meta->flags & CURLWS_CLOSE) {
         // Close frame: a 2-byte code, then the reason text.
+        if (got >= 2) close_code = static_cast<uint8_t>(buffer[0]) << 8 | static_cast<uint8_t>(buffer[1]);
         if (got > 2) reason.assign(buffer + 2, got - 2);
         open = false;
         break;
@@ -348,10 +419,19 @@ void WebSocket::run(std::string url) {
   }
 
   if (stop_) {
+    // Leaving: what was queued last (a goodbye to the others) still goes out, then the close.
+    std::deque<std::string> out;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      out.swap(outgoing_);
+    }
+    for (const auto& msg : out) {
+      if (!open || !send_all(msg, CURLWS_BINARY, 300)) break;
+    }
     size_t sent = 0;
     curl_ws_send(c, "", 0, &sent, 0, CURLWS_CLOSE);
   } else {
-    push(Event::Closed, reason);
+    push(Event::Closed, reason, 0, close_code);
   }
   curl_easy_cleanup(c);
   finished_ = true;

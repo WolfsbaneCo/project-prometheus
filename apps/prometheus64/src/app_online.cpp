@@ -28,7 +28,7 @@ constexpr std::size_t kSrmSize = 0x48800;
 enum OnlineButton {
   kObHost, kObJoin, kObSetup, kObClose, kObBack, kObSignup, kObTokenPage, kObPasteToken, kObInstall, kObFixPage,
   kObPasteCode, kObJoinGo, kObCopyCode, kObStart, kObLeave, kObDelayDown, kObDelayUp, kObDone, kObAddKey, kObSaveKey,
-  kObRemoveKey, kObLinkHost, kObLinkMode, kObLinkEnd, kObCopyLinkCode, kObEvents, kObEventClose,
+  kObRemoveKey, kObUpdateRelay, kObLinkHost, kObLinkMode, kObLinkEnd, kObCopyLinkCode, kObEvents, kObEventClose,
   kObEventFirst  // kObEventFirst + i opens the i-th event of the game; + kObEventPrev/Next + row picks a choice
 };
 constexpr int kObEventPrev = 100, kObEventNext = 200;
@@ -505,11 +505,14 @@ void App::start_setup() {
     setup_progress_ = "Starting...";
   }
   const std::string token = token_input_;
-  setup_thread_ = std::thread([this, token] {
+  // Updating keeps the group's key and must find the group's own relay on this account.
+  const std::string keep_key = setup_update_ ? group_key() : std::string();
+  const std::string expect_url = setup_update_ ? relay_url() : std::string();
+  setup_thread_ = std::thread([this, token, keep_key, expect_url] {
     cloudflare::Result r = cloudflare::install_relay(token, [this](const std::string& line) {
       std::lock_guard<std::mutex> lock(setup_mutex_);
       setup_progress_ = line;
-    });
+    }, keep_key, expect_url);
     std::lock_guard<std::mutex> lock(setup_mutex_);
     setup_result_ = r;
     setup_finished_ = true;
@@ -528,7 +531,10 @@ void App::finish_setup() {
   if (setup_thread_.joinable()) setup_thread_.join();
   if (r.ok) {
     const std::string who = name_input_.empty() ? default_name() : name_input_;
-    if (!store_group_key(who + "'s group", r.relay_url, r.group_key)) toast("Could not keep the group key on this computer", 6);
+    // An update keeps the key file as it is.
+    if (!setup_update_ && !store_group_key(who + "'s group", r.relay_url, r.group_key)) {
+      toast("Could not keep the group key on this computer", 6);
+    }
     token_input_.clear();  // the Cloudflare key is never kept
   }
 }
@@ -972,8 +978,9 @@ void App::draw_online() {
     float bx = x;
     if (keyed) {
       bx += online_button(bx, py + ph - 92 * s, "Save key file", s, false, kObSaveKey) + 14 * s;
-      online_button(bx, py + ph - 92 * s, confirm_remove_key_ ? "Click again to remove" : "Remove key", s, false,
-                    kObRemoveKey);
+      bx += online_button(bx, py + ph - 92 * s, confirm_remove_key_ ? "Click again to remove" : "Remove key", s, false,
+                          kObRemoveKey) + 14 * s;
+      online_button(bx, py + ph - 92 * s, "Update relay", s, false, kObUpdateRelay);
     }
     const float close_w = online_button(px + pw - 48 * s, py + ph - 92 * s, "Close", s, false, kObClose, true);
     if (const Game* g = link_game(); g && !events_for(*g).empty())
@@ -1084,9 +1091,16 @@ void App::draw_online() {
   }
 
   if (online_page_ == OnlinePage::Setup) {
-    title("Start a new group",
-          "Online games go through a small relay on your own free Cloudflare account. You do this once. Then you "
-          "save the group's key file and send it to your friends: only people with it can join your games.");
+    if (setup_update_) {
+      title("Update your group's relay",
+            "For whoever set the group up: this puts the newest relay on your Cloudflare account. Your group's key "
+            "stays the same, so nobody needs a new key file. Since 0.2.13 the relay lets a link carry on after the "
+            "host's connection drops.");
+    } else {
+      title("Start a new group",
+            "Online games go through a small relay on your own free Cloudflare account. You do this once. Then you "
+            "save the group's key file and send it to your friends: only people with it can join your games.");
+    }
     auto step = [&](int n, const std::string& head, const std::string& body, float h) {
       ui_.rect(x, y, 44 * s, 44 * s, kRed, 22 * s);
       ui_.text(x + 22 * s, y + 8 * s, std::to_string(n), 24 * s, kText, true, Align::Center);
@@ -1100,18 +1114,22 @@ void App::draw_online() {
       y += h;
       return top;
     };
-    float t = step(1, "Make a free Cloudflare account", "Skip this if you already have one.", 96 * s);
-    online_button(x + inner, t, "Open Cloudflare", s, false, kObSignup, true);
-    t = step(2, "Create a key for Project Prometheus",
+    float t = 0;
+    if (!setup_update_) {
+      t = step(1, "Make a free Cloudflare account", "Skip this if you already have one.", 96 * s);
+      online_button(x + inner, t, "Open Cloudflare", s, false, kObSignup, true);
+    }
+    t = step(setup_update_ ? 1 : 2, "Create a key for Project Prometheus",
              "On the page that opens, scroll down and click Continue to summary, then Create Token, then Copy. "
              "If no permissions are filled in, use the template \"Edit Cloudflare Workers\".",
              126 * s);
     online_button(x + inner, t, "Open the key page", s, false, kObTokenPage, true);
-    step(3, "Paste the key here", "It's used once to install the relay and never saved.", 76 * s);
+    step(setup_update_ ? 2 : 3, "Paste the key here", "It's used once to install the relay and never saved.", 76 * s);
 
     draw_field(x + 68 * s, y, inner - 68 * s - 300 * s, s, TextField::Token, token_input_, "Paste your key", true);
     online_button(x + inner - 140 * s, y, "Paste", s, false, kObPasteToken, true);
-    online_button(x + inner, y, "Set up", s, true, kObInstall, true, !setup_running_ && !token_input_.empty());
+    online_button(x + inner, y, setup_update_ ? "Update" : "Set up", s, true, kObInstall, true,
+                  !setup_running_ && !token_input_.empty());
     y += 84 * s;
     std::string progress;
     cloudflare::Result result;
@@ -1130,11 +1148,11 @@ void App::draw_online() {
         ly += 30 * s;
       }
       if (!result.fix_url.empty()) online_button(x, ly + 8 * s, "Open the fix page", s, false, kObFixPage);
-      if (result.ok) {
+      if (result.ok && !setup_update_) {
         ui_.text(x, ly + 4 * s, "Now save your group's key file and send it to the friends you want to play with.", 19 * s, kText);
         online_button(x, ly + 44 * s, "Save key file", s, true, kObSaveKey);
       }
-    } else if (has_group_key()) {
+    } else if (has_group_key() && !setup_update_) {
       for (const auto& line : wrap(ui_, "You already have a group key. Setting up again makes a new one, and the old key "
                                         "file stops working: everyone would need the new one.", 19 * s, inner, false, 2)) {
         ui_.text(x, y, line, 19 * s, rgb(0xF2C12E));
@@ -1142,7 +1160,7 @@ void App::draw_online() {
       }
     }
     online_button(x, py + ph - 92 * s, "Back", s, false, kObBack);
-    if (result.ok) online_button(px + pw - 48 * s, py + ph - 92 * s, "Host a game now", s, false, kObHost, true);
+    if (result.ok && !setup_update_) online_button(px + pw - 48 * s, py + ph - 92 * s, "Host a game now", s, false, kObHost, true);
     return;
   }
 
@@ -1163,7 +1181,7 @@ void App::draw_online() {
 
   if (online_page_ == OnlinePage::Link) {
     const auto lp = link_.phase();
-    if (lp != Link::Phase::Open) {
+    if (lp != Link::Phase::Open && lp != Link::Phase::Reconnecting) {
       title("Link", lp == Link::Phase::Connecting ? link_.status() : "The link has ended.");
       note(y);
       online_button(x, py + ph - 92 * s, "Back", s, false, kObBack);
@@ -1194,8 +1212,24 @@ void App::draw_online() {
     };
     row((name_input_.empty() ? default_name() : name_input_) + "  (you)",
         (game_ ? game_->title : std::string()) + "  -  " + mode_name(link_.mode()));
-    for (const auto& [id, p] : link_.peers()) row(p.name, p.game.empty() ? "Connecting..." : p.game + "  -  " + mode_name(p.mode));
-    if (link_.peers().empty()) ui_.text(x, y + 8 * s, link_.is_host() ? "Waiting for a friend to join..." : "", 19 * s, kDim);
+    for (const auto& [id, p] : link_.peers()) {
+      row(p.name, p.away ? "Connection dropped: waiting for it to come back..."
+                  : p.game.empty() ? "Connecting..." : p.game + "  -  " + mode_name(p.mode));
+    }
+    if (lp == Link::Phase::Reconnecting) {
+      ui_.text(x, y + 8 * s, "The connection dropped. Reconnecting: the game carries on when it's back.", 19 * s, rgb(0xF2C12E));
+    } else if (link_.peers().empty()) {
+      ui_.text(x, y + 8 * s, link_.is_host() ? "Waiting for a friend to join..." : "", 19 * s, kDim);
+    } else if (link_.is_host() && !link_.relay_resumes()) {
+      // An older relay can't give a host its room again after a dropped connection.
+      float ly = y + 8 * s;
+      for (const auto& line : wrap(ui_, "Your group's relay is an older one: if your connection drops, the link ends (your "
+                                        "friend's can drop and come back). Whoever set the group up can update it: Play "
+                                        "online, Update relay. The key file stays the same.", 18 * s, inner, false, 3)) {
+        ui_.text(x, ly, line, 18 * s, kFaint);
+        ly += 26 * s;
+      }
+    }
     note(py + ph - 150 * s);
     online_button(x, py + ph - 92 * s, "End link", s, false, kObLinkEnd);
     online_button(px + pw - 48 * s, py + ph - 92 * s, "Back to the game", s, true, kObDone, true);
@@ -1288,6 +1322,7 @@ void App::draw_online_status() {
   if (link_.active() && link_.peers().empty() && game_) {
     // A link nobody has joined yet: the code stays in sight until someone does.
     const std::string t = link_.phase() == Link::Phase::Connecting ? "Opening the link..."
+                          : link_.phase() == Link::Phase::Reconnecting ? "The connection dropped: opening the link again..."
                           : link_.is_host() ? "Link code " + link_.code() + "  -  waiting for a friend"
                                             : "Linking...";
     const float w = ui_.measure(t, 20 * s) + 48 * s, h = 46 * s;
@@ -1346,9 +1381,16 @@ void App::online_click(int id) {
       focus_field(TextField::Code);
       break;
     case kObSetup:
+    case kObUpdateRelay:
+      // Updating: the same steps, keeping the group's key, so nobody needs a new key file.
+      setup_update_ = id == kObUpdateRelay;
       online_page_ = OnlinePage::Setup;
       online_focus_ = 0;
       online_note_.clear();
+      {
+        std::lock_guard<std::mutex> lock(setup_mutex_);
+        if (!setup_running_) setup_result_ = {};
+      }
       break;
     case kObAddKey: choose_key_file(); break;
     case kObSaveKey: choose_key_save(); break;
@@ -1367,8 +1409,8 @@ void App::online_click(int id) {
       break;
     case kObBack:
       focus_field(TextField::None);
-      if (online_page_ == OnlinePage::Stats) {  // opened from the in-game menu: back to it
-        overlay_ = Overlay::Menu;
+      if (online_page_ == OnlinePage::Stats) {  // back to where it was opened from: the menu, or the game
+        overlay_ = stats_return_;
         break;
       }
       online_page_ = OnlinePage::Main;
@@ -1474,7 +1516,7 @@ void App::online_action(int action) {
     case kBack:
     case kMenu:
       if (online_page_ == OnlinePage::Stats) {
-        overlay_ = Overlay::Menu;  // opened from the in-game menu: back to it
+        overlay_ = stats_return_;  // back to where it was opened from: the menu, or the game
       } else if (online_page_ == OnlinePage::Link) {
         overlay_ = Overlay::None;  // the link stays open: back to the game
       } else if (online_page_ == OnlinePage::Setup || online_page_ == OnlinePage::Join || online_page_ == OnlinePage::Events) {

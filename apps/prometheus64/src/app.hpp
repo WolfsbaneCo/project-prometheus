@@ -303,6 +303,7 @@ class App {
   std::string event_station_status() const;
   OnlinePage online_page_ = OnlinePage::Main;
   int stats_pick_ = 0;  // the party Pokémon shown on the Pokémon stats page
+  Overlay stats_return_ = Overlay::Menu;  // where closing the page goes back to (the menu, or the game)
   std::map<std::string, int> event_choice_;  // Event gifts page: the choice picked in each group
   TextField text_field_ = TextField::None;
   std::string name_input_, token_input_, code_input_, online_note_;
@@ -316,6 +317,7 @@ class App {
   bool setup_finished_ = false;
   cloudflare::Result setup_result_;
   std::atomic<bool> setup_running_{false};
+  bool setup_update_ = false;  // the setup page is updating the relay, keeping the group key
   std::optional<Game> hosted_game_;
   bool online_game_ = false;       // the running game is (or is about to be) an online one
   bool guest_session_ = false;     // ...and this computer is a guest: the host's save, nothing written here

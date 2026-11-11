@@ -24,7 +24,11 @@ struct Result {
 
 // Blocking, a few seconds: run it on a worker thread. `progress` gets short status lines.
 // Installing again replaces the group key, so older key files stop working.
-Result install_relay(const std::string& token, const std::function<void(const std::string&)>& progress);
+// With `keep_key` (and the relay address the group's key file names, `expect_url`), it updates
+// the relay instead: the key stays, so the key files do, and nothing is touched unless this
+// account is the one the group's relay is on.
+Result install_relay(const std::string& token, const std::function<void(const std::string&)>& progress,
+                     const std::string& keep_key = {}, const std::string& expect_url = {});
 
 // A new random group key: 32 bytes, as 43 URL-safe characters.
 std::string new_group_key();
