@@ -83,6 +83,9 @@ done
 # The same for one library: PPSSPP links "Version", which MinGW-w64 has as libversion.a.
 ln -sf /usr/x86_64-w64-mingw32/lib/libversion.a "$shim/libVersion.a"
 
+# GLEW_STATIC (in the compiler flags below): PPSSPP builds its own copy of the GLEW library into
+# the core, and on Windows GLEW's header assumes a separate DLL unless told so.
+
 # Four socket options that Visual Studio's headers name and MinGW-w64's don't, with their Windows
 # values: added to the one-line header for "WS2tcpip.h", which PPSSPP's network code includes.
 cat >"$shim/WS2tcpip.h" <<'HEADER'
@@ -117,13 +120,15 @@ fi
 cmake -S "$src" -B "$work/build" -DLIBRETRO=ON -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE="$root/tools/mingw-w64.cmake" -DFFMPEG_DIR="$work/ffmpeg" \
   -DUSE_DISCORD=OFF -DUSE_MINIUPNPC=OFF \
-  -DCMAKE_C_FLAGS="-I$shim" -DCMAKE_CXX_FLAGS="-I$shim" \
+  -DCMAKE_C_FLAGS="-I$shim -DGLEW_STATIC" -DCMAKE_CXX_FLAGS="-I$shim -DGLEW_STATIC" \
   -DCMAKE_SHARED_LINKER_FLAGS="-L$shim -static -static-libgcc -static-libstdc++" >"$work/cmake.log" 2>&1 || {
   tail -40 "$work/cmake.log" >&2
   exit 1
 }
 make -C "$work/build" -j"$jobs" ppsspp_libretro >"$work/make.log" 2>&1 || {
-  grep -v 'Building C' "$work/make.log" | grep -B4 -A12 -e 'error' -e 'undefined reference' -e 'cannot find' | tail -120 >&2
+  # What went wrong, briefly: compiler errors, then each missing symbol or library once.
+  grep -A6 -e ' error: ' -e 'fatal error' "$work/make.log" | head -80 >&2 || true
+  grep -o -e 'undefined reference to .*' -e 'cannot find .*' "$work/make.log" | sort | uniq -c | sort -rn | head -150 >&2 || true
   echo "PPSSPP did not build" >&2
   exit 1
 }
