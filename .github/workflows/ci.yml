@@ -74,6 +74,30 @@ jobs:
           name: core-windows
           path: core/
 
+  # The PSP emulator core (PPSSPP), cross-compiled at the release pinned in its script, with its
+  # own FFmpeg. A long build (most of an hour), so it has its own cache: it runs again only when
+  # its script changes.
+  psp-core-windows:
+    name: PSP emulator core (Windows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: psp-core
+          key: psp-core-windows-${{ hashFiles('tools/build-psp-core-windows.sh', 'tools/mingw-w64.cmake') }}
+      - name: Install MinGW-w64
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: tools/build-psp-core-windows.sh psp-core
+      - uses: actions/upload-artifact@v7
+        with:
+          name: psp-core-windows
+          path: psp-core/
+
   app-linux:
     name: Project Prometheus (Linux build)
     runs-on: ubuntu-latest
@@ -118,7 +142,7 @@ jobs:
   app-windows:
     name: Project Prometheus (Windows installer)
     runs-on: windows-latest
-    needs: core-windows
+    needs: [core-windows, psp-core-windows]
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -137,6 +161,10 @@ jobs:
         with:
           name: core-windows
           path: core
+      - uses: actions/download-artifact@v8
+        with:
+          name: psp-core-windows
+          path: psp-core
       - name: Stage
         shell: pwsh
         run: |
@@ -148,6 +176,9 @@ jobs:
           Copy-Item core/CORE-SOURCE.txt stage/cores/
           Copy-Item core/gpsp_libretro.dll stage/cores/
           Copy-Item core/GBA-CORE-SOURCE.txt stage/cores/
+          Copy-Item psp-core/ppsspp_libretro.dll stage/cores/
+          Copy-Item psp-core/PSP-CORE-SOURCE.txt stage/cores/
+          Copy-Item -Recurse psp-core/PPSSPP stage/cores/
           Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, installer/libarchive-COPYING.txt, installer/TERMS.txt, LICENSE, NOTICE, TRADEMARKS.md stage/licenses/
           Get-ChildItem -Recurse stage | Select-Object FullName, Length
       - name: Version

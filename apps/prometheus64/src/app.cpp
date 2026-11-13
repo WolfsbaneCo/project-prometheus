@@ -79,6 +79,8 @@ bool pak_has_notes(const savekit::Bytes& pak) {
 
 // Unpacks the game when it is in an archive and hands it to the core.
 std::string load_into(Core& core, const Game& game) {
+  // A PSP disc image is read by the emulator from the file itself (up to 1.8 GB).
+  if (game.system == System::PSP) return core.load_game(game.path, {}, true);
   std::vector<uint8_t> data;
   if (std::string err = load_game_data(game, data); !err.empty()) return err;
   const fs::path name = game.entry.empty() ? game.path : game.path.parent_path() / from_utf8(game.entry).filename();
@@ -187,6 +189,8 @@ bool App::init(std::string& error) {
   const fs::path default_gba = library_dir_.filename() == "N64" ? library_dir_.parent_path() / "GBA"
                                                                  : docs_dir / "Memories" / "GBA";
   gba_library_dir_ = from_utf8(settings_.get("gba_library", utf8(default_gba)));
+  // PSP saves: the PSP's own memory stick folders (PSP/SAVEDATA/<game>), next to the GBA ones.
+  psp_library_dir_ = from_utf8(settings_.get("psp_library", utf8(gba_library_dir_.parent_path() / "PSP")));
   slot_ = std::clamp(settings_.get_int("state_slot", 1), 1, 10);
 
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -237,6 +241,7 @@ bool App::init(std::string& error) {
 #endif
   n64_core_path_ = opt_.core.empty() ? base / "cores" / (std::string("mupen64plus_next_libretro") + ext) : opt_.core;
   gba_core_path_ = base / "cores" / (std::string("gpsp_libretro") + ext);
+  psp_core_path_ = base / "cores" / (std::string("ppsspp_libretro") + ext);
   const fs::path core_path = n64_core_path_;
   core_.hooks.video = [this](const void* data, unsigned w, unsigned h, std::size_t pitch) {
     static const bool debug = SDL_getenv("P64_DEBUG") != nullptr;
@@ -476,6 +481,26 @@ int App::texture_look(const std::string& id) const {
 }
 
 void App::apply_core_options(const Game& game, Core* target) {
+  if (game.system == System::PSP) {
+    // PPSSPP: drawn at a multiple of the PSP's 480x272 that fills the screen's height (up to 6x,
+    // 1632 lines), with its usual accuracy settings; the buttons as Input::set_psp places them.
+    auto set = [&](const char* key, const std::string& value) { core_.set_option(key, value); };
+    int factor = std::clamp((out_h_ + 271) / 272, 2, 6);
+    if (const int chosen = settings_.game_int(game.id, "psp_resolution", 0); chosen >= 1 && chosen <= 10) factor = chosen;
+    set("ppsspp_internal_resolution", std::to_string(480 * factor) + "x" + std::to_string(272 * factor));
+    set("ppsspp_cpu_core", "JIT");
+    set("ppsspp_frameskip", "disabled");
+    set("ppsspp_texture_filtering", "Auto");
+    set("ppsspp_texture_scaling_level", "disabled");
+    set("ppsspp_mulitsample_level", "disabled");
+    set("ppsspp_button_preference", "Cross");  // Cross confirms, as on Western PSPs
+    set("ppsspp_language", "Automatic");
+    for (const auto& o : opt_.core_options) {  // test mode: "--option key=value" overrides
+      const auto eq = o.find('=');
+      if (eq != std::string::npos) set(o.substr(0, eq).c_str(), o.substr(eq + 1));
+    }
+    return;
+  }
   if (game.system == System::GBA) {
     Core& core = target ? *target : core_;
     auto set = [&](const char* key, const std::string& value) { core.set_option(key, value); };
@@ -560,11 +585,22 @@ void App::apply_core_options(const Game& game, Core* target) {
 std::string App::use_core(System system) {
   if (system == loaded_system_ && core_.info().library_name) return {};
   core_.close();
-  const fs::path& path = system == System::GBA ? gba_core_path_ : n64_core_path_;
+  const fs::path& path = core_path(system);
+  // The PSP emulator keeps its saves on the "memory stick", which is its save folder: the PSP
+  // library (Memories\PSP). It reads the folder once, when it starts. The other cores use the
+  // app's own.
+  std::error_code ec;
+  if (system == System::PSP) fs::create_directories(psp_library_dir_, ec);
+  core_.save_dir = system == System::PSP ? psp_library_dir_ : pref_dir_ / "core";
+  // PPSSPP's own files (the PSP's fonts, its list of game fixes) ship next to its core, in
+  // cores\PPSSPP: its "system" folder is the cores folder.
+  core_.system_dir = system == System::PSP ? psp_core_path_.parent_path() : pref_dir_ / "system";
   std::string err = core_.open(path);
   if (!err.empty()) {
     // Put the previous core back, so the app stays usable.
-    core_.open(loaded_system_ == System::GBA ? gba_core_path_ : n64_core_path_);
+    core_.save_dir = pref_dir_ / "core";
+    core_.system_dir = pref_dir_ / "system";
+    core_.open(core_path(loaded_system_ == System::PSP ? System::N64 : loaded_system_));
     return std::string("the ") + system_name(system) + " emulator core is missing (" + utf8(path) +
            "). Reinstalling Project Prometheus fixes this";
   }
@@ -579,6 +615,7 @@ bool App::start_game(const Game& game) {
     return false;
   }
   input_.set_gba(game.system == System::GBA);
+  input_.set_psp(game.system == System::PSP);
   apply_core_options(game);
   const std::string err = load_into(core_, game);
   if (!err.empty()) {
@@ -591,7 +628,9 @@ bool App::start_game(const Game& game) {
   session_saved_ = false;
   // Its progress may be newer on Google Drive (another computer played since): check now, in the
   // background, while the game boots.
-  if (!guest_session_ && !online_game_) drive_check_key_ = (game.system == System::GBA ? "GBA/" : "") + game.internal_name;
+  if (!guest_session_ && !online_game_ && game.system != System::PSP) {
+    drive_check_key_ = (game.system == System::GBA ? "GBA/" : "") + game.internal_name;
+  }
   if (core_.hardware_rendering()) {
     video_.prepare_target(core_.av().geometry.max_width, core_.av().geometry.max_height);
     core_.context_reset();
@@ -643,8 +682,11 @@ void App::stop_game() {
   core_.close();
   // Between games the N64 core is loaded (a core can't start a second game in one session).
   loaded_system_ = System::N64;
+  core_.save_dir = pref_dir_ / "core";
+  core_.system_dir = pref_dir_ / "system";
   if (const std::string err = core_.open(n64_core_path_); !err.empty()) toast(err, 8);
   input_.set_gba(false);
+  input_.set_psp(false);
   input_.load_bindings(settings_);  // back to the usual controls
   audio_.close();
   fast_ = false;  // a game left mid speed-up: the next one starts at its own pace
@@ -671,7 +713,7 @@ void App::restart_game_keep_progress() {
   // This core cannot start a second game in one session, so reload the core library itself
   // (as RetroArch does when it restarts a core).
   core_.close();
-  if (!core_.open(game.system == System::GBA ? gba_core_path_ : n64_core_path_).empty()) {
+  if (!core_.open(core_path(game.system)).empty()) {
     toast("Could not restart the emulator core");
     game_.reset();
     screen_ = Screen::Home;
@@ -698,7 +740,7 @@ void App::restart_game_keep_progress() {
 
 int App::fill_mode(const Game* game) const {
   const int f = std::clamp(settings_.game_int(game ? game->id : "", "fill", 0), 0, static_cast<int>(FillMode::Count) - 1);
-  const bool breaks = game && (game->system == System::GBA || widescreen_breaks(game->internal_name));
+  const bool breaks = game && (game->system != System::N64 || widescreen_breaks(game->internal_name));
   return f == static_cast<int>(FillMode::Widescreen) && breaks ? static_cast<int>(FillMode::Fit) : f;
 }
 
@@ -706,6 +748,13 @@ Look App::current_look() const {
   Look l;
   const std::string id = game_ ? game_->id : "";
   if (game_ && game_->system == System::GBA) return gba_look_for(*game_, core_);
+  if (game_ && game_->system == System::PSP) {
+    // A PSP game: drawn by the emulator at the screen's size already, shown as it is.
+    l.fill = static_cast<FillMode>(fill_mode(&*game_));
+    const float a = core_.av().geometry.aspect_ratio;
+    l.aspect = a > 0 ? a : 480.0f / 272.0f;
+    return l;
+  }
   const PresetDef& p = kPresets[std::clamp(settings_.game_int(id, "preset", 0), 0, 3)];
   l.fill = static_cast<FillMode>(fill_mode(game_ ? &*game_ : nullptr));
   l.overscan = std::clamp(settings_.game_int(id, "overscan", 0), 0, 8) / 100.0f;
@@ -919,7 +968,18 @@ void App::choose_save_to_import() {
   if (games_.empty()) return;
   static const SDL_DialogFileFilter n64[] = {{"N64 save files", "srm;sra;eep;fla;mpk"}};
   static const SDL_DialogFileFilter gba[] = {{"GBA save files", "sav;srm;sa1;fla;eep"}};
-  const bool is_gba = games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)].system == System::GBA;
+  const Game& picked = games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)];
+  if (picked.system == System::PSP) {
+    // PSP saves are folders, as on a memory stick: copy them in by hand.
+    const fs::path folder = psp_library_dir_ / "PSP" / "SAVEDATA";
+    std::error_code ec;
+    fs::create_directories(folder, ec);
+    SDL_OpenURL(("file:///" + utf8(folder)).c_str());
+    toast("PSP saves are folders (like ULUS10041DATA00). Copy yours into the folder that just opened, as on a "
+          "memory stick's PSP\\SAVEDATA", 10);
+    return;
+  }
+  const bool is_gba = picked.system == System::GBA;
   auto* info = new std::pair<uint32_t, int>(user_event_, kSaveChosen);
   SDL_ShowOpenFileDialog(dialog_done, info, window_, is_gba ? gba : n64, 1, nullptr, false);
 }
@@ -1691,6 +1751,25 @@ std::vector<App::MenuItem> App::menu_items() const {
       {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
       {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
   };
+  if (game_ && game_->system == System::PSP) {
+    // A PSP game: no N64 picture styles or textures; its own resolution (multiples of 480x272).
+    std::vector<MenuItem> psp;
+    const int chosen = settings_.game_int(id, "psp_resolution", 0);
+    const int factor = chosen >= 1 && chosen <= 10 ? chosen : std::clamp((out_h_ + 271) / 272, 2, 6);
+    for (MenuItem& it : items) {
+      if (it.id == kPicture || it.id == kTextures || it.id == kOverscan || it.id == kEventsItem || it.id == kStatsItem ||
+          it.id == kHintsItem || it.id == kLocalFocusItem || it.id == kLocalLinkItem) {
+        continue;
+      }
+      if (it.id == kFill && look.fill == FillMode::Fit) it.value = "Fit (16:9)";
+      if (it.id == kResolution) {
+        it.value = (chosen ? std::to_string(factor) + "x" : "Auto (" + std::to_string(factor) + "x)") + "  " +
+                   std::to_string(480 * factor) + "x" + std::to_string(272 * factor);
+      }
+      psp.push_back(std::move(it));
+    }
+    return psp;
+  }
   if (game_ && game_->system == System::GBA) {
     // A GBA game: its own pictures; no textures, resolution or overscan (a sharp 240x160 screen).
     const GbaLookDef& g = kGbaLooks[gba_look(settings_, id)];
@@ -1774,7 +1853,7 @@ void App::menu_change(int id, int dir) {
       const int ws = static_cast<int>(FillMode::Widescreen);
       const int before = fill_mode(game_ ? &*game_ : nullptr);
       int f = (before + step + count) % count;
-      const bool gba = game_ && game_->system == System::GBA;
+      const bool gba = game_ && game_->system != System::N64;  // GBA and PSP: no widescreen trick (the PSP is wide already)
       const bool skip = f == ws && game_ && (gba || widescreen_breaks(game_->internal_name));
       if (skip) f = (f + step + count) % count;
       settings_.set_game_int(gid, "fill", f);
@@ -1798,6 +1877,13 @@ void App::menu_change(int id, int dir) {
       break;
     }
     case kResolution: {
+      if (game_ && game_->system == System::PSP) {
+        // Auto (fills the screen's height), then 1x to 8x of the PSP's 480x272.
+        const int r = (std::clamp(settings_.game_int(gid, "psp_resolution", 0), 0, 8) + step + 9) % 9;
+        settings_.set_game_int(gid, "psp_resolution", r);
+        restart_game_keep_progress();
+        break;
+      }
       // Order in the menu: Auto, Super, then fixed 1x to 8x.
       static const int order[] = {0, kResSuper, 1, 2, 3, 4, 5, 6, 7, 8};
       constexpr int n = static_cast<int>(std::size(order));

@@ -367,6 +367,26 @@ int16_t Input::retro_state(unsigned port, unsigned device, unsigned index, unsig
     if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return static_cast<int16_t>(mask);
     return (mask >> id) & 1 ? 1 : 0;
   }
+  if (psp_ && device == RETRO_DEVICE_JOYPAD) {
+    // PPSSPP reads Cross as the joypad's B, Circle as A, Triangle as X, Square as Y.
+    auto on = [&](int b) { return (st.buttons & (1u << b)) != 0; };
+    uint16_t mask = 0;
+    auto put = [&](unsigned bit, bool v) { if (v) mask |= static_cast<uint16_t>(1u << bit); };
+    put(RETRO_DEVICE_ID_JOYPAD_B, on(kA));
+    put(RETRO_DEVICE_ID_JOYPAD_Y, on(kB));
+    put(RETRO_DEVICE_ID_JOYPAD_A, on(kCDown) || on(kCRight));
+    put(RETRO_DEVICE_ID_JOYPAD_X, on(kCLeft) || on(kCUp));
+    put(RETRO_DEVICE_ID_JOYPAD_L, on(kL));
+    put(RETRO_DEVICE_ID_JOYPAD_R, on(kR));
+    put(RETRO_DEVICE_ID_JOYPAD_START, on(kStart));
+    put(RETRO_DEVICE_ID_JOYPAD_SELECT, on(kZ));
+    put(RETRO_DEVICE_ID_JOYPAD_UP, on(kDUp));
+    put(RETRO_DEVICE_ID_JOYPAD_DOWN, on(kDDown));
+    put(RETRO_DEVICE_ID_JOYPAD_LEFT, on(kDLeft));
+    put(RETRO_DEVICE_ID_JOYPAD_RIGHT, on(kDRight));
+    if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return static_cast<int16_t>(mask);
+    return (mask >> id) & 1 ? 1 : 0;
+  }
   if (device == RETRO_DEVICE_JOYPAD) {
     uint16_t mask = 0;
     for (int b = 0; b < kButtonCount; ++b) {

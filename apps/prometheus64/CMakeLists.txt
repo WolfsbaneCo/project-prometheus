@@ -41,6 +41,7 @@ add_executable(prometheus64 WIN32
   src/netplay.cpp
   src/link.cpp
   src/link_monitor.cpp
+  src/psp_disc.cpp
   src/local_link.cpp
   src/gift_station.cpp
   src/cable_station.cpp
@@ -139,4 +140,9 @@ add_executable(pokemon_stats_tests tests/pokemon_stats_tests.cpp src/pokemon_sta
 target_include_directories(pokemon_stats_tests PRIVATE src)
 target_link_libraries(pokemon_stats_tests PRIVATE p64_warnings)
 add_test(NAME pokemon_stats COMMAND pokemon_stats_tests)
+  # PSP disc images: the game's ID and title from a plain, a compressed and an EBOOT image.
+  add_executable(psp_disc_tests tests/psp_disc_tests.cpp src/psp_disc.cpp)
+  target_include_directories(psp_disc_tests PRIVATE src)
+  target_link_libraries(psp_disc_tests PRIVATE p64_zlib p64_warnings)
+  add_test(NAME psp_disc COMMAND psp_disc_tests)
 endif()

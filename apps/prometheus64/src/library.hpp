@@ -10,8 +10,8 @@
 
 namespace p64 {
 
-enum class System { N64, GBA };
-const char* system_name(System s);   // "N64", "GBA": also the console's folder in Memories
+enum class System { N64, GBA, PSP };
+const char* system_name(System s);   // "N64", "GBA", "PSP": also the console's folder in Memories
 
 struct Game {
   System system = System::N64;
@@ -20,7 +20,8 @@ struct Game {
   std::string title;          // from the file name, cleaned up for display
   std::string internal_name;  // from the ROM header; also the save library's folder name
   // N64: CRC1-CRC2-C:country, like N64 ROM databases use. GBA: AGB-<game code>-<version>-<header
-  // checksum>, from its header (game code like BPRE: FireRed, USA).
+  // checksum>, from its header (game code like BPRE: FireRed, USA). PSP: PSP-<disc ID>, like
+  // PSP-ULUS10041, from the game's PARAM.SFO (psp_disc.hpp).
   std::string id;
   std::string region;         // "USA", "Europe", "Japan", ...
 };
@@ -34,6 +35,7 @@ std::vector<Game> read_games(const std::filesystem::path& file, std::string* err
 // The first game in a file. Returns false when it holds no game.
 bool read_game(const std::filesystem::path& file, Game& out);
 // The whole game, unpacked when it is in an archive. Returns an error message, or empty on success.
+// (Not for PSP games: their images are up to 1.8 GB, and the emulator reads them from the file.)
 std::string load_game_data(const Game& game, std::vector<uint8_t>& data);
 
 }  // namespace p64
