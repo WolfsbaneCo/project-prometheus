@@ -13,6 +13,13 @@ gpSP (cores/gpsp_libretro.dll)
   It includes the open source GBA BIOS replacement by Normmatt and the VBA/VBA-M team (GPL version 2), used instead of Nintendo's BIOS.
   This build was made from the commit named in cores/GBA-CORE-SOURCE.txt. The complete source code for that commit is available at the address above; on request, the Project Prometheus maintainers will provide a copy for three years from the date of distribution.
 
+PPSSPP (cores/ppsspp_libretro.dll, cores/PPSSPP)
+  The PSP emulator core, by Henrik Rydgard and the PPSSPP Project contributors (libretro version).
+  Licence: GNU General Public License version 2 or later (see GPL-2.0.txt).
+  Source code: https://github.com/hrydgard/ppsspp
+  It includes FFmpeg (PPSSPP's own copy, https://github.com/hrydgard/ppsspp-ffmpeg; GNU Lesser General Public License version 2.1 or later), which plays the games' videos and music, and other libraries PPSSPP bundles, each under its own licence, listed in PPSSPP's source (its ext folder and LICENSE.TXT). The PPSSPP folder holds PPSSPP's replacement PSP fonts and its lists of game fixes, from its assets.
+  This build was made from the release named in cores/PSP-CORE-SOURCE.txt, by tools/build-psp-core-windows.sh in Project Prometheus's source, which also names the few changes made to build it. The complete source code for that release is available at the address above; on request, the Project Prometheus maintainers will provide a copy for three years from the date of distribution.
+
 xBRZ picture filter (built into ProjectPrometheus.exe, the GBA "Smooth" look)
   Copyright (C) Zenju (zenju AT gmx DOT de); vectorised version by the VBA-M team.
   GNU General Public License version 3 (the same licence as Project Prometheus, LICENSE).

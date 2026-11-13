@@ -72,6 +72,9 @@ class Input {
   void set_override(int port, const PadState& pad) { overrides_[port] = pad; }
   // GBA games: the same controls, handed to the core as a GBA's buttons (see retro_state).
   void set_gba(bool on) { gba_ = on; }
+  // PSP games: Cross on A, Square on B, Circle on C-Down (or C-Right), Triangle on C-Left (or
+  // C-Up), Select on Z; the analog stick on the control stick, the D-pad on the D-pad.
+  void set_psp(bool on) { psp_ = on; }
   bool rumble(unsigned port, bool strong, uint16_t strength);
   // A speed key is held (any keyboard layout's: speeding up is for the whole game, not a player).
   bool speed_held() const;
@@ -143,6 +146,7 @@ class Input {
   bool seating_ = false;
   bool overriding_ = false;
   std::array<PadState, kPlayers> overrides_{};
+  bool psp_ = false;
   bool gba_ = false;
   std::vector<std::string> notices_;
 };

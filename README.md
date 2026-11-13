@@ -1,6 +1,6 @@
 # Project Prometheus
 
-**Project Prometheus** is a free desktop player for the N64 and GBA games you own: a sharp picture on big screens, simple controls, couch and online multiplayer, GBA link play, and a save library backed up to your own Google Drive.
+**Project Prometheus** is a free desktop player for the N64, GBA and PSP games you own: a sharp picture on big screens, simple controls, couch and online multiplayer, GBA link play, and a save library backed up to your own Google Drive.
 
 It contains no games and never downloads, finds or shares them.
 
@@ -10,7 +10,7 @@ It contains no games and never downloads, finds or shares them.
 
 1. Download `ProjectPrometheus-Setup-<version>.exe` from the **Releases** page. It is one file holding everything: the app, the emulator cores, fonts and licences. (Test builds: the repository's **Actions** tab, a **CI** run started by hand on a branch, same file.)
 2. Run it. It installs for your user only, with no administrator prompt, and adds a Start menu shortcut.
-3. Press **O** (or **Y** on a controller) and choose the folder that holds your games: N64 games (`.z64`, `.n64`, `.v64`) and GBA games (`.gba`), side by side if you like, or the same packed in `.zip`, `.7z` or `.rar` archives (no need to unpack them; an archive with several games shows each one). You can also drop a game onto the window, or double-click a game file if you ticked that option in the installer.
+3. Press **O** (or **Y** on a controller) and choose the folder that holds your games: N64 games (`.z64`, `.n64`, `.v64`), GBA games (`.gba`) and PSP games (`.iso`, `.cso`, `.pbp`, `.chd`), side by side if you like. N64 and GBA games can stay packed in `.zip`, `.7z` or `.rar` archives (no need to unpack them; an archive with several games shows each one); PSP games are read as they are (`.cso` is their compressed form). You can also drop a game onto the window, or double-click a game file if you ticked that option in the installer.
 4. Pick a game and press **Enter** (or **A**). To have a friend join, they press **Start** on another controller. Press **F1** for every key.
 
 The **mouse** works everywhere: click a game to pick it and double-click to play it, click menu items (the ‹ › arrows change a value), click the shortcuts along the bottom of the library, and right-click during a game for the menu. Menus also move with W/A/S/D or the number pad, for keyboards without working arrow keys.
@@ -270,6 +270,16 @@ Each round copies every carrier you took out: with four carriers, that's four mo
 - **Pokémon stats:** the app reads your party from the running game and decodes each Pokémon as the game does (its data is kept encrypted, in four blocks whose order depends on the Pokémon, with a checksum).
 - All of it was written from the [pret](https://github.com/pret) decompilations of the games, which document what the games expect (and, for Jirachi, from [PKHeX](https://github.com/kwsch/PKHeX)'s documentation of how the Bonus Disc made it), and tested against the games themselves. The details, and what has been checked, are in [decision 0008](docs/decisions/0008-event-gifts.md).
 
+### PSP games
+
+PSP games sit in the same library as the others: the app recognises them by what is inside the file (a PSP disc image has its own name and ID, like `ULUS10041`), and plays them with the PPSSPP emulator core. An `.iso` from another console isn't listed.
+
+- **Formats:** `.iso` (a plain UMD image), `.cso` (the same, compressed), `.pbp` (a PSN game or homebrew `EBOOT.PBP`) and `.chd`. Not inside `.zip`, `.7z` or `.rar` archives: an image can be 1.8 GB, and it would have to be unpacked each time.
+- **Buttons, by default:** on a controller, the face buttons are where a PlayStation pad has them: bottom = Cross, right = Circle, left = Square, top = Triangle; the shoulder buttons are L and R, Start is Start, either trigger is Select, the left stick is the analog stick and the D-pad the D-pad. On the keyboard: X = Cross, C = Square, K (or L) = Circle, J (or I) = Triangle, A/S = L/R, Enter = Start, Z = Select, the arrows are the analog stick and T/F/G/H the D-pad. All of it can be changed on the Controls screen, for one game or for all.
+- **Picture:** drawn sharp at a multiple of the PSP's 480x272 that covers your screen (**Resolution** in the menu: Auto, or 1x to 8x), in the PSP's own 16:9 shape. Fill mode offers Fit, Stretch and Ambient.
+- **Saves:** games save as on a PSP's memory stick, into `Documents\Memories\PSP\PSP\SAVEDATA`, one folder per save, in the PSP's own layout. A save folder from a real PSP or from PPSSPP can be copied in as it is (**I**, Import a save, opens the folder), and copied back out. Save states (F5 / F7) work as for the other consoles.
+- **Not yet:** PSP saves aren't in the Google Drive backup yet, and PSP games don't play online.
+
 ### GBA pictures for big screens
 
 | Look | |
@@ -320,6 +330,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0007 GBA games](docs/decisions/0007-gba.md)
   - [0008 Pokémon event gifts and daily hints](docs/decisions/0008-event-gifts.md)
   - [0009 The games' own glitches are allowed; the app never edits a game](docs/decisions/0009-game-glitches.md)
+  - [0010 PSP games](docs/decisions/0010-psp.md)
 - **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
 - **Privacy policy and terms of use** (shared by every Wolfsbane app): [wolfsbanecompany.com/apps/privacy](https://wolfsbanecompany.com/apps/privacy/) and [/apps/terms](https://wolfsbanecompany.com/apps/terms/), from the website repository [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company)
 - **To build next, with the plan for each:** [`docs/backlog.md`](docs/backlog.md)
@@ -335,6 +346,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 | 3: Google Drive sync | **Working.** Connect in the app, automatic backups (on close, hourly, at start), carrying on across computers with in-game saves, choosing when two computers both saved, offline retries, save states as a per-computer backup. Checked against a stand-in for Google with two Linux computers and a Windows one; waiting for the project's Google registration ([setup](docs/google-drive-setup.md)). Still to come: syncing settings, device-to-device sharing on a home network, optional encryption |
 | 4: Netplay | **Working.** Private groups with a shared key file and a relay on the group owner's free Cloudflare account (set up from inside the app), game codes, lockstep with game and version checks, an input delay that adjusts itself during the game, the host's save. Checked with Harvest Moon 64 and Super Smash Bros. between two copies on Linux and between Linux and Windows; not yet over the internet |
 | GBA | **Working.** gpSP core picked by the game's header, five looks for big screens, saves in the library with imports and Drive backup, link play over the relay (link cable and Wireless Adapter) and between two games on one computer, Pokémon events restored for Emerald, FireRed, LeafGreen, Ruby and Sapphire (tickets, Enigma Berry, clock fix, rare words, Battle e-Cards, Jirachi, Pichu, Altering Cave, Visiting Trainer, Stamp and Battle Cards), daily hints. Still to be tried in real play: a trade over the internet (checked in the test bench with up to 300 ms each way and jitter: in, sit, trade, save, leave), the island trips, a Battle e-Card and Visiting Trainer battle. Not built: Emerald's e-Reader menu (Trainer Hill) |
+| PSP | **New, to be tried.** PPSSPP core picked by the disc image's contents (`.iso`, `.cso`, `.pbp`, `.chd`), drawn at up to 8x, PlayStation button layout, saves as on a memory stick, save states. Checked with homebrew on Linux; no commercial game played yet. Not yet: Drive backup of PSP saves, online play |
 | 5: Cartridge | Not started |
 
 ## Building from source
@@ -347,7 +359,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The N64 core is a separate download from its own project, built at a pinned commit by `tools/build-core-windows.sh` (MinGW-w64 on Linux). Put `mupen64plus_next_libretro.dll` in a `cores` folder next to `ProjectPrometheus.exe`. The GBA core (gpSP, also pinned) is built with the app by GCC or Clang and put in `cores` automatically; with Microsoft's compiler, build it apart with `tools/build-gba-core-windows.sh` (MinGW-w64). CI does all of this and builds the installer with Inno Setup (`installer/project-prometheus.iss`). CI runs only when started by hand (Actions > CI > Run workflow) or by a version tag, never on ordinary pushes, so the account's Actions minutes go to final builds; run `tools/check-before-push.sh` locally before pushing. To publish a release, push a tag like `v0.1.0`, or run the CI workflow by hand on `main` (Actions > CI > Run workflow): it tags `main` with the version in `CMakeLists.txt` and attaches the installer.
+The N64 core is a separate download from its own project, built at a pinned commit by `tools/build-core-windows.sh` (MinGW-w64 on Linux). Put `mupen64plus_next_libretro.dll` in a `cores` folder next to `ProjectPrometheus.exe`. The GBA core (gpSP, also pinned) is built with the app by GCC or Clang and put in `cores` automatically; with Microsoft's compiler, build it apart with `tools/build-gba-core-windows.sh` (MinGW-w64). CI does all of this and builds the installer with Inno Setup (`installer/project-prometheus.iss`). CI runs only when started by hand (Actions > CI > Run workflow) or by a version tag, never on ordinary pushes, so the account's Actions minutes go to final builds; run `tools/check-before-push.sh` locally before pushing. To publish a release, push a tag like `v0.1.0`, or run the CI workflow by hand on `main` (Actions > CI > Run workflow): it tags `main` with the version in `CMakeLists.txt` and attaches the installer. The PSP core (PPSSPP, pinned to a release) is built by `tools/build-psp-core-windows.sh` (MinGW-w64 on Linux; most of an hour), which also gathers the files it needs: put `ppsspp_libretro.dll` and the `PPSSPP` folder in `cores` too.
 
 On Linux, SDL needs the X11/Wayland, ALSA/PulseAudio and udev development packages, and online play needs OpenSSL's (see `.github/workflows/ci.yml`). libcurl is downloaded and built automatically; on Windows it uses the system's own TLS. The online relay lives in [`relay/`](relay/README.md).
 
@@ -375,5 +387,5 @@ Game files, saves, save states and credentials never go into this repository (se
 - **Not affiliated.** Project Prometheus is not affiliated with, endorsed or sponsored by Nintendo, The Pokémon Company, Game Freak, Google or Cloudflare. Their names and trademarks belong to them and appear here only to say what the app works with.
 - **No warranty.** The app is provided "as is", without warranty of any kind, and the authors aren't liable for any damage from its use, including lost saves (GNU GPL version 3, sections 15 and 16). Keep backups of saves that matter.
 - **Your accounts, your data.** Online play runs through a relay on the group owner's own Cloudflare account, and backups go to your own Google Drive. Wolfsbane Co. receives none of your games, saves or data. Each player is responsible for following the terms of the services they connect. Read the [privacy policy](https://wolfsbanecompany.com/apps/privacy/) and [terms](https://wolfsbanecompany.com/apps/terms/).
-- **Licences.** The app's code is under the [GNU General Public License, version 3 or later](LICENSE): anyone may share and change it, and copies and changed versions must stay under the same licence, with their source. Redistributions must keep the [`NOTICE`](NOTICE) file, whose additional terms reserve the name and logo. The emulator cores (GPL-2.0) and other components keep their own licences, listed with where to get their source in [`installer/THIRD-PARTY-NOTICES.txt`](installer/THIRD-PARTY-NOTICES.txt). The installer asks you to accept these terms ([`installer/TERMS.txt`](installer/TERMS.txt)) and installs every licence in its `licenses` folder.
+- **Licences.** The app's code is under the [GNU General Public License, version 3 or later](LICENSE): anyone may share and change it, and copies and changed versions must stay under the same licence, with their source. Redistributions must keep the [`NOTICE`](NOTICE) file, whose additional terms reserve the name and logo. The emulator cores (GPL-2.0; the PSP core GPL-2.0 or later) and other components keep their own licences, listed with where to get their source in [`installer/THIRD-PARTY-NOTICES.txt`](installer/THIRD-PARTY-NOTICES.txt). The installer asks you to accept these terms ([`installer/TERMS.txt`](installer/TERMS.txt)) and installs every licence in its `licenses` folder.
 - **Reporting.** To report a copy being sold, a copyright concern or a takedown request, open an issue on this repository.

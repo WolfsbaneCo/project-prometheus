@@ -6,7 +6,7 @@
 # 2. The save converters' round-trip and golden tests pass (skipped if the build dir is missing).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-bad=$(git ls-files | grep -iE '\.(z64|n64|v64|ndd|d64|gba|agb|sra|srm|eep|fla|mpk|sav|sgm|pj[0-9]?|st[0-9]|ss[0-9]|state[0-9]*)(\.zip)?$' || true)
+bad=$(git ls-files | grep -iE '\.(z64|n64|v64|ndd|d64|gba|agb|iso|cso|pbp|chd|sra|srm|eep|fla|mpk|sav|sgm|pj[0-9]?|st[0-9]|ss[0-9]|state[0-9]*)(\.zip)?$' || true)
 if [ -n "$bad" ]; then
   echo "These files must not be committed:"
   echo "$bad"

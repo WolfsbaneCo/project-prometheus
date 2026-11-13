@@ -553,6 +553,10 @@ void App::host_online() {
     return;
   }
   const Game& g = hosted_game_ ? *hosted_game_ : games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)];
+  if (g.system == System::PSP) {
+    online_note_ = "Online play is for N64 games (and link play for GBA games). PSP games play on this computer";
+    return;
+  }
   Netplay::GameInfo info;
   info.id = g.id;
   info.title = g.title;

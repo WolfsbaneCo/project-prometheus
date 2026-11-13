@@ -7,13 +7,14 @@
 #include <iterator>
 
 #include "archive.hpp"
+#include "psp_disc.hpp"
 #include "savekit/rom_header.hpp"
 
 namespace fs = std::filesystem;
 
 namespace p64 {
 
-const char* system_name(System s) { return s == System::GBA ? "GBA" : "N64"; }
+const char* system_name(System s) { return s == System::GBA ? "GBA" : s == System::PSP ? "PSP" : "N64"; }
 
 namespace {
 
@@ -96,7 +97,9 @@ bool describe(const savekit::Bytes& head, const fs::path& path, const std::strin
 
 }  // namespace
 
-bool is_game_file(const fs::path& file) { return has_game_extension(file) || archive::is_archive(file); }
+bool is_game_file(const fs::path& file) {
+  return has_game_extension(file) || psp::is_psp_extension(file) || archive::is_archive(file);
+}
 
 std::vector<Game> read_games(const fs::path& file, std::string* error) {
   std::vector<Game> games;
@@ -114,6 +117,27 @@ std::vector<Game> read_games(const fs::path& file, std::string* error) {
     // (the file inside is often called something like "rom.z64").
     if (games.size() == 1) games.front().title = display_title(file);
     if (error) *error = err;
+    return games;
+  }
+  // PSP games: a disc image, read in place (never packed: an archive would have to be unpacked
+  // whole, up to 1.8 GB, every time the game starts).
+  if (psp::is_psp_extension(file)) {
+    psp::DiscInfo disc;
+    if (psp::read_disc(file, disc)) {
+      Game g;
+      g.system = System::PSP;
+      g.path = file;
+      // The game's own name, as the PSP's menu shows it, when the app's font can show it
+      // (Latin letters); otherwise the file's name, as for the other consoles.
+      const bool latin = !disc.title.empty() && std::all_of(disc.title.begin(), disc.title.end(), [](unsigned char c) {
+        return c >= 0x20 && c < 0x7F;
+      });
+      g.title = latin ? disc.title : display_title(file);
+      g.internal_name = disc.disc_id.empty() ? g.title : disc.disc_id;
+      g.id = "PSP-" + (disc.disc_id.empty() ? g.title : disc.disc_id);
+      g.region = disc.region;
+      games.push_back(std::move(g));
+    }
     return games;
   }
   std::ifstream in(file, std::ios::binary);
