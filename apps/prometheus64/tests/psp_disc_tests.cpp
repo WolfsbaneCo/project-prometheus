@@ -119,6 +119,18 @@ Bytes pbp(const Bytes& param) {
   return out;
 }
 
+// A CHD (version 5) whose only content that matters here is its metadata list: one entry tagged
+// `tag` ("DVD " for a UMD made with chdman createdvd, "CHT2" for a CD).
+Bytes chd(const char* tag) {
+  Bytes b(200, 0);
+  std::memcpy(&b[0], "MComprHD", 8);
+  b[11] = 124;  // header length
+  b[15] = 5;    // version
+  b[55] = 124;  // metadata at 124
+  std::memcpy(&b[124], tag, 4);
+  return b;
+}
+
 fs::path write(const fs::path& dir, const char* name, const Bytes& data) {
   const fs::path file = dir / name;
   std::ofstream(file, std::ios::binary).write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
@@ -151,6 +163,10 @@ int main() {
   CHECK(!psp::read_disc(write(dir, "empty.iso", Bytes(64 * 1024, 0)), d));
   CHECK(!psp::read_disc(write(dir, "short.iso", Bytes(image.begin(), image.begin() + 17 * kSector)), d));
   CHECK(!psp::read_disc(dir / "missing.iso", d));
+  // CHDs: a DVD-type one (a UMD) is taken, named by its file; a CD (PlayStation, Saturn) isn't.
+  d = {};
+  CHECK(psp::read_disc(write(dir, "umd.chd", chd("DVD ")), d) && d.disc_id.empty());
+  CHECK(!psp::read_disc(write(dir, "ps1.chd", chd("CHT2")), d));
   // Regions, from the ID's third letter.
   CHECK(psp::region_of("ULJM05800") == "Japan" && psp::region_of("UCES00001") == "Europe" && psp::region_of("X") == "");
   CHECK(psp::is_psp_extension("a/b/Game.ISO") && psp::is_psp_extension("x.cso") && !psp::is_psp_extension("x.gba"));

@@ -167,6 +167,21 @@ void WebSocket::open(const std::string& url) {
   }
   stop_ = false;
   finished_ = false;
+  farewell_ = false;
+  thread_ = std::thread(&WebSocket::run, this, url);
+}
+
+void WebSocket::say_and_close(const std::string& url, std::string message) {
+  close();
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    events_.clear();
+    outgoing_.clear();
+    outgoing_.push_back(std::move(message));
+  }
+  stop_ = false;
+  finished_ = false;
+  farewell_ = true;
   thread_ = std::thread(&WebSocket::run, this, url);
 }
 
@@ -385,6 +400,7 @@ void WebSocket::run(std::string url) {
       }
     }
     if (!open) break;
+    if (farewell_) break;  // said: close (below)
 
     // Read everything waiting.
     wait_socket(sock, false, 1);  // short, so inputs queued meanwhile go out within a millisecond
@@ -418,7 +434,7 @@ void WebSocket::run(std::string url) {
     }
   }
 
-  if (stop_) {
+  if (stop_ || (farewell_ && open)) {
     // Leaving: what was queued last (a goodbye to the others) still goes out, then the close.
     std::deque<std::string> out;
     {

@@ -133,7 +133,14 @@ std::vector<Game> read_games(const fs::path& file, std::string* error) {
         return c >= 0x20 && c < 0x7F;
       });
       g.title = latin ? disc.title : display_title(file);
-      g.internal_name = disc.disc_id.empty() ? g.title : disc.disc_id;
+      // Without an ID (homebrew), the name, made safe as a folder name: its saves and states go in
+      // a folder by that name.
+      std::string folder = disc.disc_id.empty() ? g.title : disc.disc_id;
+      for (char& c : folder) {
+        if (static_cast<unsigned char>(c) < 0x20 || std::string("<>:\"/\\|?*").find(c) != std::string::npos) c = '_';
+      }
+      while (!folder.empty() && (folder.back() == '.' || folder.back() == ' ')) folder.pop_back();
+      g.internal_name = folder.empty() ? "PSP game" : folder;
       g.id = "PSP-" + (disc.disc_id.empty() ? g.title : disc.disc_id);
       g.region = disc.region;
       games.push_back(std::move(g));

@@ -244,9 +244,19 @@ bool Input::handle_event(const SDL_Event& e) {
 
 void Input::update(float dt) {
   const bool* keys = SDL_GetKeyboardState(nullptr);
-  // The Pokémon stats shortcut: any layout's key, or its button on any gamepad.
+  // The Pokémon stats shortcut: the key of a keyboard layout someone is seated at (the whole
+  // keyboard's when nobody is: a controller player reaching for the keyboard), or its button on
+  // any gamepad. Unseated layouts don't count: with the keyboard split in two, a key that is one
+  // half's game button may be another layout's shortcut.
   bool stats = test_stats_;
-  for (const KeySet& l : keys_) stats = stats || (l[kStats] != SDL_SCANCODE_UNKNOWN && keys[l[kStats]]);
+  bool keyboard_seated = false;
+  for (const Seat& seat : seats_) {
+    if (seat.kind != DeviceKind::Keyboard) continue;
+    keyboard_seated = true;
+    const SDL_Scancode k = keys_[seat.layout][kStats];
+    stats = stats || (k != SDL_SCANCODE_UNKNOWN && keys[k]);
+  }
+  if (!keyboard_seated) stats = stats || (keys_[0][kStats] != SDL_SCANCODE_UNKNOWN && keys[keys_[0][kStats]]);
   for (const Pad& pad : pads_) {
     for (const PadInput& in : pad_stats_) stats = stats || pad_input_held(pad.handle, in);
   }

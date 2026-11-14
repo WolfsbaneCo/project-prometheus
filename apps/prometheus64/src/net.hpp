@@ -50,6 +50,9 @@ class WebSocket {
   ~WebSocket() { close(); }
 
   void open(const std::string& url);
+  // Connects only to deliver `message`, then closes (a goodbye from a player whose connection had
+  // broken when it left). Nothing to poll; it ends on its own, or with close() or the next open().
+  void say_and_close(const std::string& url, std::string message);
   void send(std::string binary);  // queued; sent in order
   void close();
   std::vector<Event> poll();  // everything that happened since the last call
@@ -71,6 +74,7 @@ class WebSocket {
   std::deque<std::string> outgoing_;
   std::atomic<bool> stop_{false};
   std::atomic<bool> finished_{false};
+  std::atomic<bool> farewell_{false};  // say_and_close: close once the queue is sent
   std::atomic<uint64_t> heard_ms_{0};  // when the relay was last heard (SDL ticks); 0: no answer yet
 };
 

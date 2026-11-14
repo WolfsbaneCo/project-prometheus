@@ -21,6 +21,8 @@ constexpr uint32_t kSector = 2048;
 uint16_t u16(const uint8_t* p) { return static_cast<uint16_t>(p[0] | p[1] << 8); }
 uint32_t u32(const uint8_t* p) { return p[0] | p[1] << 8 | p[2] << 16 | static_cast<uint32_t>(p[3]) << 24; }
 uint64_t u64(const uint8_t* p) { return u32(p) | static_cast<uint64_t>(u32(p + 4)) << 32; }
+uint32_t be32(const uint8_t* p) { return static_cast<uint32_t>(p[0]) << 24 | p[1] << 16 | p[2] << 8 | p[3]; }
+uint64_t be64(const uint8_t* p) { return static_cast<uint64_t>(be32(p)) << 32 | be32(p + 4); }
 
 std::string lower(std::string s) {
   std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -80,6 +82,24 @@ bool cso_reader(std::ifstream& in, SectorReader& reader) {
     return r == Z_STREAM_END || (r == Z_OK && z.avail_out == 0) || (r == Z_BUF_ERROR && z.avail_out == 0);
   };
   return true;
+}
+
+// A CHD made from a DVD-type disc (what a UMD becomes with chdman createdvd), told by its metadata:
+// version 5, the metadata list from the offset at 48, each entry a 4-letter tag, a flag byte, a
+// 24-bit length and the offset of the next (big-endian). CD images (PlayStation, Saturn, Mega CD:
+// "CHT2", "CHTR", "CHCD") and GD-ROMs (Dreamcast: "CHGD", "CHGT") have other tags and are left out.
+// (A PS2 DVD carries the same tag as a UMD; telling those apart would mean decompressing it.)
+bool chd_is_dvd(std::ifstream& in) {
+  Bytes head;
+  if (!read_at(in, 0, head, 64) || be32(&head[12]) != 5) return false;
+  uint64_t at = be64(&head[48]);
+  for (int i = 0; i < 16 && at != 0; ++i) {
+    Bytes entry;
+    if (!read_at(in, at, entry, 16)) return false;
+    if (std::memcmp(entry.data(), "DVD ", 4) == 0) return true;
+    at = be64(&entry[8]);
+  }
+  return false;
 }
 
 // A file in the image's ISO 9660 file system, by path ("PSP_GAME/PARAM.SFO").
@@ -179,7 +199,7 @@ bool read_disc(const fs::path& file, DiscInfo& out) {
     const uint32_t from = u32(&table[0]), to = u32(&table[4]);
     if (to <= from || to - from > 64 * 1024 || !read_at(in, from, sfo, to - from)) return false;
   } else if (std::memcmp(head.data(), "MComprHD", 8) == 0) {
-    return ext == ".chd";  // a CHD: recognised, read by the core
+    return ext == ".chd" && chd_is_dvd(in);  // a UMD as a CHD: recognised, read by the core
   } else {
     SectorReader sectors;
     if (std::memcmp(head.data(), "CISO", 4) == 0) {
