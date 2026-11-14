@@ -332,6 +332,7 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0009 The games' own glitches are allowed; the app never edits a game](docs/decisions/0009-game-glitches.md)
   - [0010 PSP games](docs/decisions/0010-psp.md)
 - **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
+- **Signing the Windows builds (free, SignPath Foundation; once, for the project):** [`docs/code-signing.md`](docs/code-signing.md)
 - **Privacy policy and terms of use** (shared by every Wolfsbane app): [wolfsbanecompany.com/apps/privacy](https://wolfsbanecompany.com/apps/privacy/) and [/apps/terms](https://wolfsbanecompany.com/apps/terms/), from the website repository [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company)
 - **To build next, with the plan for each:** [`docs/backlog.md`](docs/backlog.md)
 - **Waiting on the owner:** [`docs/open-questions.md`](docs/open-questions.md)
@@ -376,6 +377,21 @@ n64save rom-id "<game file>"                               # identify a game by 
 ## Ground rules
 
 Game files, saves, save states and credentials never go into this repository (see `.gitignore`; CI checks it). Tests use synthetic data or public-domain homebrew only.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+Windows builds of Project Prometheus are signed so that Windows (Smart App Control, SmartScreen) can tell they really come from this project. What is signed: the installer (`ProjectPrometheus-Setup-<version>.exe`), the app (`ProjectPrometheus.exe`) and the three emulator cores it installs (`cores/mupen64plus_next_libretro.dll`, `cores/gpsp_libretro.dll`, `cores/ppsspp_libretro.dll`). Only files built from this repository's source by its GitHub Actions workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) are signed, and only from the `main` branch. The emulator cores are third-party open-source projects (Mupen64Plus-Next, gpSP, PPSSPP), built by this workflow from their published source at the versions pinned in this repository (`tools/`), as listed in [`installer/THIRD-PARTY-NOTICES.txt`](installer/THIRD-PARTY-NOTICES.txt). Which files each signing request signs is set in [`.signpath/artifact-configurations`](.signpath/artifact-configurations).
+
+**Team roles**
+
+- Committers and reviewers: [WolfsbaneCo](https://github.com/WolfsbaneCo) (members of the repository with write access)
+- Approvers: [WolfsbaneCo](https://github.com/WolfsbaneCo)
+
+Every signing request is approved by hand in SignPath.
+
+**Privacy policy.** This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. It connects only when you choose to: to your group's relay on your group owner's own Cloudflare account for online play and link play, and to your own Google Drive when you connect it for backups. See the [privacy policy](https://wolfsbanecompany.com/apps/privacy/).
 
 ## Legal
 

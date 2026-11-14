@@ -145,6 +145,13 @@ jobs:
     needs: [core-windows, psp-core-windows]
     outputs:
       version: ${{ steps.version.outputs.version }}
+    # Code signing (SignPath Foundation's free signing for open-source projects; see "Code signing
+    # policy" in the README): the app, its emulator cores and the installer are signed when this
+    # runs on main and the SignPath project is set up (secret SIGNPATH_API_TOKEN, variables
+    # SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG). Otherwise
+    # the build is unsigned, as before. Each signing request waits for its approval in SignPath.
+    env:
+      SIGN: ${{ github.ref == 'refs/heads/main' && secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
     steps:
       - uses: actions/checkout@v5
       - name: Configure
@@ -181,6 +188,36 @@ jobs:
           Copy-Item -Recurse psp-core/PPSSPP stage/cores/
           Copy-Item installer/THIRD-PARTY-NOTICES.txt, installer/GPL-2.0.txt, installer/libarchive-COPYING.txt, installer/TERMS.txt, LICENSE, NOTICE, TRADEMARKS.md stage/licenses/
           Get-ChildItem -Recurse stage | Select-Object FullName, Length
+      # Signing the app and its cores: the staged files go to SignPath as a build artifact, come back
+      # signed (.signpath/artifact-configurations/app-files.xml says which), and replace the stage.
+      - uses: actions/upload-artifact@v7
+        if: env.SIGN == 'true'
+        id: unsigned-app
+        with:
+          name: unsigned-app
+          path: stage/
+      - uses: signpath/github-action-submit-signing-request@v3
+        if: env.SIGN == 'true'
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: app-files
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: stage-signed
+      - name: Use the signed files
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force stage
+          Move-Item stage-signed stage
+          Get-AuthenticodeSignature stage/ProjectPrometheus.exe, (Get-ChildItem stage/cores/*.dll) |
+            Format-Table Status, @{n='File'; e={Split-Path $_.Path -Leaf}}, @{n='Signer'; e={$_.SignerCertificate.Subject}}
+          if (Get-AuthenticodeSignature stage/ProjectPrometheus.exe, (Get-ChildItem stage/cores/*.dll) | Where-Object Status -ne 'Valid') {
+            Write-Error "A file came back from SignPath without a valid signature"
+          }
       - name: Version
         id: version
         shell: bash
@@ -197,6 +234,33 @@ jobs:
           }
           & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DStageDir=$PWD\stage" installer\project-prometheus.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # Signing the installer itself (.signpath/artifact-configurations/installer.xml).
+      - uses: actions/upload-artifact@v7
+        if: env.SIGN == 'true'
+        id: unsigned-installer
+        with:
+          name: unsigned-installer
+          path: dist/ProjectPrometheus-Setup-${{ steps.version.outputs.version }}.exe
+      - uses: signpath/github-action-submit-signing-request@v3
+        if: env.SIGN == 'true'
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: dist-signed
+      - name: Use the signed installer
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          $name = "ProjectPrometheus-Setup-${{ steps.version.outputs.version }}.exe"
+          Copy-Item -Force "dist-signed/$name" "dist/$name"
+          $sig = Get-AuthenticodeSignature "dist/$name"
+          "$($sig.Status): $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { Write-Error "The installer came back from SignPath without a valid signature" }
       # Uploaded as the bare .exe (not zipped), so the download is the installer itself.
       - uses: actions/upload-artifact@v7
         with:
