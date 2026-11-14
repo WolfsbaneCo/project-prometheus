@@ -17,6 +17,16 @@ AppVerName=Project Prometheus {#AppVersion}
 AppPublisher=Wolfsbane Co.
 AppPublisherURL=https://wolfsbanecompany.com/apps/
 AppSupportURL=https://wolfsbanecompany.com/apps/prometheus/
+; The installer's own file details (Windows shows them in its Properties, and its security checks
+; read them): who makes it, what it is, which version. The app and the installer aren't signed:
+; README, "If Windows warns about or blocks the app".
+VersionInfoVersion={#AppVersion}
+VersionInfoProductVersion={#AppVersion}
+VersionInfoCompany=Wolfsbane Co.
+VersionInfoProductName=Project Prometheus
+VersionInfoDescription=Project Prometheus installer
+VersionInfoCopyright=Copyright (C) 2026 Wolfsbane Co.
+VersionInfoOriginalFileName=ProjectPrometheus-Setup-{#AppVersion}.exe
 DefaultDirName={autopf}\Project Prometheus
 ; The app was called Prometheus 64 at first (same AppId): install into the new folder, not that one.
 UsePreviousAppDir=no

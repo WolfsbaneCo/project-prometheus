@@ -145,8 +145,8 @@ jobs:
     needs: [core-windows, psp-core-windows]
     outputs:
       version: ${{ steps.version.outputs.version }}
-    # Code signing (SignPath Foundation's free signing for open-source projects; see "Code signing
-    # policy" in the README): the app, its emulator cores and the installer are signed when this
+    # Code signing (SignPath Foundation's free signing for open-source projects; not set up, see
+    # docs/code-signing.md): the app, its emulator cores and the installer are signed when this
     # runs on main and the SignPath project is set up (secret SIGNPATH_API_TOKEN, variables
     # SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG). Otherwise
     # the build is unsigned, as before. Each signing request waits for its approval in SignPath.

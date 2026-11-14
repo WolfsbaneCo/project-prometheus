@@ -1,4 +1,6 @@
-# Code signing (SignPath Foundation, free)
+# Code signing (SignPath Foundation, free): not set up
+
+> **Status (2026-11-14):** the owner chose not to set this up (too much work for now). The release build stays unsigned; the signing steps in `ci.yml` stay switched off, and do nothing, until the settings below are added. The README's "If Windows warns about or blocks the app" says what players do meanwhile. If signing is wanted later, everything below still applies, and the README needs its code signing policy section back (SignPath requires one): see this file's git history.
 
 Unsigned Windows programs are blocked by **Smart App Control** ("An Application Control policy has blocked this file", Setup error code 4551) and warned about by SmartScreen ("Windows protected your PC"). Smart App Control has no list of allowed apps: the only fixes are turning it off on each computer, or a signature from a certificate Windows trusts. Such certificates cost money, except through **SignPath Foundation**, which signs open-source projects for free with its own certificate. Project Prometheus qualifies on the basics: its source is public on GitHub, under the GPL (an OSI-approved licence), and its releases are built by GitHub Actions from that source.
 
