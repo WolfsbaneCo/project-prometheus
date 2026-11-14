@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "app-files": what is signed in the staged app (the GitHub
+     artifact "unsigned-app", a zip of the stage folder). The app and the three emulator cores; the
+     rest (pictures, fonts, licences, PPSSPP's data) holds no code. Paste into the SignPath project
+     with the slug app-files. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="ProjectPrometheus.exe">
+      <authenticode-sign/>
+    </pe-file>
+    <directory path="cores">
+      <pe-file-set>
+        <include path="mupen64plus_next_libretro.dll"/>
+        <include path="gpsp_libretro.dll"/>
+        <include path="ppsspp_libretro.dll"/>
+        <for-each>
+          <authenticode-sign/>
+        </for-each>
+      </pe-file-set>
+    </directory>
+  </zip-file>
+</artifact-configuration>
