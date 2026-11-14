@@ -136,6 +136,7 @@ class Link {
   static void RETRO_CALLCONV poll_cb();
 
   net::WebSocket ws_;
+  net::WebSocket farewell_;  // a goodbye sent after leaving while the connection was down
   Phase phase_ = Phase::Off;
   int me_ = -1;
   std::string code_, status_, name_, mode_, game_, version_;

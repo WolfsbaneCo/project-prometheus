@@ -100,6 +100,14 @@ void Link::leave() {
     bye += static_cast<char>(kBroadcast);
     bye += static_cast<char>(kBye);
     ws_.send(std::move(bye));
+  } else if (phase_ == Phase::Reconnecting && core_started_ && !peers_.empty() && !token_.empty() && me_ >= 0) {
+    // The connection is down: come back to the room just to say it, so the others end the link
+    // now instead of waiting for this player to come back. In the background; nothing waits on it.
+    std::string bye;
+    bye += static_cast<char>(kBroadcast);
+    bye += static_cast<char>(kBye);
+    SDL_Log("link: leaving while the connection is down: saying goodbye over a new connection");
+    farewell_.say_and_close(url(true), std::move(bye));
   }
   stop_core();
   ws_.close();
