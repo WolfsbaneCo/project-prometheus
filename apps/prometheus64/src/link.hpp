@@ -45,6 +45,10 @@ class Link {
     bool can_resume = false;  // its app numbers its packets and can take a broken link up again
     bool said_bye = false;    // it is leaving on purpose
     bool away = false;        // its connection broke; waiting for it to come back
+    // It is in the room again after `away`: whether it is the same link coming back (its session
+    // matches) or the app started a new one is known from its kCaps.
+    bool rejoining = false;
+    uint32_t session = 0;     // its link's session (kCaps; 0: not told, an app from 0.2.13)
   };
 
   ~Link();
@@ -153,6 +157,7 @@ class Link {
   std::string relay_url_, key_, token_;
   bool hosting_ = false;
   uint64_t lost_ns_ = 0, retry_ns_ = 0;
+  uint32_t session_ = 0;  // this link's session, new for each host() or join(), told in kCaps
   int reconnects_ = 0;
   uint64_t resent_ = 0, dropped_ = 0;
   Stats stats_;

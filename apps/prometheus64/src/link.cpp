@@ -1,6 +1,7 @@
 #include "link.hpp"
 
 #include <cstring>
+#include <random>
 
 #include <SDL3/SDL_log.h>
 #include <SDL3/SDL_timer.h>
@@ -26,6 +27,13 @@ constexpr int kSilentMs = 9000;
 void put32(std::string& out, uint32_t v) {
   for (int i = 0; i < 4; ++i) out += static_cast<char>((v >> (8 * i)) & 0xFF);
 }
+uint32_t new_session() {
+  std::random_device rd;
+  uint32_t s = 0;
+  while (s == 0) s = rd();
+  return s;
+}
+
 uint32_t get32(const std::string& in, std::size_t at) {
   uint32_t v = 0;
   for (int i = 0; i < 4; ++i) v |= static_cast<uint32_t>(static_cast<uint8_t>(in[at + static_cast<std::size_t>(i)])) << (8 * i);
@@ -45,6 +53,7 @@ void Link::host(const std::string& relay_url, const std::string& key, const std:
   relay_url_ = relay_url;
   key_ = key;
   hosting_ = true;
+  session_ = new_session();
   open(url(false));
 }
 
@@ -58,6 +67,7 @@ void Link::join(const std::string& relay_url, const std::string& key, const std:
   key_ = key;
   hosting_ = false;
   code_ = code;
+  session_ = new_session();
   open(url(false));
 }
 
@@ -369,10 +379,14 @@ void Link::on_text(const std::string& text) {
   } else if (t == "join") {
     const int id = static_cast<int>(v["id"].num());
     if (auto it = peers_.find(id); it != peers_.end() && it->second.can_resume && core_started_) {
-      // Someone whose connection broke is back (or the relay replaced their connection).
-      SDL_Log("link: player %d is back", id);
+      // Someone under this id is in the room again: the same link coming back after its
+      // connection broke, or the app started a new link (it crashed, or was closed without a
+      // goodbye). Its kCaps tells which (its session); until then it counts as away.
+      SDL_Log("link: player %d is in the room again", id);
       it->second.name = v["name"].str();
-      peer_back(id);
+      it->second.away = true;
+      it->second.rejoining = true;
+      lines_[id].since_ns = SDL_GetTicksNS();
       return;
     }
     peers_[id] = Peer{};
@@ -416,7 +430,8 @@ void Link::on_closed(const net::WebSocket::Event& e) {
     // again.
     const auto host = peers_.find(0);
     const bool host_left = e.close_code == 4000;
-    const bool final = host_left && (host == peers_.end() || host->second.said_bye || !host->second.can_resume);
+    // An older relay (no token) can't give the host its room back: nothing to wait for.
+    const bool final = host_left && (host == peers_.end() || host->second.said_bye || !host->second.can_resume || token_.empty());
     if (!final) {
       begin_reconnect(host_left ? "the host's connection dropped" : e.data);
       return;
@@ -498,7 +513,32 @@ void Link::on_binary(const std::string& data) {
   } else if (kind == kBye) {
     if (auto it = peers_.find(from); it != peers_.end()) it->second.said_bye = true;
   } else if (kind == kCaps) {
-    if (auto it = peers_.find(from); it != peers_.end()) it->second.can_resume = true;
+    auto it = peers_.find(from);
+    if (it == peers_.end()) return;
+    Peer& peer = it->second;
+    const uint32_t session = data.size() >= 7 ? get32(data, 3) : 0;
+    peer.can_resume = true;
+    if (peer.rejoining) {
+      peer.rejoining = false;
+      if (session && peer.session && session != peer.session) {
+        // A new link from that player's app: start afresh with it, as for a player joining.
+        SDL_Log("link: player %d started a new link; starting afresh with it", from);
+        lines_[from] = Line{};
+        pacers_.erase(from);
+        peer.away = false;
+        peer.said_bye = false;
+        if (core_started_ && is_host() && core_) {
+          if (core_->disconnected) core_->disconnected(static_cast<uint16_t>(from));
+          if (core_->connected) core_->connected(static_cast<uint16_t>(from));
+        }
+        messages_.push_back(peer.name + " joined the link again");
+        say_hello(from);
+      } else {
+        SDL_Log("link: player %d is back", from);
+        peer_back(from);
+      }
+    }
+    if (session) peer.session = session;
   } else if (kind == kTick) {
     if (data.size() >= 10 && core_started_) {
       uint64_t frames = 0;
@@ -593,6 +633,7 @@ void Link::say_hello(int to) {
   caps += static_cast<char>(to);
   caps += static_cast<char>(kCaps);
   caps += static_cast<char>(1);
+  put32(caps, session_);  // which link this is (since 0.2.14), to tell coming back from starting again
   ws_.send(std::move(caps));
 }
 

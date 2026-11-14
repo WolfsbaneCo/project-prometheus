@@ -665,7 +665,7 @@ void App::stop_game() {
   if (!game_) return;
   stop_local_link();  // the second game goes with the first
   close_event();  // an event belongs to the game too
-  if (!guest_session_ && !online_game_) {
+  if (!guest_session_ && !online_game_ && game_->system != System::PSP) {  // PSP saves aren't on Drive (yet)
     // Anything newer on Drive that had to wait while the game ran comes down now.
     drive_check_key_ = (game_->system == System::GBA ? "GBA/" : "") + game_->internal_name;
   }
