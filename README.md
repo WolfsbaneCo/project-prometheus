@@ -42,6 +42,14 @@ The quick menu shows each item's shortcut next to it, and the shortcuts work whi
 
 **Saves** go into `Documents\Memories\N64` and `Documents\Memories\GBA`, one folder per game (a computer that already had `Documents\N64 Saves` from an earlier version keeps using it), with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file (GBA: `.sav`, `.srm`, `.sa1`, `.fla` or `.eep`). The emulator's original file is only read, never changed.
 
+### If Windows warns about or blocks the app
+
+Project Prometheus isn't digitally signed (signing certificates cost money), so Windows doesn't know who made it until enough people have run each new version. Nothing in it is harmful; the source is all here. What you may see, and what to do:
+
+- **"Windows protected your PC"** (SmartScreen) when you run the installer: click **More info**, then **Run anyway**.
+- **"An Application Control policy has blocked this file"** (Setup error code 4551), or the app not starting at all: that's **Smart App Control**, which blocks every app without a signature or a reputation, and has no list of allowed apps. Turn it off in **Windows Security > App & browser control > Smart App Control settings > Off**, then run the installer again. Microsoft Defender's antivirus stays on. (Since Windows' April 2026 update it can be turned back on later; before that, turning it back on needed a reset of Windows.)
+- **Microsoft Defender deleting or quarantining a file**: that's a mistake on Defender's side (it happens to unsigned emulators). Restore it from **Windows Security > Protection history**, and tell us, so it can be reported to Microsoft at [microsoft.com/wdsi/filesubmission](https://www.microsoft.com/en-us/wdsi/filesubmission) as a wrongly detected file.
+
 ### Playing online
 
 Online games happen in a private **group**. One person sets the group up once, and everyone in it shares the group's **key file**. Playing a game then takes two things: the key file (once) and the host's **game code** (each game). Nothing changes for anyone who doesn't use online play.
@@ -332,7 +340,6 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0009 The games' own glitches are allowed; the app never edits a game](docs/decisions/0009-game-glitches.md)
   - [0010 PSP games](docs/decisions/0010-psp.md)
 - **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
-- **Signing the Windows builds (free, SignPath Foundation; once, for the project):** [`docs/code-signing.md`](docs/code-signing.md)
 - **Privacy policy and terms of use** (shared by every Wolfsbane app): [wolfsbanecompany.com/apps/privacy](https://wolfsbanecompany.com/apps/privacy/) and [/apps/terms](https://wolfsbanecompany.com/apps/terms/), from the website repository [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company)
 - **To build next, with the plan for each:** [`docs/backlog.md`](docs/backlog.md)
 - **Waiting on the owner:** [`docs/open-questions.md`](docs/open-questions.md)
@@ -377,21 +384,6 @@ n64save rom-id "<game file>"                               # identify a game by 
 ## Ground rules
 
 Game files, saves, save states and credentials never go into this repository (see `.gitignore`; CI checks it). Tests use synthetic data or public-domain homebrew only.
-
-## Code signing policy
-
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
-
-Windows builds of Project Prometheus are signed so that Windows (Smart App Control, SmartScreen) can tell they really come from this project. What is signed: the installer (`ProjectPrometheus-Setup-<version>.exe`), the app (`ProjectPrometheus.exe`) and the three emulator cores it installs (`cores/mupen64plus_next_libretro.dll`, `cores/gpsp_libretro.dll`, `cores/ppsspp_libretro.dll`). Only files built from this repository's source by its GitHub Actions workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) are signed, and only from the `main` branch. The emulator cores are third-party open-source projects (Mupen64Plus-Next, gpSP, PPSSPP), built by this workflow from their published source at the versions pinned in this repository (`tools/`), as listed in [`installer/THIRD-PARTY-NOTICES.txt`](installer/THIRD-PARTY-NOTICES.txt). Which files each signing request signs is set in [`.signpath/artifact-configurations`](.signpath/artifact-configurations).
-
-**Team roles**
-
-- Committers and reviewers: [WolfsbaneCo](https://github.com/WolfsbaneCo) (members of the repository with write access)
-- Approvers: [WolfsbaneCo](https://github.com/WolfsbaneCo)
-
-Every signing request is approved by hand in SignPath.
-
-**Privacy policy.** This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. It connects only when you choose to: to your group's relay on your group owner's own Cloudflare account for online play and link play, and to your own Google Drive when you connect it for backups. See the [privacy policy](https://wolfsbanecompany.com/apps/privacy/).
 
 ## Legal
 
