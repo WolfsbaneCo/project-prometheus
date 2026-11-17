@@ -286,6 +286,14 @@ std::size_t Core::save_ram_size() {
   return game_loaded_ ? api_->get_memory_size(RETRO_MEMORY_SAVE_RAM) : 0;
 }
 
+uint8_t* Core::rtc() {
+  return game_loaded_ ? static_cast<uint8_t*>(api_->get_memory_data(RETRO_MEMORY_RTC)) : nullptr;
+}
+
+std::size_t Core::rtc_size() {
+  return game_loaded_ ? api_->get_memory_size(RETRO_MEMORY_RTC) : 0;
+}
+
 const uint8_t* Core::system_ram() {
   return game_loaded_ ? static_cast<const uint8_t*>(api_->get_memory_data(RETRO_MEMORY_SYSTEM_RAM)) : nullptr;
 }

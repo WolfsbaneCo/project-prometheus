@@ -10,6 +10,7 @@
 #include "app.hpp"
 #include "app_shared.hpp"
 #include "google.hpp"
+#include "handheld_save.hpp"
 #include "savekit/library.hpp"
 
 namespace fs = std::filesystem;
@@ -79,7 +80,7 @@ std::string App::game_title(const std::string& folder) const {
 }
 
 void App::init_backup() {
-  backup_.init(pref_dir_, library_dir_, gba_library_dir_, device_name());
+  backup_.init(pref_dir_, library_dir_, gba_library_dir_, gb_library_dir_, device_name());
   if (opt_.backup_connect && !backup_.connected()) backup_.connect(true);
 }
 
@@ -103,7 +104,7 @@ void App::process_backup() {
       auto save = savekit::load_current(dl.library, dl.game);
       if (!save) return false;
       savekit::StoreOptions o;
-      o.library = library_for(dl.gba ? System::GBA : System::N64);
+      o.library = library_for(dl.console == "GBA" ? System::GBA : dl.console == "GB" ? System::GB : System::N64);
       o.game = dl.game;
       o.save = *save;
       o.source = "Google Drive (" + (dl.device.empty() ? std::string("another device") : dl.device) + ")";
@@ -117,13 +118,16 @@ void App::process_backup() {
   };
   for (auto& dl : backup_.take_downloads()) {
     const std::string from = dl.device.empty() ? std::string() : " from " + dl.device;
-    if (game_ && game_->internal_name == dl.game && (game_->system == System::GBA) == dl.gba) {
+    if (game_ && game_->internal_name == dl.game && system_name(game_->system) == dl.console) {
       // The game is running. Still booting, with nothing saved since it started: start it again
       // with the newer save (a moment on its first screens, no progress lost). Otherwise never
       // swap a save under a game that has loaded its own: it comes down when the game closes.
       uint8_t* ram = core_.save_ram();
-      const bool untouched = !session_saved_ && ram && last_saved_ram_.size() == core_.save_ram_size() &&
-                             std::equal(last_saved_ram_.begin(), last_saved_ram_.end(), ram);
+      const bool untouched =
+          !session_saved_ && ram &&
+          (handheld::is_handheld(game_->system)
+               ? last_saved_ram_ == handheld::snapshot(core_, game_->system)
+               : last_saved_ram_.size() == core_.save_ram_size() && std::equal(last_saved_ram_.begin(), last_saved_ram_.end(), ram));
       const bool booting = now - game_started_ns_ < kSwapWindowNs;
       if (booting && untouched && !online_game_ && !guest_session_ && !link_.active() && event_key_.empty() && store(dl)) {
         const Game game = *game_;
@@ -253,7 +257,7 @@ void App::draw_backup() {
   }
 
   if (!backup_.connected()) {
-    para("Your saves are copied to Memories > N64 and Memories > GBA in your Google Drive: quietly, when you close "
+    para("Your saves are copied to Memories > N64, > GBA and > GB in your Google Drive: quietly, when you close "
          "Project Prometheus and every hour while it's open. Only saves go up, never games.", 21, kText);
     y += 12 * s;
     para("On another computer (or a future phone version), connect the same Google account to carry on where you "
@@ -272,7 +276,7 @@ void App::draw_backup() {
   const std::string account = backup_.account();
   ui_.text(x, y, account.empty() ? "Connected to Google Drive" : "Connected as " + account, 22 * s, kText, true);
   y += 38 * s;
-  ui_.text(x, y, "Your saves are in Memories > N64 and > GBA in your Drive (you can move or rename them)", 19 * s, kDim);
+  ui_.text(x, y, "Your saves are in Memories > N64, > GBA and > GB in your Drive (you can move or rename them)", 19 * s, kDim);
   if (!backup_.root_id().empty()) button(x + inner, y - 12 * s, "Open in Drive", false, kBbOpenDrive, true);
   y += 56 * s;
 

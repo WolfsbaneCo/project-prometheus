@@ -1,4 +1,4 @@
-// The games the player has added: every N64 and GBA game file in the games folder, plain or packed
+// The games the player has added: every N64, GBA, Game Boy and PSP game file in the games folder, plain or packed
 // in a .zip, .7z or .rar archive, identified by its header (never by file name). The console a game
 // is for decides which emulator core plays it.
 #pragma once
@@ -10,8 +10,11 @@
 
 namespace p64 {
 
-enum class System { N64, GBA, PSP };
-const char* system_name(System s);   // "N64", "GBA", "PSP": also the console's folder in Memories
+// GB: the Game Boy and the Game Boy Color (one emulator plays both; a game's id says which).
+enum class System { N64, GBA, PSP, GB };
+const char* system_name(System s);   // "N64", "GBA", "PSP", "GB": also the console's folder in Memories
+// What the library shows for a game's console: as system_name, but "GBC" for a Game Boy Color game.
+std::string console_label(const struct Game& game);
 
 struct Game {
   System system = System::N64;
@@ -21,7 +24,8 @@ struct Game {
   std::string internal_name;  // from the ROM header; also the save library's folder name
   // N64: CRC1-CRC2-C:country, like N64 ROM databases use. GBA: AGB-<game code>-<version>-<header
   // checksum>, from its header (game code like BPRE: FireRed, USA). PSP: PSP-<disc ID>, like
-  // PSP-ULUS10041, from the game's PARAM.SFO (psp_disc.hpp).
+  // PSP-ULUS10041, from the game's PARAM.SFO (psp_disc.hpp). Game Boy: DMG-<title>-<header
+  // checksum>-<global checksum> (CGB- for a game made for the Game Boy Color), from its header.
   std::string id;
   std::string region;         // "USA", "Europe", "Japan", ...
 };

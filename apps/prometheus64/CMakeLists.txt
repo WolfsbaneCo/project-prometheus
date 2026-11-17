@@ -16,6 +16,7 @@ add_subdirectory(net)
 # The GBA core needs a GNU compiler; with Microsoft's it is built apart (tools/build-gba-core-windows.sh).
 if(NOT MSVC)
   add_subdirectory(third_party/gpsp)
+  add_subdirectory(third_party/gambatte)
 endif()
 
 # The relay's code, built into the app so it can install it on a player's Cloudflare account.
@@ -30,6 +31,7 @@ target_include_directories(p64_xbrz PUBLIC third_party/xbrz)
 
 add_executable(prometheus64 WIN32
   src/app.cpp
+  src/handheld_save.cpp
   src/archive.cpp
   src/cloudflare.cpp
   src/app_backup.cpp
@@ -73,6 +75,14 @@ target_include_directories(prometheus64 PRIVATE src third_party/libretro third_p
 target_link_libraries(prometheus64 PRIVATE savekit SDL3::SDL3-static p64_archive p64_curl p64_xbrz p64_warnings)
 # The GBA core is built with the app and goes in "cores" next to it (the N64 core is put there by
 # tools/build-core-windows.sh, or by hand on other systems).
+if(TARGET gambatte_libretro)
+  add_dependencies(prometheus64 gambatte_libretro)
+  add_custom_command(TARGET prometheus64 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:prometheus64>/cores"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:gambatte_libretro>" "$<TARGET_FILE_DIR:prometheus64>/cores/"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_BINARY_DIR}/third_party/gambatte/GB-CORE-SOURCE.txt"
+            "$<TARGET_FILE_DIR:prometheus64>/cores/")
+endif()
 if(TARGET gpsp_libretro)
   add_dependencies(prometheus64 gpsp_libretro)
   add_custom_command(TARGET prometheus64 POST_BUILD
@@ -145,4 +155,8 @@ add_test(NAME pokemon_stats COMMAND pokemon_stats_tests)
   target_include_directories(psp_disc_tests PRIVATE src)
   target_link_libraries(psp_disc_tests PRIVATE p64_zlib p64_warnings)
   add_test(NAME psp_disc COMMAND psp_disc_tests)
+  add_executable(library_tests tests/library_tests.cpp src/library.cpp src/psp_disc.cpp src/archive.cpp)
+  target_include_directories(library_tests PRIVATE src)
+  target_link_libraries(library_tests PRIVATE savekit p64_archive p64_zlib p64_warnings)
+  add_test(NAME library COMMAND library_tests)
 endif()

@@ -50,7 +50,7 @@ ChangesAssociations=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
-Name: "associate"; Description: "Open game files (.z64, .n64, .v64, .gba) with Project Prometheus when double-clicked"; GroupDescription: "Game files:"
+Name: "associate"; Description: "Open game files (.z64, .n64, .v64, .gba, .gb, .gbc) with Project Prometheus when double-clicked"; GroupDescription: "Game files:"
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
@@ -77,10 +77,14 @@ Root: HKA; Subkey: "Software\Classes\.z64"; ValueType: string; ValueName: ""; Va
 Root: HKA; Subkey: "Software\Classes\.n64"; ValueType: string; ValueName: ""; ValueData: "Prometheus64.Game"; Flags: uninsdeletevalue; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.v64"; ValueType: string; ValueName: ""; ValueData: "Prometheus64.Game"; Flags: uninsdeletevalue; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.gba"; ValueType: string; ValueName: ""; ValueData: "Prometheus64.Game"; Flags: uninsdeletevalue; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\.gb"; ValueType: string; ValueName: ""; ValueData: "Prometheus64.Game"; Flags: uninsdeletevalue; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\.gbc"; ValueType: string; ValueName: ""; ValueData: "Prometheus64.Game"; Flags: uninsdeletevalue; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.z64\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.n64\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.v64\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.gba\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.gb\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.gbc\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.zip\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.7z\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.rar\OpenWithProgids"; ValueType: string; ValueName: "Prometheus64.Game"; ValueData: ""; Flags: uninsdeletevalue

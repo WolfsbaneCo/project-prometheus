@@ -18,6 +18,10 @@ CMakeUserPresets.json
 *.cso
 *.pbp
 *.chd
+*.gb
+*.gbc
+*.cgb
+*.sgb
 
 # Never commit in-game saves or save states -- brief section 8.4
 *.sra

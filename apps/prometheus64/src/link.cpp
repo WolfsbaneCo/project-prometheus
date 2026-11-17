@@ -601,9 +601,15 @@ void Link::on_binary(const std::string& data) {
     p.name = body.substr(b + 1);
     if (!known) SDL_Log("link: player %d is %s, playing %s, %s", from, p.name.c_str(), p.game.c_str(), p.mode.c_str());
     if (!known && p.mode != mode_) {
-      messages_.push_back(p.name + " uses the " + (p.mode == "wireless" ? "Wireless Adapter" : "link cable") +
-                          ", this game the " + (mode_ == "wireless" ? "Wireless Adapter" : "link cable") +
-                          ": both need the same (Play online > Link)");
+      if (p.mode == "gb" || mode_ == "gb") {
+        // A Game Boy game and a GBA game: their link cables don't fit each other.
+        messages_.push_back(p.name + " is playing a " + (p.mode == "gb" ? "Game Boy" : "GBA") + " game and this is a " +
+                            (mode_ == "gb" ? "Game Boy" : "GBA") + " game: they can't link");
+      } else {
+        messages_.push_back(p.name + " uses the " + (p.mode == "wireless" ? "Wireless Adapter" : "link cable") +
+                            ", this game the " + (mode_ == "wireless" ? "Wireless Adapter" : "link cable") +
+                            ": both need the same (Play online > Link)");
+      }
     }
   }
 }

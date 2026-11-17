@@ -13,6 +13,7 @@
 #include <tuple>
 
 #include "archive.hpp"
+#include "handheld_save.hpp"
 #include "net.hpp"
 #include "pokemon_hints.hpp"
 #include "savekit/formats.hpp"
@@ -191,6 +192,8 @@ bool App::init(std::string& error) {
   gba_library_dir_ = from_utf8(settings_.get("gba_library", utf8(default_gba)));
   // PSP saves: the PSP's own memory stick folders (PSP/SAVEDATA/<game>), next to the GBA ones.
   psp_library_dir_ = from_utf8(settings_.get("psp_library", utf8(gba_library_dir_.parent_path() / "PSP")));
+  // Game Boy and Game Boy Color saves: Memories\GB, next to the GBA ones.
+  gb_library_dir_ = from_utf8(settings_.get("gb_library", utf8(gba_library_dir_.parent_path() / "GB")));
   slot_ = std::clamp(settings_.get_int("state_slot", 1), 1, 10);
 
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -242,6 +245,7 @@ bool App::init(std::string& error) {
   n64_core_path_ = opt_.core.empty() ? base / "cores" / (std::string("mupen64plus_next_libretro") + ext) : opt_.core;
   gba_core_path_ = base / "cores" / (std::string("gpsp_libretro") + ext);
   psp_core_path_ = base / "cores" / (std::string("ppsspp_libretro") + ext);
+  gb_core_path_ = base / "cores" / (std::string("gambatte_libretro") + ext);
   const fs::path core_path = n64_core_path_;
   core_.hooks.video = [this](const void* data, unsigned w, unsigned h, std::size_t pitch) {
     static const bool debug = SDL_getenv("P64_DEBUG") != nullptr;
@@ -263,7 +267,7 @@ bool App::init(std::string& error) {
     if (data == RETRO_HW_FRAME_BUFFER_VALID) {
       video_.hardware_frame(w, h);
     } else {
-      const bool gba = game_ && game_->system == System::GBA;
+      const bool gba = game_ && handheld::is_handheld(game_->system);
       const GbaLookDef& look = kGbaLooks[gba ? gba_look(settings_, game_->id) : 0];
       video_.software_frame(data, w, h, pitch, core_.pixel_format(), gba ? look.prescale : Prescale::None, look.xbrz_max);
     }
@@ -501,6 +505,26 @@ void App::apply_core_options(const Game& game, Core* target) {
     }
     return;
   }
+  if (game.system == System::GB) {
+    // Gambatte: a Game Boy Color game in colour; an original Game Boy game with the palette a Game
+    // Boy Color gives it (its own for the games it knows), as when it is played on one. No boot
+    // logo (the console's own startup program isn't shipped).
+    Core& core = target ? *target : core_;
+    auto set = [&](const char* key, const std::string& value) { core.set_option(key, value); };
+    const GbaLookDef& look = kGbaLooks[gba_look(settings_, game.id)];
+    set("gambatte_gb_hwmode", "Auto");
+    set("gambatte_gb_colorization", "auto");
+    set("gambatte_gb_bootloader", "disabled");
+    set("gambatte_gbc_color_correction", look.colour_correction ? "GBC only" : "disabled");
+    set("gambatte_mix_frames", look.ghosting ? "lcd_ghosting" : "disabled");
+    set("gambatte_up_down_allowed", "disabled");
+    set("gambatte_rumble_level", "10");
+    for (const auto& o : opt_.core_options) {  // test mode: "--option key=value" overrides
+      const auto eq = o.find('=');
+      if (eq != std::string::npos) set(o.substr(0, eq).c_str(), o.substr(eq + 1));
+    }
+    return;
+  }
   if (game.system == System::GBA) {
     Core& core = target ? *target : core_;
     auto set = [&](const char* key, const std::string& value) { core.set_option(key, value); };
@@ -614,7 +638,7 @@ bool App::start_game(const Game& game) {
     toast("Could not start " + game.title + ": " + err, 8);
     return false;
   }
-  input_.set_gba(game.system == System::GBA);
+  input_.set_gba(handheld::is_handheld(game.system));
   input_.set_psp(game.system == System::PSP);
   apply_core_options(game);
   const std::string err = load_into(core_, game);
@@ -629,7 +653,7 @@ bool App::start_game(const Game& game) {
   // Its progress may be newer on Google Drive (another computer played since): check now, in the
   // background, while the game boots.
   if (!guest_session_ && !online_game_ && game.system != System::PSP) {
-    drive_check_key_ = (game.system == System::GBA ? "GBA/" : "") + game.internal_name;
+    drive_check_key_ = (game.system == System::N64 ? std::string() : std::string(system_name(game.system)) + "/") + game.internal_name;
   }
   if (core_.hardware_rendering()) {
     video_.prepare_target(core_.av().geometry.max_width, core_.av().geometry.max_height);
@@ -667,7 +691,7 @@ void App::stop_game() {
   close_event();  // an event belongs to the game too
   if (!guest_session_ && !online_game_ && game_->system != System::PSP) {  // PSP saves aren't on Drive (yet)
     // Anything newer on Drive that had to wait while the game ran comes down now.
-    drive_check_key_ = (game_->system == System::GBA ? "GBA/" : "") + game_->internal_name;
+    drive_check_key_ = (game_->system == System::N64 ? std::string() : std::string(system_name(game_->system)) + "/") + game_->internal_name;
   }
   if (link_.active()) {
     link_.leave();  // the link belongs to the game
@@ -747,7 +771,7 @@ int App::fill_mode(const Game* game) const {
 Look App::current_look() const {
   Look l;
   const std::string id = game_ ? game_->id : "";
-  if (game_ && game_->system == System::GBA) return gba_look_for(*game_, core_);
+  if (game_ && handheld::is_handheld(game_->system)) return gba_look_for(*game_, core_);
   if (game_ && game_->system == System::PSP) {
     // A PSP game: drawn by the emulator at the screen's size already, shown as it is.
     l.fill = static_cast<FillMode>(fill_mode(&*game_));
@@ -793,9 +817,9 @@ Look App::gba_look_for(const Game& game, const Core& core) const {
   l.sharpen_within = g.sharpen > 0.0f;
   l.grid = g.grid;
   l.whole_pixels = g.whole_pixels;
-  l.lines = 160;
+  l.lines = game.system == System::GB ? 144 : 160;
   const float a = core.av().geometry.aspect_ratio;
-  l.aspect = a > 0 ? a : 3.0f / 2.0f;
+  l.aspect = a > 0 ? a : game.system == System::GB ? 10.0f / 9.0f : 3.0f / 2.0f;
   return l;
 }
 
@@ -803,20 +827,16 @@ void App::load_game_save() {
   last_saved_ram_.clear();
   pending_ram_.clear();
   uint8_t* ram = core_.save_ram();
-  if (game_->system == System::GBA) {
-    if (!ram || core_.save_ram_size() != savekit::kGbaSaveSize) return;
+  if (handheld::is_handheld(game_->system)) {
+    if (handheld::snapshot(core_, game_->system).empty()) return;
     try {
-      if (auto saved = savekit::load_current(gba_library_dir_, game_->internal_name)) {
-        auto it = saved->memories.find(savekit::Memory::GbaSave);
-        if (it != saved->memories.end() && it->second.size() == savekit::kGbaSaveSize) {
-          std::memcpy(ram, it->second.data(), savekit::kGbaSaveSize);
-          toast("Loaded your saved progress");
-        }
+      if (auto saved = savekit::load_current(library_for(game_->system), game_->internal_name)) {
+        if (handheld::restore(game_->system, *saved, core_)) toast("Loaded your saved progress");
       }
     } catch (const std::exception& e) {
       toast(std::string("Could not load the save: ") + e.what(), 6);
     }
-    last_saved_ram_.assign(ram, ram + savekit::kGbaSaveSize);
+    last_saved_ram_ = handheld::snapshot(core_, game_->system);
     return;
   }
   if (!ram || core_.save_ram_size() != kSrmSize) return;
@@ -841,10 +861,11 @@ void App::load_game_save() {
 void App::sync_game_save(bool force) {
   if (guest_session_) return;  // the host keeps the save of an online game
   uint8_t* ram = core_.save_ram();
-  const bool gba = game_ && game_->system == System::GBA;
-  const std::size_t size = gba ? savekit::kGbaSaveSize : kSrmSize;
-  if (!game_ || !ram || core_.save_ram_size() != size) return;
-  std::vector<uint8_t> now(ram, ram + size);
+  const bool gba = game_ && handheld::is_handheld(game_->system);
+  if (!game_ || !ram) return;
+  if (!gba && core_.save_ram_size() != kSrmSize) return;
+  std::vector<uint8_t> now = gba ? handheld::snapshot(core_, game_->system) : std::vector<uint8_t>(ram, ram + kSrmSize);
+  if (now.empty()) return;
   if (now == last_saved_ram_) {
     pending_ram_.clear();
     return;
@@ -861,12 +882,12 @@ void App::sync_game_save(bool force) {
     o.library = library_for(game_->system);
     o.game = game_->internal_name;
     if (gba) {
-      // Never written (all 0xFF, as the core starts it): nothing to keep.
-      if (std::all_of(now.begin(), now.end(), [](uint8_t b) { return b == 0xFF; })) {
+      // Never written (as the core starts it): nothing to keep.
+      if (handheld::blank(game_->system, now, core_)) {
         last_saved_ram_ = now;
         return;
       }
-      o.save.memories[savekit::Memory::GbaSave] = savekit::Bytes(now);
+      o.save = handheld::to_save(game_->system, now, core_);
     } else {
       o.save = savekit::decode(savekit::Format::RetroArchMupen64PlusNext, {{".srm", savekit::Bytes(now)}}).save;
     }
@@ -918,9 +939,9 @@ void App::save_state() {
   // A GBA game's own save (the cartridge's) beside it: the core's state holds the game but not
   // its save, so loading the state puts both back as they were (slotN.sav).
   const fs::path sav = fs::path(file).replace_extension(".sav");
-  if (game_->system == System::GBA && core_.save_ram() && core_.save_ram_size() == savekit::kGbaSaveSize) {
+  if (const auto snap = handheld::snapshot(core_, game_->system); !snap.empty()) {
     std::ofstream(sav, std::ios::binary | std::ios::trunc)
-        .write(reinterpret_cast<const char*>(core_.save_ram()), static_cast<std::streamsize>(savekit::kGbaSaveSize));
+        .write(reinterpret_cast<const char*>(snap.data()), static_cast<std::streamsize>(snap.size()));
   } else {
     fs::remove(sav, ec);
   }
@@ -943,11 +964,11 @@ void App::load_state() {
     // A GBA state made since 0.2.8 also holds the game's save from that moment: put it back too, so
     // the state is exactly as it was (the save it replaces stays in the library's history).
     bool with_save = false;
-    if (game_->system == System::GBA && core_.save_ram() && core_.save_ram_size() == savekit::kGbaSaveSize) {
+    if (const auto snap = handheld::snapshot(core_, game_->system); !snap.empty()) {
       std::ifstream sav_in(fs::path(state_path(slot_)).replace_extension(".sav"), std::ios::binary);
       std::vector<uint8_t> sav((std::istreambuf_iterator<char>(sav_in)), std::istreambuf_iterator<char>());
-      if (sav.size() == savekit::kGbaSaveSize) {
-        std::memcpy(core_.save_ram(), sav.data(), sav.size());
+      if (sav.size() == snap.size()) {
+        handheld::restore(game_->system, handheld::to_save(game_->system, sav, core_), core_);
         sync_game_save(true);
         with_save = true;
       }
@@ -968,6 +989,7 @@ void App::choose_save_to_import() {
   if (games_.empty()) return;
   static const SDL_DialogFileFilter n64[] = {{"N64 save files", "srm;sra;eep;fla;mpk"}};
   static const SDL_DialogFileFilter gba[] = {{"GBA save files", "sav;srm;sa1;fla;eep"}};
+  static const SDL_DialogFileFilter gb[] = {{"Game Boy save files", "sav;srm"}};
   const Game& picked = games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)];
   if (picked.system == System::PSP) {
     // PSP saves are folders, as on a memory stick: copy them in by hand.
@@ -981,7 +1003,7 @@ void App::choose_save_to_import() {
   }
   const bool is_gba = picked.system == System::GBA;
   auto* info = new std::pair<uint32_t, int>(user_event_, kSaveChosen);
-  SDL_ShowOpenFileDialog(dialog_done, info, window_, is_gba ? gba : n64, 1, nullptr, false);
+  SDL_ShowOpenFileDialog(dialog_done, info, window_, picked.system == System::GB ? gb : is_gba ? gba : n64, 1, nullptr, false);
 }
 
 void App::import_save(const fs::path& file) {
@@ -992,6 +1014,27 @@ void App::import_save(const fs::path& file) {
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     std::ifstream in(file, std::ios::binary);
     savekit::Bytes data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (g.system == System::GB) {
+      // Game Boy saves are the cartridge's memory as it is (BGB, VisualBoyAdvance-M, mGBA, SameBoy
+      // and RetroArch write them that way), up to 128 KB, often followed by the clock in one of
+      // several layouts (VBA-M's 44 or 48 bytes): the memory is kept, and the clock restarts.
+      std::size_t n = data.size();
+      if (n % 0x200 == 44 || n % 0x200 == 48) n -= n % 0x200;
+      if (data.empty() || n == 0 || n > savekit::kGbSaveSize) {
+        toast("That isn't a Game Boy save file (Game Boy saves are 128 KB or smaller)", 6);
+        return;
+      }
+      data.resize(n);
+      data.resize(savekit::kGbSaveSize, 0xFF);
+      savekit::StoreOptions o;
+      o.library = gb_library_dir_;
+      o.game = g.internal_name;
+      o.save.memories[savekit::Memory::GbSave] = data;
+      o.source = "imported save file";
+      savekit::store_current(o);
+      toast("Save imported for " + g.title + ". Your previous save is kept in history", 5);
+      return;
+    }
     if (g.system == System::GBA) {
       // GBA saves are the cartridge's memory as it is (VisualBoyAdvance-M, mGBA and RetroArch all
       // write them that way): 512 bytes to 128 KB, filled out with 0xFF to gpSP's 128 KB block.
@@ -1132,11 +1175,15 @@ void App::run_frames() {
   // A linked GBA game keeps running behind the menus: the others' games are waiting on its link.
   // Two games linked here keep running too: stopping either mid-trade breaks the link (the
   // Cable Club drops both players), so F3, the menu and a window losing focus pause neither.
-  const bool linked = (link_.active() || local_.active()) && game_ && game_->system == System::GBA;
+  const bool linked = (link_.active() || local_.active()) && game_ && handheld::is_handheld(game_->system);
   // The link log: what each layer of an online link is doing (link_monitor.hpp).
-  if (link_.active() && game_ && game_->system == System::GBA && game_->id.size() >= 8) {
-    const GbaMemory memory = [this](uint32_t address, std::size_t size) -> const uint8_t* { return core_.memory(address, size); };
-    link_monitor_.update(now, link_, game_->id.substr(4, 4), memory, link_.waiting(), overlay_ != Overlay::None);
+  if (link_.active() && game_ && handheld::is_handheld(game_->system) && game_->id.size() >= 8) {
+    // A GBA game's own link state is read from its memory (a known Pokémon game); a Game Boy game's isn't.
+    const bool gba = game_->system == System::GBA;
+    const GbaMemory memory = [this, gba](uint32_t address, std::size_t size) -> const uint8_t* {
+      return gba ? core_.memory(address, size) : nullptr;
+    };
+    link_monitor_.update(now, link_, gba ? game_->id.substr(4, 4) : game_->id, memory, link_.waiting(), overlay_ != Overlay::None);
     for (const auto& note : link_monitor_.take_notes()) toast(note, 10);
   } else if (link_monitor_.active()) {
     link_monitor_.stop(now, link_);
@@ -1178,7 +1225,7 @@ void App::run_frames() {
   // Speeding up (GBA, the speed key held): fast_times() times the game's speed, by the clock.
   // Not while linked or at an event, where the other side expects the game's own pace. Its sound
   // plays along, sped up as much (Audio::set_fast), and back to normal the moment it ends.
-  const bool fast = game_ && game_->system == System::GBA && !link_.active() && !local_.active() && event_key_.empty() &&
+  const bool fast = game_ && handheld::is_handheld(game_->system) && !link_.active() && !local_.active() && event_key_.empty() &&
                     overlay_ == Overlay::None && input_.speed_held();
   if (fast != fast_) {
     fast_ = fast;
@@ -1770,8 +1817,8 @@ std::vector<App::MenuItem> App::menu_items() const {
     }
     return psp;
   }
-  if (game_ && game_->system == System::GBA) {
-    // A GBA game: its own pictures; no textures, resolution or overscan (a sharp 240x160 screen).
+  if (game_ && handheld::is_handheld(game_->system)) {
+    // A GBA or Game Boy game: its own pictures; no textures, resolution or overscan (a sharp small screen).
     const GbaLookDef& g = kGbaLooks[gba_look(settings_, id)];
     std::vector<MenuItem> gba;
     for (MenuItem& it : items) {
@@ -1827,7 +1874,7 @@ void App::menu_change(int id, int dir) {
       if (overlay_ == Overlay::None) toast("State slot " + std::to_string(slot_));
       break;
     case kPicture: {
-      if (game_ && game_->system == System::GBA) {
+      if (game_ && handheld::is_handheld(game_->system)) {
         const int p = (gba_look(settings_, gid) + step + kGbaLookCount) % kGbaLookCount;
         settings_.set_game_int(gid, "gba_look", p);
         toast(std::string("Picture: ") + kGbaLooks[p].name + " - " + kGbaLooks[p].blurb);
@@ -2121,7 +2168,7 @@ void App::draw_home() {
     const float cy = H * 0.42f;
     ui_.image(ui_.logo(), W / 2 - 64 * s, cy - 150 * s, 128 * s, 128 * s);
     ui_.text(W / 2, cy, "Add your games", 40 * s, kText, true, Align::Center);
-    ui_.text(W / 2, cy + 60 * s, "Press O (or Y on a controller) to choose the folder with your N64 game files.", 22 * s,
+    ui_.text(W / 2, cy + 60 * s, "Press O (or Y on a controller) to choose the folder with your N64, GBA, Game Boy and PSP games.", 22 * s,
              kDim, false, Align::Center);
     ui_.text(W / 2, cy + 94 * s, "Zipped games (.zip, .7z, .rar) work too. You can also drop a game onto this window.", 22 * s, kDim, false, Align::Center);
     const float bw = ui_.measure("Choose games folder", 22 * s, true) + 56 * s;
@@ -2162,7 +2209,7 @@ void App::draw_home() {
       ui_.text(x + 22 * s, y + 22 * s + l * 32 * s, lines[l], 26 * s, sel ? kText : kText.with_alpha(0.85f), true);
     }
     // Which console, then where it's from: one library holds every console's games.
-    std::string meta = std::string(system_name(g.system)) + "  ·  " + (g.region.empty() ? g.internal_name : g.region);
+    std::string meta = console_label(g) + "  ·  " + (g.region.empty() ? g.internal_name : g.region);
     ui_.text(x + 22 * s, y + tile_h - 44 * s, ui_.fit(meta, 18 * s, tile_w - 150 * s), 18 * s, kDim);
     if (fs::is_directory(library_for(g.system) / g.internal_name / "current", ec)) {
       const float cw = ui_.measure("Saved progress", 15 * s) + 24 * s;
@@ -2758,10 +2805,11 @@ void App::run_one_frame() {
 
 std::vector<const Game*> App::second_game_choices() const {
   std::vector<const Game*> out;
-  if (!game_ || game_->system != System::GBA) return out;
+  if (!game_ || !handheld::is_handheld(game_->system)) return out;
   for (const Game& g : games_) {
-    // Not the same game: both copies would share its one save in the library.
-    if (g.system == System::GBA && g.internal_name != game_->internal_name) out.push_back(&g);
+    // Not the same game: both copies would share its one save in the library. A Game Boy game links
+    // with a Game Boy game, a GBA game with a GBA game.
+    if (g.system == game_->system && g.internal_name != game_->internal_name) out.push_back(&g);
   }
   return out;
 }
@@ -2787,7 +2835,7 @@ bool App::link_needs_restart() const {
 }
 
 void App::start_local_link(const Game& second) {
-  if (!game_ || game_->system != System::GBA || second.system != System::GBA) return;
+  if (!game_ || !handheld::is_handheld(game_->system) || second.system != game_->system) return;
   if (second.internal_name == game_->internal_name) {
     toast("Pick a different game: two copies of one game would share its save", 5);
     return;
@@ -2803,12 +2851,13 @@ void App::start_local_link(const Game& second) {
   const std::string m1 = link_mode(*game_), m2 = link_mode(second);
   local_mode_ = m1 == "auto" && m2 == "auto" ? "auto" : m1 == "wireless" && m2 == "wireless" ? "wireless" : "cable";
   const std::string serial = local_mode_ == "cable" ? "mul_poke" : local_mode_ == "wireless" ? "rfu" : "auto";
-  if (core_.option("gpsp_serial") != serial) restart_game_keep_progress();  // the first game's link port too
-  // gpSP keeps its state in globals: the second game runs in its own copy of the library.
+  if (game_->system == System::GBA && core_.option("gpsp_serial") != serial) restart_game_keep_progress();  // the first game's link port too
+  // The cores keep their state in globals: the second game runs in its own copy of the library.
   std::error_code ec;
-  const fs::path copy = pref_dir_ / "cores" / (gba_core_path_.stem().string() + "-second" + gba_core_path_.extension().string());
+  const fs::path& lib = core_path(game_->system);
+  const fs::path copy = pref_dir_ / "cores" / (lib.stem().string() + "-second" + lib.extension().string());
   fs::create_directories(copy.parent_path(), ec);
-  fs::copy_file(gba_core_path_, copy, fs::copy_options::overwrite_existing, ec);
+  fs::copy_file(lib, copy, fs::copy_options::overwrite_existing, ec);
   if (ec) {
     toast("Could not prepare the second game: " + ec.message(), 6);
     local_mode_.clear();
@@ -2836,7 +2885,7 @@ void App::start_local_link(const Game& second) {
     return;
   }
   focus2_ = false;
-  toast("Linked " + game_->title + " and " + second.title + " (" + (local_mode_ == "wireless" ? "Wireless Adapter" : "link cable") +
+  toast("Linked " + game_->title + " and " + second.title + " (" + (local_mode_ == "wireless" && game_->system == System::GBA ? "Wireless Adapter" : "link cable") +
             "). F3, or Controlling in the menu, switches which one you play",
         8);
 }
@@ -2865,26 +2914,22 @@ void App::switch_local_focus() {
 void App::load_second_save() {
   last_saved2_.clear();
   pending2_.clear();
-  uint8_t* ram = core2_.save_ram();
-  if (!ram || core2_.save_ram_size() != savekit::kGbaSaveSize) return;
+  if (handheld::snapshot(core2_, game2_->system).empty()) return;
   try {
-    if (auto saved = savekit::load_current(gba_library_dir_, game2_->internal_name)) {
-      auto it = saved->memories.find(savekit::Memory::GbaSave);
-      if (it != saved->memories.end() && it->second.size() == savekit::kGbaSaveSize) {
-        std::memcpy(ram, it->second.data(), savekit::kGbaSaveSize);
-      }
+    if (auto saved = savekit::load_current(library_for(game2_->system), game2_->internal_name)) {
+      handheld::restore(game2_->system, *saved, core2_);
     }
   } catch (const std::exception& e) {
     toast(std::string("Could not load ") + game2_->title + "'s save: " + e.what(), 6);
   }
-  last_saved2_.assign(ram, ram + savekit::kGbaSaveSize);
+  last_saved2_ = handheld::snapshot(core2_, game2_->system);
 }
 
 // As sync_game_save, for the second game.
 void App::sync_second_save(bool force) {
-  uint8_t* ram = core2_.save_ram();
-  if (!game2_ || !ram || core2_.save_ram_size() != savekit::kGbaSaveSize) return;
-  std::vector<uint8_t> now(ram, ram + savekit::kGbaSaveSize);
+  if (!game2_) return;
+  std::vector<uint8_t> now = handheld::snapshot(core2_, game2_->system);
+  if (now.empty()) return;
   if (now == last_saved2_) {
     pending2_.clear();
     return;
@@ -2895,15 +2940,15 @@ void App::sync_second_save(bool force) {
     return;
   }
   if (!force && frame_count_ - pending2_since_ < 60) return;
-  if (std::all_of(now.begin(), now.end(), [](uint8_t b) { return b == 0xFF; })) {
+  if (handheld::blank(game2_->system, now, core2_)) {
     last_saved2_ = now;
     return;
   }
   try {
     savekit::StoreOptions o;
-    o.library = gba_library_dir_;
+    o.library = library_for(game2_->system);
     o.game = game2_->internal_name;
-    o.save.memories[savekit::Memory::GbaSave] = savekit::Bytes(now);
+    o.save = handheld::to_save(game2_->system, now, core2_);
     if (savekit::store_current(o).changed) toast(game2_->title + ": progress saved", 2);
     last_saved2_ = now;
     pending2_.clear();

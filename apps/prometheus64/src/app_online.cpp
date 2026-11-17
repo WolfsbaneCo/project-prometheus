@@ -270,13 +270,15 @@ void App::open_online() {
 // GBA link play
 
 const Game* App::link_game() const {
-  if (game_) return game_->system == System::GBA ? &*game_ : nullptr;
+  const auto linkable = [](const Game& g) { return g.system == System::GBA || g.system == System::GB; };
+  if (game_) return linkable(*game_) ? &*game_ : nullptr;
   if (games_.empty()) return nullptr;
   const Game& g = games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)];
-  return g.system == System::GBA ? &g : nullptr;
+  return linkable(g) ? &g : nullptr;
 }
 
 std::string App::link_mode(const Game& game) const {
+  if (game.system == System::GB) return "gb";  // the Game Boy's own cable
   bool wireless = false;
   if (!pokemon_gen3(game, &wireless)) return "auto";  // gpSP knows the other games' links
   // The cable by default: every generation 3 Pokemon game has it, so any two can link.
@@ -943,12 +945,14 @@ void App::draw_online() {
       y += 172 * s;
     };
     if (keyed && link_game()) {
-      // A GBA game: a link, not a shared game. Each player plays their own game; only what goes
-      // over the link travels, so nothing waits on the connection.
+      // A GBA or Game Boy game: a link, not a shared game. Each player plays their own game; only
+      // what goes over the link travels, so nothing waits on the connection.
       const Game& g = *link_game();
       const std::string mode = link_mode(g);
       card("Host a link", "Link " + g.title + " with friends: you get a code to send them", "Host a link", kObLinkHost, true,
-           "Each of you plays your own game at full speed; only the link travels");
+           g.system == System::GB
+               ? "Each of you plays your own game; every byte on a Game Boy cable waits for the other side, so far apart a trade takes minutes"
+               : "Each of you plays your own game at full speed; only the link travels");
       card("Join a link", "Type the code a friend sent you", "Join", kObJoin, true);
       bool wireless = false;
       if (pokemon_gen3(g, &wireless) && wireless) {
