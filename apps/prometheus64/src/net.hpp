@@ -60,7 +60,7 @@ class WebSocket {
   // Messages queued and not yet handed to the connection (for the log: a line that can't keep up).
   std::size_t backlog() const;
   // How long the relay itself has been silent, in milliseconds: the connection asks it for a
-  // sign of life every 3 seconds, whatever the other players do. -1 until its first answer (a
+  // sign of life every 2 seconds, whatever the other players do. -1 until its first answer (a
   // relay that never answers can't be judged this way).
   int silent_ms() const;
 

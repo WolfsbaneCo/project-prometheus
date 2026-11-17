@@ -486,10 +486,12 @@ int App::texture_look(const std::string& id) const {
 
 void App::apply_core_options(const Game& game, Core* target) {
   if (game.system == System::PSP) {
-    // PPSSPP: drawn at a multiple of the PSP's 480x272 that fills the screen's height (up to 6x,
-    // 1632 lines), with its usual accuracy settings; the buttons as Input::set_psp places them.
+    // PPSSPP: drawn at a multiple of the PSP's 480x272 that fills the screen's height (2x to 4x
+    // on its own: higher is sharper on a big screen, but the most common reason PSP games slow
+    // down on a laptop; Resolution in the menu goes up to 8x), with its usual accuracy settings;
+    // the buttons as Input::set_psp places them.
     auto set = [&](const char* key, const std::string& value) { core_.set_option(key, value); };
-    int factor = std::clamp((out_h_ + 271) / 272, 2, 6);
+    int factor = std::clamp((out_h_ + 271) / 272, 2, 4);
     if (const int chosen = settings_.game_int(game.id, "psp_resolution", 0); chosen >= 1 && chosen <= 10) factor = chosen;
     set("ppsspp_internal_resolution", std::to_string(480 * factor) + "x" + std::to_string(272 * factor));
     set("ppsspp_cpu_core", "JIT");
@@ -499,6 +501,14 @@ void App::apply_core_options(const Game& game, Core* target) {
     set("ppsspp_mulitsample_level", "disabled");
     set("ppsspp_button_preference", "Cross");  // Cross confirms, as on Western PSPs
     set("ppsspp_language", "Automatic");
+    // Input lag, the most common complaint about PSP emulation: PPSSPP keeps up to 2 frames of
+    // drawing in hand by default; 1 keeps most of the speed and answers a frame sooner.
+    set("ppsspp_inflight_frames", "Up to 1");
+    // The stick: PPSSPP adds no deadzone of its own and the app passes the stick as it is, so a
+    // worn stick would drift; 15%, as for N64 games.
+    set("ppsspp_analog_deadzone", "0.15");
+    // HD texture packs, as PPSSPP reads them: Memories\PSP\PSP\TEXTURES\<game ID>.
+    set("ppsspp_texture_replacement", "enabled");
     for (const auto& o : opt_.core_options) {  // test mode: "--option key=value" overrides
       const auto eq = o.find('=');
       if (eq != std::string::npos) set(o.substr(0, eq).c_str(), o.substr(eq + 1));
@@ -1222,10 +1232,10 @@ void App::run_frames() {
       SDL_Log("link: waited %.1f s for the other player's connection", static_cast<double>(now - link_wait_since_ns_) / 1e9);
     link_wait_since_ns_ = 0;
   }
-  // Speeding up (GBA, the speed key held): fast_times() times the game's speed, by the clock.
+  // Speeding up (GBA, Game Boy and PSP, the speed key held): fast_times() times the game's speed, by the clock.
   // Not while linked or at an event, where the other side expects the game's own pace. Its sound
   // plays along, sped up as much (Audio::set_fast), and back to normal the moment it ends.
-  const bool fast = game_ && handheld::is_handheld(game_->system) && !link_.active() && !local_.active() && event_key_.empty() &&
+  const bool fast = game_ && (handheld::is_handheld(game_->system) || game_->system == System::PSP) && !link_.active() && !local_.active() && event_key_.empty() &&
                     overlay_ == Overlay::None && input_.speed_held();
   if (fast != fast_) {
     fast_ = fast;
@@ -1318,8 +1328,10 @@ void App::check_speed(double fps) {
     slow_told_ = true;
     SDL_Log("speed: %llu frames in %.1f s, expected %.0f", static_cast<unsigned long long>(frame_count_ - speed_frames_),
             static_cast<double>(span) / 1e9, expected);
-    toast("This computer can't keep the game at full speed with these settings. Menu > Picture: Retro, or "
-          "Textures: Original, is lighter",
+    toast(game_ && game_->system == System::PSP
+              ? "This computer can't keep the game at full speed at this resolution. Menu > Resolution: a lower one is lighter"
+              : "This computer can't keep the game at full speed with these settings. Menu > Picture: Retro, or "
+                "Textures: Original, is lighter",
           9);
   }
   speed_since_ns_ = now;

@@ -833,8 +833,8 @@ void App::run_online_frames(uint64_t frame_ns) {
     }
     stalled_since_ns_ = 0;
     if (net_.frame() % 600 == 0 && net_.frame()) {
-      SDL_Log("online: frame %u, %d pauses, %llu ms waiting in the last 10 s (delay %d)", net_.frame(), stalls_,
-              static_cast<unsigned long long>(stalled_ns_ / 1'000'000), net_.my_delay());
+      SDL_Log("online: frame %u, %d pauses, %llu ms waiting in the last 10 s (delay %d) | direct path: %s", net_.frame(),
+              stalls_, static_cast<unsigned long long>(stalled_ns_ / 1'000'000), net_.my_delay(), net_.direct_status().c_str());
       stalls_ = 0;
       stalled_ns_ = 0;
     }
@@ -1344,7 +1344,8 @@ void App::draw_online_status() {
     text = "Paused by " + net_.player_name(0);
   } else if (stalled_since_ns_ && SDL_GetTicksNS() - stalled_since_ns_ > 300'000'000) {
     const std::string who = net_.waiting_for();
-    text = "Waiting for " + (who.empty() ? std::string("the other players") : who) + "...";
+    text = net_.reconnecting() ? std::string("Connection lost. Reconnecting: the game carries on where it was...")
+                               : "Waiting for " + (who.empty() ? std::string("the other players") : who) + "...";
   }
   if (text.empty()) return;
   const float w = ui_.measure(text, 24 * s, true) + 60 * s, h = 60 * s;

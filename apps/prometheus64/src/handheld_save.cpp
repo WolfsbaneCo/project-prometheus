@@ -25,8 +25,10 @@ std::vector<uint8_t> snapshot(Core& core, System s) {
 bool blank(System s, const std::vector<uint8_t>& snap, Core& core) {
   if (snap.empty()) return true;
   const std::size_t ram = s == System::GB ? std::min(snap.size(), core.save_ram_size()) : snap.size();
+  // GBA: gpSP starts the block all 0xFF. Game Boy: Gambatte leaves the cartridge memory as it
+  // finds it, all 0xFF or all 0x00.
   const uint8_t first = snap[0];
-  return (first == 0xFF || first == 0x00) &&
+  return (first == 0xFF || (first == 0x00 && s == System::GB)) &&
          std::all_of(snap.begin(), snap.begin() + static_cast<std::ptrdiff_t>(ram), [first](uint8_t b) { return b == first; });
 }
 

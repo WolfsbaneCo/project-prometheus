@@ -22,6 +22,13 @@
 //   is replaced before the games notice.
 // A guest can always come back; a host needs the relay from 0.2.13 on, which gives it its room
 // code again (an older relay hands out a new code, and the link ends as it used to).
+//
+// A second path (since 0.4.0): the two apps also reach each other directly (direct.hpp), when their
+// routers let them. Each numbered packet then goes both ways at once and the first copy to arrive
+// is used (the other is dropped as already had), so a stall or a break on either path costs
+// nothing: while the relay reconnects, the games carry on over the direct path, and while the
+// direct path is down, over the relay. Packets that arrive out of order (one datagram lost, the
+// next one there) wait a moment for the missing one to come over the relay.
 #pragma once
 
 #include <cstdint>
@@ -31,6 +38,7 @@
 #include <vector>
 
 #include "libretro.h"
+#include "direct.hpp"
 #include "link_pacer.hpp"
 #include "net.hpp"
 
@@ -49,6 +57,7 @@ class Link {
     // matches) or the app started a new one is known from its kCaps.
     bool rejoining = false;
     uint32_t session = 0;     // its link's session (kCaps; 0: not told, an app from 0.2.13)
+    bool relay_gone = false;  // the relay says it left, but the direct path still reaches it
   };
 
   ~Link();
@@ -107,13 +116,18 @@ class Link {
     int relay_silent_ms = -1;  // how long the relay itself has been silent (-1: not known)
     uint64_t resent = 0, dropped = 0;  // packets sent again after a reconnection; duplicates dropped
     int reconnects = 0;                // connections taken up again since the link started
+    uint64_t direct_first = 0;         // packets that came over the direct path before the relay's copy
+    std::string direct;                // the direct path to each other player ("up 180 ms via ...")
   };
   Stats take_stats();
 
  private:
   // kPing and kPong (since 0.2.12) measure the time to the other player and back; kBye, kResume,
   // kCaps and kSeq (since 0.2.13) take a broken link up again. Older apps ignore what they don't know.
-  enum Kind : uint8_t { kCore = 1, kHello = 2, kVersion = 3, kTick = 4, kPing = 5, kPong = 6, kBye = 7, kResume = 8, kCaps = 9, kSeq = 10 };
+  enum Kind : uint8_t {
+    kCore = 1, kHello = 2, kVersion = 3, kTick = 4, kPing = 5, kPong = 6, kBye = 7, kResume = 8, kCaps = 9, kSeq = 10,
+    kDirect = 11  // since 0.4.0: this app's direct path offer (direct.hpp)
+  };
   static constexpr uint8_t kBroadcast = 255;
 
   void open(const std::string& url);
@@ -128,6 +142,11 @@ class Link {
   void on_binary(const std::string& data);
   void on_closed(const net::WebSocket::Event& e);
   void say_hello(int to);
+  // Sends a relay-shaped message ([to][kind][payload]) to the relay and, if `direct` and the path to
+  // that player is up, over the direct path too.
+  void post(std::string msg, bool direct);
+  void pump_direct();  // what arrived over the direct path, handled as if from the relay
+  void send_offer(int to);
   void start_core();
   void stop_core();
 
@@ -137,6 +156,7 @@ class Link {
 
   net::WebSocket ws_;
   net::WebSocket farewell_;  // a goodbye sent after leaving while the connection was down
+  net::DirectPath direct_;   // the second path, straight to the other apps
   Phase phase_ = Phase::Off;
   int me_ = -1;
   std::string code_, status_, name_, mode_, game_, version_;
@@ -153,6 +173,9 @@ class Link {
     bool synced = true;               // since the last (re)connection it has said what it received
     uint64_t since_ns = 0;            // when it went away, or the wait for its word began
     uint64_t asked_ns = 0;            // when it was last asked what it received
+    // Packets that came ahead of one still missing (by number), held for it a moment.
+    std::map<uint32_t, std::string> early;
+    uint64_t gap_ns = 0;              // since when one is missing
   };
   std::map<int, Line> lines_;
   std::string relay_url_, key_, token_;
@@ -160,7 +183,7 @@ class Link {
   uint64_t lost_ns_ = 0, retry_ns_ = 0;
   uint32_t session_ = 0;  // this link's session, new for each host() or join(), told in kCaps
   int reconnects_ = 0;
-  uint64_t resent_ = 0, dropped_ = 0;
+  uint64_t resent_ = 0, dropped_ = 0, direct_first_ = 0;
   Stats stats_;
   double ping_sum_ = 0;
   uint64_t last_ping_ns_ = 0;

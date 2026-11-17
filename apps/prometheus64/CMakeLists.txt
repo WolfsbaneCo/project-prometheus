@@ -32,6 +32,7 @@ target_include_directories(p64_xbrz PUBLIC third_party/xbrz)
 add_executable(prometheus64 WIN32
   src/app.cpp
   src/handheld_save.cpp
+  src/direct.cpp
   src/archive.cpp
   src/cloudflare.cpp
   src/app_backup.cpp
@@ -95,14 +96,14 @@ endif()
 # Online play without the emulator: two players in one process, through a relay, at the game's
 # speed. Measures pauses and delays from the network alone (tools/netsim.cpp). Not built by default:
 #   cmake --build build --target p64_netsim
-add_executable(p64_netsim EXCLUDE_FROM_ALL tools/netsim.cpp src/netplay.cpp src/net.cpp src/json.cpp)
+add_executable(p64_netsim EXCLUDE_FROM_ALL tools/netsim.cpp src/netplay.cpp src/net.cpp src/direct.cpp src/json.cpp)
 target_include_directories(p64_netsim PRIVATE src)
 target_link_libraries(p64_netsim PRIVATE SDL3::SDL3-static p64_curl)
 
 # A GBA game without a window, driven by a script: the test bench for the event gift station
 # (tools/giftsim.cpp). Not built by default:
 #   cmake --build build --target p64_giftsim
-add_executable(p64_giftsim EXCLUDE_FROM_ALL tools/giftsim.cpp src/core.cpp src/local_link.cpp src/gift_station.cpp src/cable_station.cpp src/gift_catalog.cpp src/pokemon_hints.cpp src/pokemon_stats.cpp src/link.cpp src/link_monitor.cpp src/net.cpp src/json.cpp)
+add_executable(p64_giftsim EXCLUDE_FROM_ALL tools/giftsim.cpp src/core.cpp src/local_link.cpp src/gift_station.cpp src/cable_station.cpp src/gift_catalog.cpp src/pokemon_hints.cpp src/pokemon_stats.cpp src/link.cpp src/link_monitor.cpp src/net.cpp src/direct.cpp src/json.cpp)
 target_include_directories(p64_giftsim PRIVATE src third_party/libretro)
 target_link_libraries(p64_giftsim PRIVATE SDL3::SDL3-static p64_curl)
 
@@ -159,4 +160,11 @@ add_test(NAME pokemon_stats COMMAND pokemon_stats_tests)
   target_include_directories(library_tests PRIVATE src)
   target_link_libraries(library_tests PRIVATE savekit p64_archive p64_zlib p64_warnings)
   add_test(NAME library COMMAND library_tests)
+  add_executable(direct_tests tests/direct_tests.cpp src/direct.cpp)
+  target_include_directories(direct_tests PRIVATE src)
+  target_link_libraries(direct_tests PRIVATE SDL3::SDL3-static p64_warnings)
+  if(WIN32)
+    target_link_libraries(direct_tests PRIVATE ws2_32)
+  endif()
+  add_test(NAME direct COMMAND direct_tests)
 endif()

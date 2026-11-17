@@ -126,6 +126,40 @@ await assert.rejects(open(`/v1/rooms/${code}${q("&name=Late")}`));
   await g3b.closed;
 }
 
+// A game that has started: a guest whose connection closed (and the relay noticed) comes back with
+// its token and gets its id again, though newcomers are turned away; a stranger's token doesn't.
+{
+  const h = await open(`/v1/host${q("&name=Ana")}`);
+  const hw = await h.next();
+  const g = await open(`/v1/rooms/${hw.code}${q("&name=Ben")}`);
+  const gw = await g.next();
+  assert.equal((await h.next()).t, "join");
+  h.send(new Uint8Array([254, 1])); // started
+  await sleep(200);
+  g.close();
+  assert.deepEqual(await h.next(), { t: "leave", id: 1 });
+  await sleep(200);
+  await assert.rejects(open(`/v1/rooms/${hw.code}${q("&name=Late")}`));
+  await assert.rejects(open(`/v1/rooms/${hw.code}${q("&name=Eve&resume=000000000000000000000000&id=1")}`));
+  const back = await open(`/v1/rooms/${hw.code}${q(`&name=Ben&resume=${gw.token}&id=1`)}`);
+  const bw = await back.next();
+  assert.equal(bw.you, 1);
+  assert.deepEqual(await h.next(), { t: "join", id: 1, name: "Ben" });
+  back.send(new Uint8Array([255, 3]));
+  assert.deepEqual(Array.from(await h.next()), [1, 3]);
+  // A token works once.
+  back.close();
+  await h.next();
+  await sleep(200);
+  const again = await open(`/v1/rooms/${hw.code}${q(`&name=Ben&resume=${bw.token}&id=1`)}`);
+  assert.equal((await again.next()).you, 1);
+  again.close();
+  await h.next();
+  await sleep(200);
+  await assert.rejects(open(`/v1/rooms/${hw.code}${q(`&name=Ben&resume=${bw.token}&id=1`)}`));
+  h.close();
+}
+
 // The host leaving closes the room for everyone, and its code stops working.
 host.close();
 const closed = await guest.closed;

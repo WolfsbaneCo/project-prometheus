@@ -364,9 +364,9 @@ void WebSocket::run(std::string url) {
   };
 
   while (open && !stop_) {
-    // Every 3 seconds, ask the relay for a sign of life (a WebSocket ping, which it answers
+    // Every 2 seconds, ask the relay for a sign of life (a WebSocket ping, which it answers
     // itself): silent_ms() then tells a dead connection from a quiet partner.
-    if (const uint64_t now = SDL_GetTicks(); now - asked_ms >= 3000) {
+    if (const uint64_t now = SDL_GetTicks(); now - asked_ms >= 2000) {
       asked_ms = now;
       if (!send_all(std::string(), CURLWS_PING, 0)) break;
     }
