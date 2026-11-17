@@ -6,14 +6,27 @@
 //
 // The host picks the game, the input delay and which computer drives which N64 port, sends its
 // own save to the guests, and alone can pause or reset. Brief section 11.
+//
+// Keeping a game going when a connection fails (since 0.4.0), in layers:
+// - Once the game starts, every message to a player carries a number (kSeq) and is kept; a
+//   connection that breaks is taken up again with the relay (the same room, the same player id),
+//   and each side tells the other the last number it received (kResume) so the rest is sent again.
+//   The game holds still meanwhile (lockstep waits for the inputs) and carries on where it was.
+// - A player whose connection to the relay breaks is waited for (45 seconds) instead of ending
+//   the game; one leaving on purpose says so (kBye, or the host's kEnd).
+// - A direct path between the computers (direct.hpp) carries the same numbered messages beside the
+//   relay; the first copy of each is used. While the relay reconnects, the game doesn't even stop.
+// - A connection gone silent is noticed in 6 seconds (the relay answers a ping every 2).
 #pragma once
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
 
+#include "direct.hpp"
 #include "input.hpp"
 #include "net.hpp"
 
@@ -21,7 +34,7 @@ namespace p64 {
 
 class Netplay {
  public:
-  static constexpr int kProtocol = 3;  // this app's own messages (the relay has its own version)
+  static constexpr int kProtocol = 4;  // this app's own messages (the relay has its own version); 4: numbered, resumable
   static constexpr int kPorts = 4;
   // Up to a third of a second: enough for friends on different continents.
   static constexpr int kMinDelay = 2, kMaxDelay = 20;
@@ -112,13 +125,21 @@ class Netplay {
   void frame_done(const uint8_t* ram, std::size_t size);  // after running the current frame
   void flush(bool force = false);  // send sampled input (in pairs of frames, unless forced)
   std::string waiting_for() const;  // who we are waiting on, if the next frame can't run
+  // The connection to the relay broke and is being taken up again.
+  bool reconnecting() const { return reconnecting_; }
+  // For the log: the direct path to each other player.
+  std::string direct_status() const;
   void request_reset();             // host
   void set_paused(bool paused);     // host
 
  private:
   enum Msg : uint8_t {
     kHello = 1, kReject, kLobby, kHaveGame, kStart, kReady, kGo, kInput, kHash, kPing, kPong, kReset, kPause, kEnd,
-    kTiming
+    kTiming,
+    kSeq = 16,     // [seq u32][message]: a numbered message (from the start of a game on)
+    kResume = 17,  // [received u32]: the last number received from the other; it sends the rest again
+    kBye = 18,     // a guest leaving on purpose
+    kDirect = 19,  // this app's direct path offer (direct.hpp)
   };
   // How another computer's inputs arrive here: the margin is how many frames before it was needed
   // each message came (negative: late, the game waited). Measured over a second, then sent to it.
@@ -141,7 +162,15 @@ class Netplay {
   void send(int to, const std::string& body);
   void on_text(const std::string& text);
   void on_binary(const std::string& data);
-  void on_closed(const std::string& reason);
+  void handle(const std::string& data);  // a message, its numbering taken off: [from][type][...]
+  void on_closed(const net::WebSocket::Event& e);
+  std::string url(bool again) const;
+  void begin_reconnect(const std::string& why);
+  void send_resume(int to);
+  void send_offer(int to);
+  void pump_direct();
+  void player_gone(int id, const std::string& why);
+  bool numbered() const { return phase_ == Phase::Starting || phase_ == Phase::Running; }
   void broadcast_lobby();
   void assign_ports();
   void end(const std::string& reason, bool keep_playing);
@@ -154,6 +183,22 @@ class Netplay {
   uint8_t used_ports() const;
 
   net::WebSocket ws_;
+  net::DirectPath direct_;
+  // Taking a broken connection up again: each other player's numbered messages.
+  struct Line {
+    uint32_t sent = 0, received = 0;
+    std::deque<std::string> kept;  // the last messages sent (the newest is number `sent`)
+    std::map<uint32_t, std::string> early;  // ones that came ahead of a missing one
+    uint64_t gap_ns = 0, asked_ns = 0;
+    bool away = false;        // its connection broke; waiting for it to come back
+    bool relay_gone = false;  // the relay says it left, but the direct path still reaches it
+    bool said_bye = false;
+    uint64_t since_ns = 0;
+  };
+  std::map<int, Line> lines_;
+  std::string relay_url_, key_, token_;
+  bool reconnecting_ = false;
+  uint64_t lost_ns_ = 0, retry_ns_ = 0;
   Phase phase_ = Phase::Off;
   int me_ = -1;
   std::string code_, status_, my_name_, versions_;

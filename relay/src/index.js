@@ -16,6 +16,9 @@
 // /v1/rooms/<CODE>?..&resume=<token>&id=<its id> gets its id again. A connection the relay still
 // held for that player (it hadn't noticed the break) is replaced, and the others hear a `join`
 // with the id they already know. Without these, nothing changes for older apps.
+// A player whose connection the relay did see close is remembered for two minutes (its token,
+// id, name, and whether its game had started), so a guest gets its id back even in a game that
+// has started (which turns away newcomers), and a host its room as it was.
 //
 // Messages from the apps are binary: the first byte names the recipient (255 = everyone else),
 // the rest is passed on unchanged, with that first byte replaced by the sender's player id
@@ -28,6 +31,7 @@ const CODE_LENGTH = 5;
 const MAX_PLAYERS = 4; // computers per room, the host included
 const BROADCAST = 255;
 const TO_RELAY = 254;
+const REMEMBER_MS = 120000; // how long a player whose connection closed can come back as itself
 
 function randomCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH));
@@ -124,7 +128,13 @@ export class Room {
     // for them, if any (found by the token only their app knows).
     const resume = param(url, "resume", 64);
     const old = resume ? sockets.find((ws) => ws.deserializeAttachment().token === resume) : undefined;
-    const was = old ? old.deserializeAttachment() : undefined;
+    let was = old ? old.deserializeAttachment() : undefined;
+    if (resume && !was) {
+      // Its connection closed a moment ago and the relay noticed: remembered for a while.
+      const gone = await this.ctx.storage.get(`gone:${resume}`);
+      if (gone && Date.now() - gone.at < REMEMBER_MS && !players.some((p) => p.id === gone.id)) was = gone;
+      if (gone) await this.ctx.storage.delete(`gone:${resume}`);
+    }
 
     let id = 0;
     let started = false;
@@ -147,6 +157,7 @@ export class Room {
         players = [];
       }
     } else if (was && was.id !== 0) {
+      if (!players.some((p) => p.id === 0)) return new Response("This game isn't open any more", { status: 404 });
       id = was.id;
     } else {
       const host = players.find((p) => p.id === 0);
@@ -159,7 +170,7 @@ export class Room {
       id = asked >= 1 && asked < MAX_PLAYERS && !used.has(asked) ? asked : 1;
       while (used.has(id)) id++;
     }
-    if (was && was.id === id) {
+    if (old && was && was.id === id) {
       // Replaced quietly: nobody is told this player left.
       old.serializeAttachment({ ...was, replaced: true });
       try {
@@ -213,10 +224,20 @@ export class Room {
 
   leave(ws) {
     const gone = ws.deserializeAttachment();
-    if (gone.replaced) return; // its player came back on a new connection
+    if (gone.replaced || gone.left) return; // its player came back on a new connection, or this ran already
+    ws.serializeAttachment({ ...gone, left: true });
+    if (gone.token) {
+      this.ctx.storage.put(`gone:${gone.token}`, { id: gone.id, name: gone.name, started: !!gone.started, at: Date.now() });
+    }
     for (const other of this.ctx.getWebSockets()) {
       if (other === ws) continue;
       if (gone.id === 0) {
+        // The guests are sent away; each can come back as itself once the host is back.
+        const guest = other.deserializeAttachment();
+        if (guest.token && !guest.left) {
+          other.serializeAttachment({ ...guest, left: true });
+          this.ctx.storage.put(`gone:${guest.token}`, { id: guest.id, name: guest.name, at: Date.now() });
+        }
         try {
           other.close(4000, "The host left the game");
         } catch {

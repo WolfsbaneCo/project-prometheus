@@ -270,13 +270,15 @@ void App::open_online() {
 // GBA link play
 
 const Game* App::link_game() const {
-  if (game_) return game_->system == System::GBA ? &*game_ : nullptr;
+  const auto linkable = [](const Game& g) { return g.system == System::GBA || g.system == System::GB; };
+  if (game_) return linkable(*game_) ? &*game_ : nullptr;
   if (games_.empty()) return nullptr;
   const Game& g = games_[std::clamp(selected_, 0, static_cast<int>(games_.size()) - 1)];
-  return g.system == System::GBA ? &g : nullptr;
+  return linkable(g) ? &g : nullptr;
 }
 
 std::string App::link_mode(const Game& game) const {
+  if (game.system == System::GB) return "gb";  // the Game Boy's own cable
   bool wireless = false;
   if (!pokemon_gen3(game, &wireless)) return "auto";  // gpSP knows the other games' links
   // The cable by default: every generation 3 Pokemon game has it, so any two can link.
@@ -831,8 +833,8 @@ void App::run_online_frames(uint64_t frame_ns) {
     }
     stalled_since_ns_ = 0;
     if (net_.frame() % 600 == 0 && net_.frame()) {
-      SDL_Log("online: frame %u, %d pauses, %llu ms waiting in the last 10 s (delay %d)", net_.frame(), stalls_,
-              static_cast<unsigned long long>(stalled_ns_ / 1'000'000), net_.my_delay());
+      SDL_Log("online: frame %u, %d pauses, %llu ms waiting in the last 10 s (delay %d) | direct path: %s", net_.frame(),
+              stalls_, static_cast<unsigned long long>(stalled_ns_ / 1'000'000), net_.my_delay(), net_.direct_status().c_str());
       stalls_ = 0;
       stalled_ns_ = 0;
     }
@@ -943,12 +945,14 @@ void App::draw_online() {
       y += 172 * s;
     };
     if (keyed && link_game()) {
-      // A GBA game: a link, not a shared game. Each player plays their own game; only what goes
-      // over the link travels, so nothing waits on the connection.
+      // A GBA or Game Boy game: a link, not a shared game. Each player plays their own game; only
+      // what goes over the link travels, so nothing waits on the connection.
       const Game& g = *link_game();
       const std::string mode = link_mode(g);
       card("Host a link", "Link " + g.title + " with friends: you get a code to send them", "Host a link", kObLinkHost, true,
-           "Each of you plays your own game at full speed; only the link travels");
+           g.system == System::GB
+               ? "Each of you plays your own game; every byte on a Game Boy cable waits for the other side, so far apart a trade takes minutes"
+               : "Each of you plays your own game at full speed; only the link travels");
       card("Join a link", "Type the code a friend sent you", "Join", kObJoin, true);
       bool wireless = false;
       if (pokemon_gen3(g, &wireless) && wireless) {
@@ -1340,7 +1344,8 @@ void App::draw_online_status() {
     text = "Paused by " + net_.player_name(0);
   } else if (stalled_since_ns_ && SDL_GetTicksNS() - stalled_since_ns_ > 300'000'000) {
     const std::string who = net_.waiting_for();
-    text = "Waiting for " + (who.empty() ? std::string("the other players") : who) + "...";
+    text = net_.reconnecting() ? std::string("Connection lost. Reconnecting: the game carries on where it was...")
+                               : "Waiting for " + (who.empty() ? std::string("the other players") : who) + "...";
   }
   if (text.empty()) return;
   const float w = ui_.measure(text, 24 * s, true) + 60 * s, h = 60 * s;

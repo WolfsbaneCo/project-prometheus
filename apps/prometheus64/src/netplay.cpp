@@ -1,5 +1,6 @@
 #include "netplay.hpp"
 
+#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_timer.h>
 
 #include <algorithm>
@@ -28,7 +29,26 @@ constexpr int kSpare = 1;
 constexpr int kLowerAt = 3;
 constexpr uint64_t kLowerAfterNs = 3'000'000'000;
 
+// Taking a broken connection up again: how many sent messages are kept (inputs go 30 a second, so
+// over two minutes' worth), how long a player is waited for, and how long the relay may stay
+// silent before the connection counts as dead (it answers a ping every 2 seconds).
+constexpr std::size_t kKept = 8192;
+constexpr uint64_t kComeBackNs = 45'000'000'000ull;
+constexpr int kSilentMs = 6000;
+bool g_from_direct = false;
+// Time since `then`, never negative: `then` can be stamped a moment after `now` was read.
+uint64_t elapsed(uint64_t now, uint64_t then) { return now > then ? now - then : 0; }
+
 using net::url_encode;
+
+void put32(std::string& out, uint32_t v) {
+  for (int i = 0; i < 4; ++i) out += static_cast<char>((v >> (8 * i)) & 0xFF);
+}
+uint32_t get32(const std::string& in, std::size_t at) {
+  uint32_t v = 0;
+  for (int i = 0; i < 4; ++i) v |= static_cast<uint32_t>(static_cast<uint8_t>(in[at + static_cast<std::size_t>(i)])) << (8 * i);
+  return v;
+}
 
 // Little-endian message writing and reading. A reader that runs past the end stays failed and
 // returns zeros, so a short or garbled message is simply ignored.
@@ -143,7 +163,20 @@ void Netplay::open(const std::string& url, const std::string& name) {
   desynced_ = false;
   host_paused_ = false;
   events_.clear();
+  lines_.clear();
+  token_.clear();
+  reconnecting_ = false;
+  direct_.start();
   ws_.open(url);
+}
+
+std::string Netplay::url(bool again) const {
+  const std::string q = "?app=" + std::string(kApp) + "&v=" + std::to_string(kRelayProtocol) + "&key=" + url_encode(key_) +
+                        "&name=" + url_encode(my_name_);
+  if (is_host()) {
+    return relay_url_ + "/v1/host" + q + (again ? "&code=" + code_ + "&resume=" + token_ : std::string());
+  }
+  return relay_url_ + "/v1/rooms/" + code_ + q + (again ? "&id=" + std::to_string(me_) + "&resume=" + token_ : std::string());
 }
 
 void Netplay::host(const std::string& relay_url, const std::string& key, const std::string& name, const GameInfo& game,
@@ -152,6 +185,8 @@ void Netplay::host(const std::string& relay_url, const std::string& key, const s
   versions_ = versions;
   my_local_players_ = std::clamp(local_players, 1, kPorts);
   my_rumble_ = rumble_mask;
+  relay_url_ = relay_url;
+  key_ = key;
   open(relay_url + "/v1/host?app=" + kApp + "&v=" + std::to_string(kRelayProtocol) + "&key=" + url_encode(key) +
            "&name=" + url_encode(name),
        name);
@@ -163,6 +198,8 @@ void Netplay::join(const std::string& relay_url, const std::string& key, const s
   versions_ = versions;
   my_local_players_ = std::clamp(local_players, 1, kPorts);
   my_rumble_ = rumble_mask;
+  relay_url_ = relay_url;
+  key_ = key;
   open(relay_url + "/v1/rooms/" + code + "?app=" + kApp + "&v=" + std::to_string(kRelayProtocol) + "&key=" + url_encode(key) +
            "&name=" + url_encode(name),
        name);
@@ -174,8 +211,15 @@ void Netplay::leave() {
     Writer w;
     w.u8(kEnd).str(my_name_ + " ended the online game");
     send(kBroadcast, w.b);
+  } else if (phase_ != Phase::Connecting) {
+    // A guest leaving on purpose says so, so the others don't wait for it to come back.
+    Writer w;
+    w.u8(kBye);
+    send(kBroadcast, w.b);
   }
   ws_.close();
+  direct_.stop();
+  reconnecting_ = false;
   phase_ = Phase::Off;
   begin_at_ns_ = 0;
   me_ = -1;
@@ -189,10 +233,118 @@ std::vector<Netplay::Event> Netplay::take_events() {
 }
 
 void Netplay::send(int to, const std::string& body) {
+  if (!numbered()) {
+    std::string msg;
+    msg += static_cast<char>(to);
+    msg += body;
+    ws_.send(std::move(msg));
+    return;
+  }
+  // In a game: numbered and kept for each player, so it can be sent again after a broken
+  // connection, and over the direct path too.
+  for (const auto& p : players_) {
+    if (p.id == me_ || (to != kBroadcast && to != p.id)) continue;
+    Line& line = lines_[p.id];
+    line.kept.push_back(body);
+    if (line.kept.size() > kKept) line.kept.pop_front();
+    std::string msg;
+    msg += static_cast<char>(p.id);
+    msg += static_cast<char>(kSeq);
+    put32(msg, ++line.sent);
+    msg += body;
+    if (direct_.up(p.id)) {
+      std::string d = msg;
+      d[0] = static_cast<char>(me_);
+      direct_.send(p.id, d);
+    }
+    if (!reconnecting_ && !line.away) ws_.send(std::move(msg));
+  }
+}
+
+void Netplay::send_resume(int to) {
+  Line& line = lines_[to];
+  line.asked_ns = SDL_GetTicksNS();
   std::string msg;
   msg += static_cast<char>(to);
-  msg += body;
+  msg += static_cast<char>(kResume);
+  put32(msg, line.received);
   ws_.send(std::move(msg));
+}
+
+void Netplay::send_offer(int to) {
+  const std::string offer = direct_.offer();
+  if (offer.empty()) return;
+  std::string msg;
+  msg += static_cast<char>(to);
+  msg += static_cast<char>(kDirect);
+  msg += offer;
+  ws_.send(std::move(msg));
+}
+
+void Netplay::pump_direct() {
+  std::vector<std::pair<int, std::string>> got;
+  direct_.update(got);
+  for (auto& [id, data] : got) {
+    if (data.size() < 2 || !player(id)) continue;
+    data[0] = static_cast<char>(id);
+    g_from_direct = true;
+    on_binary(data);
+    g_from_direct = false;
+    if (phase_ == Phase::Off) return;
+  }
+}
+
+std::string Netplay::direct_status() const {
+  std::string out;
+  for (const auto& p : players_) {
+    if (p.id == me_) continue;
+    out += (out.empty() ? "" : "; ") + p.name + ": " + direct_.describe(p.id);
+  }
+  return out.empty() ? (direct_.running() ? "no one yet" : "off") : out;
+}
+
+// The connection to the relay broke in a game: the game holds where it is (unless the direct
+// path carries it), and the room is connected to again.
+void Netplay::begin_reconnect(const std::string& why) {
+  if (reconnecting_) return;
+  SDL_Log("online: connection lost (%s); connecting again", why.c_str());
+  reconnecting_ = true;
+  status_ = "Reconnecting...";
+  lost_ns_ = retry_ns_ = SDL_GetTicksNS();
+  for (auto& [id, line] : lines_) {
+    line.away = !direct_.up(id);
+    line.since_ns = lost_ns_;
+  }
+  ws_.close();
+}
+
+// A player is gone for good (it left, or didn't come back).
+void Netplay::player_gone(int id, const std::string& why) {
+  if (!player(id)) return;  // already gone (its goodbye, then the relay's word)
+  const std::string name = player_name(id);
+  bool playing = false;  // drives a port in this game (not someone turned away for arriving late)
+  for (const Port& port : ports_) playing = playing || port.player == id;
+  players_.erase(std::remove_if(players_.begin(), players_.end(), [&](const Player& p) { return p.id == id; }),
+                 players_.end());
+  recent_pings_.erase(id);
+  lines_.erase(id);
+  direct_.remove_peer(id);
+  if (id == 0 && !is_host() && numbered()) {
+    end(why.empty() ? "The host's connection was lost" : why, false);
+    return;
+  }
+  if (!is_host()) return;
+  if (phase_ == Phase::Lobby) {
+    events_.push_back({Event::Message, name + " left"});
+    assign_ports();
+    broadcast_lobby();
+  } else if ((phase_ == Phase::Running || phase_ == Phase::Starting) && playing) {
+    // A player leaving mid-game: end it for the others, and carry on offline.
+    Writer w;
+    w.u8(kEnd).str(name + " left the game");
+    send(kBroadcast, w.b);
+    end(name + (why.empty() ? " left" : " " + why) + ". You're playing offline now", true);
+  }
 }
 
 Netplay::Player* Netplay::player(int id) {
@@ -213,14 +365,56 @@ void Netplay::update() {
   if (phase_ == Phase::Off) return;
   for (auto& e : ws_.poll()) {
     switch (e.kind) {
-      case net::WebSocket::Event::Open: status_ = "Connected"; break;
+      case net::WebSocket::Event::Open:
+        if (!reconnecting_) status_ = "Connected";
+        break;
       case net::WebSocket::Event::Text: on_text(e.data); break;
       case net::WebSocket::Event::Binary: on_binary(e.data); break;
-      case net::WebSocket::Event::Closed: on_closed(e.data); break;
+      case net::WebSocket::Event::Closed: on_closed(e); break;
     }
     if (phase_ == Phase::Off) return;
+    if (reconnecting_ && !ws_.active()) break;  // the rest came from the connection that broke
   }
+  pump_direct();
+  if (phase_ == Phase::Off) return;
   const uint64_t now = SDL_GetTicksNS();
+  if (phase_ != Phase::Connecting && !reconnecting_ && me_ >= 0 && direct_.offer_changed()) send_offer(kBroadcast);
+  if (numbered()) {
+    if (reconnecting_) {
+      bool direct_all = players_.size() > 1;
+      for (const auto& p : players_) direct_all = direct_all && (p.id == me_ || direct_.up(p.id));
+      if (elapsed(now, lost_ns_) > kComeBackNs && !direct_all) {
+        const bool host = is_host();
+        end(host ? "The connection was lost and didn't come back. You're playing offline now"
+                 : "The connection was lost and didn't come back. Check your internet connection",
+            host);
+        return;
+      }
+      if (!ws_.active() && now >= retry_ns_) {
+        retry_ns_ = now + 1'500'000'000ull;
+        ws_.open(url(true));
+      }
+    } else if (const int silent = ws_.silent_ms(); silent > kSilentMs) {
+      begin_reconnect("the relay has been silent for " + std::to_string(silent / 1000) + " s");
+    }
+    std::vector<int> gone;
+    for (auto& [id, line] : lines_) {
+      if (line.relay_gone && !line.away && !direct_.up(id)) {
+        line.away = true;
+        line.since_ns = now;
+      }
+      if (line.away && elapsed(now, line.since_ns) > kComeBackNs) gone.push_back(id);
+      if (!line.early.empty() && line.gap_ns && elapsed(now, line.gap_ns) > 1'500'000'000ull && !reconnecting_) {
+        line.gap_ns = now;
+        send_resume(id);
+      }
+    }
+    for (int id : gone) {
+      SDL_Log("online: player %d didn't come back", id);
+      player_gone(id, "didn't come back");
+      if (phase_ == Phase::Off) return;
+    }
+  }
   if (begin_at_ns_ && now >= begin_at_ns_ && phase_ == Phase::Starting) {
     begin_at_ns_ = 0;
     begin();
@@ -242,7 +436,30 @@ void Netplay::on_text(const std::string& text) {
   json::Value v;
   if (!json::parse(text, v)) return;
   const std::string t = v["t"].str();
+  if (t == "welcome" && reconnecting_) {
+    // Back in the room after a broken connection: the same room and id, or it can't go on.
+    if (v["code"].str() != code_ || static_cast<int>(v["you"].num()) != me_) {
+      end(is_host() ? "The connection dropped and the relay couldn't open the same game again. You're playing offline now"
+                    : "The connection dropped and the game couldn't be joined again",
+          is_host());
+      return;
+    }
+    token_ = v["token"].str();
+    reconnecting_ = false;
+    status_.clear();
+    SDL_Log("online: connected again after %.1f s", static_cast<double>(SDL_GetTicksNS() - lost_ns_) / 1e9);
+    for (const auto& p : v["players"].array) {
+      const int id = static_cast<int>(p["id"].num());
+      if (id == me_ || !player(id)) continue;
+      lines_[id].away = false;
+      lines_[id].relay_gone = false;
+      send_resume(id);
+      send_offer(id);
+    }
+    return;
+  }
   if (t == "welcome") {
+    token_ = v["token"].str();
     me_ = static_cast<int>(v["you"].num());
     code_ = v["code"].str();
     phase_ = Phase::Lobby;
@@ -273,7 +490,18 @@ void Netplay::on_text(const std::string& text) {
     Player p;
     p.id = static_cast<int>(v["id"].num());
     p.name = v["name"].str();
+    if (numbered() && player(p.id)) {
+      // A player of this game back after a broken connection: each side sends what the other missed.
+      SDL_Log("online: player %d is back", p.id);
+      Line& line = lines_[p.id];
+      line.away = false;
+      line.relay_gone = false;
+      send_resume(p.id);
+      send_offer(p.id);
+      return;
+    }
     if (!player(p.id)) players_.push_back(p);
+    send_offer(p.id);
     if (is_host()) {
       if (phase_ == Phase::Running || phase_ == Phase::Starting) {
         // Too late to join this game (the relay normally stops them first): tell them.
@@ -286,29 +514,46 @@ void Netplay::on_text(const std::string& text) {
     }
   } else if (t == "leave") {
     const int id = static_cast<int>(v["id"].num());
-    const std::string name = player_name(id);
-    bool playing = false;  // drives a port in this game (not someone turned away for arriving late)
-    for (const Port& port : ports_) playing = playing || port.player == id;
-    players_.erase(std::remove_if(players_.begin(), players_.end(), [&](const Player& p) { return p.id == id; }),
-                   players_.end());
-    recent_pings_.erase(id);
-    if (!is_host()) return;
-    if (phase_ == Phase::Lobby) {
-      events_.push_back({Event::Message, name + " left"});
-      assign_ports();
-      broadcast_lobby();
-    } else if ((phase_ == Phase::Running || phase_ == Phase::Starting) && playing) {
-      // A player leaving mid-game: end it for the others, and carry on offline.
-      Writer w;
-      w.u8(kEnd).str(name + " left the game");
-      send(kBroadcast, w.b);
-      end(name + " left. You're playing offline now", true);
+    if (numbered() && player(id) && !lines_[id].said_bye) {
+      // In a game, without a goodbye: its connection broke. Wait for it to come back (the direct
+      // path may still reach it, and then the game doesn't even stop).
+      Line& line = lines_[id];
+      if (direct_.up(id)) {
+        line.relay_gone = true;
+        SDL_Log("online: player %d's connection to the relay dropped; the direct path carries the game", id);
+      } else {
+        line.away = true;
+        line.since_ns = SDL_GetTicksNS();
+        SDL_Log("online: player %d's connection dropped; waiting for it to come back", id);
+      }
+      return;
     }
+    player_gone(id, {});
   }
 }
 
-void Netplay::on_closed(const std::string& reason) {
+void Netplay::on_closed(const net::WebSocket::Event& e) {
   if (phase_ == Phase::Off) return;
+  const std::string& reason = e.data;
+  if (numbered() && !token_.empty()) {
+    if (reconnecting_) {
+      // An attempt failed. A relay that refuses for good ends it (423: an older relay turns away a
+      // player coming back to a game that started); anything else is tried again (404: the host
+      // isn't back yet).
+      if (e.status == 400 || e.status == 401 || e.status == 403 || e.status == 423) {
+        end("The connection dropped and the game couldn't be joined again (" + reason +
+                "). Whoever set the group up can update the relay: Play online, Update relay",
+            is_host());
+        return;
+      }
+      SDL_Log("online: not back yet (%s)", reason.c_str());
+      retry_ns_ = SDL_GetTicksNS() + 1'500'000'000ull;
+      return;
+    }
+    // The host closing the room on purpose sent kEnd first; anything else is a broken connection.
+    begin_reconnect(e.close_code == 4000 ? "the host's connection dropped" : reason);
+    return;
+  }
   const bool was_running = phase_ == Phase::Running || phase_ == Phase::Starting;
   if (is_host() && was_running) {
     end("Lost the connection to the relay. You're playing offline now", true);
@@ -322,6 +567,8 @@ void Netplay::end(const std::string& reason, bool keep_playing) {
   e.keep_playing = keep_playing;
   events_.push_back(e);
   ws_.close();
+  direct_.stop();
+  reconnecting_ = false;
   phase_ = Phase::Off;
   begin_at_ns_ = 0;
   me_ = -1;
@@ -472,6 +719,75 @@ void Netplay::begin() {
 // Messages
 
 void Netplay::on_binary(const std::string& data) {
+  if (data.size() < 2) return;
+  const int from = static_cast<uint8_t>(data[0]);
+  const uint8_t type = static_cast<uint8_t>(data[1]);
+  if (type == kSeq) {
+    // A numbered message: handled strictly in order, once; one that comes ahead of a missing one
+    // waits for it (update() asks for it again if it doesn't come).
+    if (data.size() < 6) return;
+    Line& line = lines_[from];
+    const uint32_t seq = get32(data, 2);
+    if (seq == line.received + 1) {
+      line.received = seq;
+      handle(std::string(1, static_cast<char>(from)) + data.substr(6));
+      if (phase_ == Phase::Off || !lines_.count(from)) return;
+      while (!line.early.empty() && line.early.begin()->first <= line.received + 1) {
+        auto next = line.early.begin();
+        if (next->first == line.received + 1) {
+          line.received = next->first;
+          const std::string body = std::move(next->second);
+          line.early.erase(next);
+          handle(std::string(1, static_cast<char>(from)) + body);
+          if (phase_ == Phase::Off || !lines_.count(from)) return;
+        } else {
+          line.early.erase(next);
+        }
+      }
+      if (line.early.empty()) line.gap_ns = 0;
+    } else if (seq > line.received + 1) {
+      if (line.early.size() < kKept) line.early.emplace(seq, data.substr(6));
+      if (!line.gap_ns) line.gap_ns = SDL_GetTicksNS();
+    }
+    return;
+  }
+  if (type == kResume) {
+    // The other side's count of what it received: send the rest again, in order.
+    if (data.size() < 6) return;
+    Line& line = lines_[from];
+    const uint32_t have = get32(data, 2);
+    if (have > line.sent || line.sent - have > line.kept.size()) {
+      end(is_host() ? "Too much was lost while the connection was down. You're playing offline now"
+                    : "Too much was lost while the connection was down. Start the online game again",
+          is_host());
+      return;
+    }
+    const uint32_t missing = line.sent - have;
+    for (uint32_t i = 0; i < missing; ++i) {
+      std::string msg;
+      msg += static_cast<char>(from);
+      msg += static_cast<char>(kSeq);
+      put32(msg, have + 1 + i);
+      msg += line.kept[line.kept.size() - missing + i];
+      ws_.send(std::move(msg));
+    }
+    if (missing) SDL_Log("online: player %d had messages up to %u of %u: %u sent again", from, have, line.sent, missing);
+    line.away = false;
+    return;
+  }
+  if (type == kDirect) {
+    if (player(from)) direct_.set_peer(from, data.substr(2));
+    return;
+  }
+  if (type == kBye) {
+    lines_[from].said_bye = true;
+    player_gone(from, {});
+    return;
+  }
+  handle(data);
+}
+
+void Netplay::handle(const std::string& data) {
   if (data.size() < 2) return;
   Reader r{data};
   const int from = static_cast<int>(r.u8());
@@ -690,6 +1006,11 @@ void Netplay::on_binary(const std::string& data) {
     case kEnd: {
       if (from != 0) return;
       end(r.str(), false);
+      return;
+    }
+    case kBye: {
+      lines_[from].said_bye = true;
+      player_gone(from, {});
       return;
     }
     case kTiming: {

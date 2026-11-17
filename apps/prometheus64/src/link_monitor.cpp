@@ -216,13 +216,13 @@ void LinkMonitor::heartbeat(uint64_t now_ns, Link& link) {
                   kQueueCapacity, errors_text(last_.status, last_.hardware, last_.checksum, last_.queue_full, last_.lag).c_str());
   SDL_Log("link status (%.1f s): %.1f frames/s, held %.1f s, %s | sent %llu (%llu with game data), received %llu (%llu) | "
           "%llu/%llu bytes | queued %zu | round trip %s | relay heard %s | reconnected %d, sent again %llu, duplicates %llu | "
-          "cable: this game %s, other %s | game: %s%s",
+          "direct path: %s, %llu came first that way | cable: this game %s, other %s | game: %s%s",
           secs, secs > 0 ? static_cast<double>(frames) / secs : 0.0, static_cast<double>(held_ns_) / 1e9, pace,
           static_cast<unsigned long long>(s.sent), static_cast<unsigned long long>(s.sent_data),
           static_cast<unsigned long long>(s.received), static_cast<unsigned long long>(s.received_data),
           static_cast<unsigned long long>(s.bytes_sent), static_cast<unsigned long long>(s.bytes_received), s.backlog, ping,
           relay, s.reconnects, static_cast<unsigned long long>(s.resent), static_cast<unsigned long long>(s.dropped),
-          cable_name(s.my_cable), cable_name(s.their_cable), game, menu_ ? " | menu open" : "");
+          s.direct.c_str(), static_cast<unsigned long long>(s.direct_first), cable_name(s.my_cable), cable_name(s.their_cable), game, menu_ ? " | menu open" : "");
   window_ns_ = now_ns;
   frames_at_window_ = s.frames;
   held_ns_ = 0;

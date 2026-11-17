@@ -1,6 +1,6 @@
 # Project Prometheus
 
-**Project Prometheus** is a free desktop player for the N64, GBA and PSP games you own: a sharp picture on big screens, simple controls, couch and online multiplayer, GBA link play, and a save library backed up to your own Google Drive.
+**Project Prometheus** is a free desktop player for the N64, GBA, Game Boy, Game Boy Color and PSP games you own: a sharp picture on big screens, simple controls, couch and online multiplayer, GBA link play, and a save library backed up to your own Google Drive.
 
 It contains no games and never downloads, finds or shares them.
 
@@ -10,7 +10,7 @@ It contains no games and never downloads, finds or shares them.
 
 1. Download `ProjectPrometheus-Setup-<version>.exe` from the **Releases** page. It is one file holding everything: the app, the emulator cores, fonts and licences. (Test builds: the repository's **Actions** tab, a **CI** run started by hand on a branch, same file.)
 2. Run it. It installs for your user only, with no administrator prompt, and adds a Start menu shortcut.
-3. Press **O** (or **Y** on a controller) and choose the folder that holds your games: N64 games (`.z64`, `.n64`, `.v64`), GBA games (`.gba`) and PSP games (`.iso`, `.cso`, `.pbp`, `.chd`), side by side if you like. N64 and GBA games can stay packed in `.zip`, `.7z` or `.rar` archives (no need to unpack them; an archive with several games shows each one); PSP games are read as they are (`.cso` is their compressed form). You can also drop a game onto the window, or double-click a game file if you ticked that option in the installer.
+3. Press **O** (or **Y** on a controller) and choose the folder that holds your games: N64 games (`.z64`, `.n64`, `.v64`), GBA games (`.gba`), Game Boy and Game Boy Color games (`.gb`, `.gbc`) and PSP games (`.iso`, `.cso`, `.pbp`, `.chd`), side by side if you like. N64, GBA and Game Boy games can stay packed in `.zip`, `.7z` or `.rar` archives (no need to unpack them; an archive with several games shows each one); PSP games are read as they are (`.cso` is their compressed form). You can also drop a game onto the window, or double-click a game file if you ticked that option in the installer.
 4. Pick a game and press **Enter** (or **A**). To have a friend join, they press **Start** on another controller. Press **F1** for every key.
 
 The **mouse** works everywhere: click a game to pick it and double-click to play it, click menu items (the ‹ › arrows change a value), click the shortcuts along the bottom of the library, and right-click during a game for the menu. Menus also move with W/A/S/D or the number pad, for keyboards without working arrow keys.
@@ -20,7 +20,7 @@ The **mouse** works everywhere: click a game to pick it and double-click to play
 | Esc, right-click, or Back/Guide on a controller | Quick menu: save states, picture, fill mode, resolution, volume, players, controls |
 | C (in the library) | Controls: change any key or controller button |
 | N (in the library) | Play online with friends in your group |
-| F5 / F7 | Save state / load state (in the slot chosen in the menu). For GBA games a save state also keeps the game's own save, so loading it puts both back exactly as they were |
+| F5 / F7 | Save state / load state (in the slot chosen in the menu). For GBA and Game Boy games a save state also keeps the game's own save, so loading it puts both back exactly as they were |
 | F8 / F9 | Volume down / up |
 | F10 | Who's playing: seat controllers and keyboards for up to 4 players |
 | F11 or Alt+Enter | Fullscreen |
@@ -34,13 +34,13 @@ The quick menu shows each item's shortcut next to it, and the shortcuts work whi
 
 **Changing the controls:** press **C** in the library (or Menu > Controls). Pick Keyboard, Left half, Right half or Controller, click a control and press the key or button you want. A key that is already in use swaps places, so nothing is left without a key. Changes save straight away; "Reset to defaults" undoes them.
 
-**GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger. Hold **Space** to speed the game up (4x, or 2x, 6x or 8x: **Speed-up amount** on the Controls screen; its sound sped up too but at its normal pitch, as in VBA-M; not during link play or an event); change the key on the Controls screen.
+**GBA buttons, by default:** X = A, C = B, A/S = L/R, Enter = Start, Z = Select, arrows (or T/F/G/H) = D-pad. On a controller: A, B, the shoulder buttons, Start, and the D-pad or stick; Select is either trigger. Hold **Space** to speed the game up (4x, or 2x, 6x or 8x: **Speed-up amount** on the Controls screen; its sound sped up too but at its normal pitch, as in VBA-M; not during link play or an event; Game Boy and PSP games too); change the key on the Controls screen.
 
 **Each game keeps its own controls.** Change them from a game's menu (**Controls**) and they're saved for that game only, coming back whenever you start it. Controls changed from the library are your usual ones, used by every game you haven't set up on its own.
 
-**The cartridge clock** (for GBA games with one: growing berries, daily events) runs on your computer's real time, so time passes while the app is closed, as it did with the cartridge's battery.
+**The cartridge clock** (for GBA and Game Boy games with one: growing berries, daily events, the day and night of Pokémon Gold, Silver and Crystal) runs on your computer's real time, so time passes while the app is closed, as it did with the cartridge's battery.
 
-**Saves** go into `Documents\Memories\N64` and `Documents\Memories\GBA`, one folder per game (a computer that already had `Documents\N64 Saves` from an earlier version keeps using it), with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file (GBA: `.sav`, `.srm`, `.sa1`, `.fla` or `.eep`). The emulator's original file is only read, never changed.
+**Saves** go into `Documents\Memories\N64`, `Documents\Memories\GBA` and `Documents\Memories\GB`, one folder per game (a computer that already had `Documents\N64 Saves` from an earlier version keeps using it), with the last 10 versions kept. To bring a save from another emulator, start the game once, open the library and press **I** to import its `.srm`, `.sra`, `.eep`, `.fla` or `.mpk` file (GBA: `.sav`, `.srm`, `.sa1`, `.fla` or `.eep`; Game Boy: `.sav` or `.srm`). The emulator's original file is only read, never changed.
 
 ### If Windows warns about or blocks the app
 
@@ -61,7 +61,7 @@ Online games happen in a private **group**. One person sets the group up once, a
 - The key file is for all of Project Prometheus: GBA link play below uses the same key and the same relay. It's kept once per computer, so they find it without adding it again. Setting the group up again makes a new key, and old copies stop working. **Remove key** forgets it on this computer.
 - **Update relay** (Play online, for whoever set the group up) puts the newest relay on your Cloudflare account and keeps the group's key: nobody needs a new key file. It only works on the account the group's relay is on, and changes nothing otherwise.
 
-Each computer runs the game itself and only controller presses travel, so everyone keeps their own picture settings, and couch players can join too (two on one computer and two on another). The host's save is used and stays on the host's computer, backed up first; guests' own saves aren't touched. Save states are off while online, the host's menu pauses everyone, and only the host can reset. If someone drops out, the host keeps playing offline. Under about 40 ms of ping plays great, up to 80 ms is fine for most games; a wired connection plays smoother than Wi-Fi. Details: [`relay/README.md`](relay/README.md).
+Each computer runs the game itself and only controller presses travel, so everyone keeps their own picture settings, and couch players can join too (two on one computer and two on another). The host's save is used and stays on the host's computer, backed up first; guests' own saves aren't touched. Save states are off while online, the host's menu pauses everyone, and only the host can reset. A connection that drops mid-game is taken up again (since 0.4.0): the game holds still ("Connection lost. Reconnecting..."), the app connects again, sends what didn't arrive, and the game carries on where it was; someone who leaves on purpose, or doesn't come back within 45 seconds, is gone, and the host keeps playing offline. Under about 40 ms of ping plays great, up to 80 ms is fine for most games; a wired connection plays smoother than Wi-Fi. Details: [`relay/README.md`](relay/README.md).
 
 ### GBA link play: trading and battling
 
@@ -74,6 +74,7 @@ GBA games don't play in lockstep like N64 games: each player plays their own gam
 - **Where the internet provider blocks the relay's address** (some providers in Indonesia do, for all `workers.dev` addresses), the app looks the relay up again through DNS-over-HTTPS (Cloudflare's, Google's, then Quad9's), which such blocks don't reach. Before 0.2.11 it did that only for some errors, so on those lines it stopped at "Could not reach the relay (Connection timed out)" and only a VPN got through.
 - **A connection that drops** is taken up again (since 0.2.13). Both games stop where they are ("The connection dropped. Reconnecting..."), the app connects again, sends what didn't arrive, and the games carry on mid-trade as if nothing happened. It keeps trying for 45 seconds. A connection that goes silent without a word is noticed within about 10 seconds and replaced the same way. A friend who joined can always come back like this; for the **host** to come back, the group's relay has to be the one from 0.2.13 on: whoever set the group up opens **Play online**, **Update relay**, and pastes a new Cloudflare key (the same two steps as the setup). The group's key file stays the same, so nobody else has to do anything. With an older relay, a host's dropped connection ends the link as before, and the app says so.
 - **Remembered route:** once the app has had to look the relay up another way (above), it tries that way first next time, so connecting takes a second instead of ten.
+- **A second path, straight between the two computers** (since 0.4.0, GBA, Game Boy and N64): besides the relay, the two apps try to reach each other directly, and when they can, everything goes both ways at once and whichever copy arrives first is used. A relay that drops, stalls or is blocked then costs nothing: the games don't even pause while it comes back. It works through most home routers; some mobile and shared connections don't allow it, and then the relay alone carries the game, as before. The link log says how each path is doing ("direct path: up 180 ms"). The first time, Windows may ask whether Project Prometheus may use the network: **Allow** lets the direct path work best; with Cancel it often still works, and the relay is always there.
 - **Both of you need the same version of Project Prometheus.** The link cable's timing changed in 0.2.7: with an older version on either side, the link breaks in the Cable Club with "Communication error". When the versions differ, the app says so as soon as you link.
 - In Pokémon Ruby, Sapphire, Emerald, FireRed and LeafGreen, walk into a Pokémon Center and go upstairs to the Cable Club to trade or battle, as with a real link cable. FireRed, LeafGreen and Emerald can use the Wireless Adapter instead (**Link: cable / wireless** on the Play online page); both players need the same choice, and the app says so if they differ.
 - Both players need the group's key file, as for online play above. The games don't have to be the same: Ruby trades with FireRed, as on real consoles.
@@ -284,9 +285,23 @@ PSP games sit in the same library as the others: the app recognises them by what
 
 - **Formats:** `.iso` (a plain UMD image), `.cso` (the same, compressed), `.pbp` (a PSN game or homebrew `EBOOT.PBP`) and `.chd`. Not inside `.zip`, `.7z` or `.rar` archives: an image can be 1.8 GB, and it would have to be unpacked each time.
 - **Buttons, by default:** on a controller, the face buttons are where a PlayStation pad has them: bottom = Cross, right = Circle, left = Square, top = Triangle; the shoulder buttons are L and R, Start is Start, either trigger is Select, the left stick is the analog stick and the D-pad the D-pad. On the keyboard: X = Cross, C = Square, K (or L) = Circle, J (or I) = Triangle, A/S = L/R, Enter = Start, Z = Select, the arrows are the analog stick and T/F/G/H the D-pad. All of it can be changed on the Controls screen, for one game or for all.
-- **Picture:** drawn sharp at a multiple of the PSP's 480x272 that covers your screen (**Resolution** in the menu: Auto, or 1x to 8x), in the PSP's own 16:9 shape. Fill mode offers Fit, Stretch and Ambient.
+- **Picture:** drawn sharp at a multiple of the PSP's 480x272 that covers your screen (**Resolution** in the menu: Auto, up to 4x, or 1x to 8x by hand), in the PSP's own 16:9 shape. Fill mode offers Fit, Stretch and Ambient. If a game can't keep up, the app says so: a lower Resolution is the lighter choice (the most common reason PSP games slow down on a laptop).
+- **Speed-up:** hold **Space**, as for GBA and Game Boy games.
+- **Input lag**, the most common complaint about PSP emulation: the emulator keeps one frame of drawing in hand instead of PPSSPP's usual two, so the game answers a frame sooner. The stick has a 15% dead zone, so a worn stick doesn't drift.
+- **HD texture packs** made for PPSSPP work: put the pack's folder (named by the game's ID, like `ULUS10041`) in `Documents\Memories\PSP\PSP\TEXTURES`. **Downloadable content** goes where a PSP keeps it, `Documents\Memories\PSP\PSP\GAME`.
 - **Saves:** games save as on a PSP's memory stick, into `Documents\Memories\PSP\PSP\SAVEDATA`, one folder per save, in the PSP's own layout. A save folder from a real PSP or from PPSSPP can be copied in as it is (**I**, Import a save, opens the folder), and copied back out. Save states (F5 / F7) work as for the other consoles.
-- **Not yet:** PSP saves aren't in the Google Drive backup yet, and PSP games don't play online.
+- **Prefer the game's own saves** to save states for keeping progress: a save state holds the emulator exactly as it was, so a state made by an older version can't be loaded after an update, while the game's saves always can.
+- **Not yet:** PSP saves aren't in the Google Drive backup yet, and PSP games don't play online (PPSSPP's ad hoc multiplayer is off).
+
+### Game Boy and Game Boy Color games
+
+Game Boy and Game Boy Color games play with the Gambatte emulator core, recognised by their cartridge header like the others (the library marks them GB or GBC).
+
+- **Colours:** a Game Boy Color game in its own colours; an original Game Boy game with the palette a Game Boy Color gives it (Pokémon Red in red, Blue in blue), as when it's played on one.
+- **Buttons:** as for GBA games (A, B, Start, Select, the D-pad), changeable on the Controls screen. Hold **Space** to speed up.
+- **Picture:** the GBA looks (Classic, Smooth, Clean, Sharp, Handheld, Pixel-perfect), in the Game Boy's own shape.
+- **Saves:** the cartridge's battery memory, and its clock for the games that have one (Pokémon Gold, Silver and Crystal), in `Documents\Memories\GB`, with history and Google Drive backup (**Memories › GB**). Import a `.sav` or `.srm` from another emulator with **I**.
+- **Link cable:** two Game Boy games trade and battle over the relay (Play online > Host a link, as for GBA) or on one computer (a second game from the menu). A Game Boy cable waits for each byte to go to the other side and back: on one computer or nearby that's quick, but between distant countries each byte takes a round trip (a third of a second Portugal to Indonesia), so a trade takes minutes. A Game Boy game links with a Game Boy game, not with a GBA game.
 
 ### GBA pictures for big screens
 
@@ -301,7 +316,7 @@ PSP games sit in the same library as the others: the app recognises them by what
 
 ### Backing up to Google Drive
 
-Press **B** in the library (or click **Back up**), then **Connect Google Drive** and sign in in your browser. Your saves go into **Memories › N64** and **Memories › GBA** in your Google Drive, quietly, when you close Project Prometheus and every hour while it's open. Only saves go up, never games. Project Prometheus can only see those folders, nothing else in your Drive.
+Press **B** in the library (or click **Back up**), then **Connect Google Drive** and sign in in your browser. Your saves go into **Memories › N64**, **Memories › GBA** and **Memories › GB** in your Google Drive, quietly, when you close Project Prometheus and every hour while it's open. Only saves go up, never games. Project Prometheus can only see those folders, nothing else in your Drive.
 
 - **Carry on on another computer:** connect the same Google account there, and your in-game saves come down by themselves. Save states are backed up too, but they stay with the computer that made them.
 - **Both ways, every time you play:** when you start a game, the app checks Google Drive for that game in the background. If another computer has played since, its save comes down while the game boots, and the game starts again with it on its first screens (only if this computer hasn't saved since). If it arrives later, the running game is left alone and the newer save comes down when you quit.
@@ -339,6 +354,8 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
   - [0008 Pokémon event gifts and daily hints](docs/decisions/0008-event-gifts.md)
   - [0009 The games' own glitches are allowed; the app never edits a game](docs/decisions/0009-game-glitches.md)
   - [0010 PSP games](docs/decisions/0010-psp.md)
+  - [0011 Game Boy and Game Boy Color games](docs/decisions/0011-game-boy.md)
+  - [0012 Layers that keep an online game going](docs/decisions/0012-connection-layers.md)
 - **Setting up Google Drive backup (once, for the project):** [`docs/google-drive-setup.md`](docs/google-drive-setup.md)
 - **Privacy policy and terms of use** (shared by every Wolfsbane app): [wolfsbanecompany.com/apps/privacy](https://wolfsbanecompany.com/apps/privacy/) and [/apps/terms](https://wolfsbanecompany.com/apps/terms/), from the website repository [`WolfsbaneCo/wolfsbane-company`](https://github.com/WolfsbaneCo/wolfsbane-company)
 - **To build next, with the plan for each:** [`docs/backlog.md`](docs/backlog.md)
@@ -354,7 +371,8 @@ Fill modes: **Fit**, **Smart zoom** (fills more of a wide screen by trimming a l
 | 3: Google Drive sync | **Working.** Connect in the app, automatic backups (on close, hourly, at start), carrying on across computers with in-game saves, choosing when two computers both saved, offline retries, save states as a per-computer backup. Checked against a stand-in for Google with two Linux computers and a Windows one; waiting for the project's Google registration ([setup](docs/google-drive-setup.md)). Still to come: syncing settings, device-to-device sharing on a home network, optional encryption |
 | 4: Netplay | **Working.** Private groups with a shared key file and a relay on the group owner's free Cloudflare account (set up from inside the app), game codes, lockstep with game and version checks, an input delay that adjusts itself during the game, the host's save. Checked with Harvest Moon 64 and Super Smash Bros. between two copies on Linux and between Linux and Windows; not yet over the internet |
 | GBA | **Working.** gpSP core picked by the game's header, five looks for big screens, saves in the library with imports and Drive backup, link play over the relay (link cable and Wireless Adapter) and between two games on one computer, Pokémon events restored for Emerald, FireRed, LeafGreen, Ruby and Sapphire (tickets, Enigma Berry, clock fix, rare words, Battle e-Cards, Jirachi, Pichu, Altering Cave, Visiting Trainer, Stamp and Battle Cards), daily hints. Still to be tried in real play: a trade over the internet (checked in the test bench with up to 300 ms each way and jitter: in, sit, trade, save, leave), the island trips, a Battle e-Card and Visiting Trainer battle. Not built: Emerald's e-Reader menu (Trainer Hill) |
-| PSP | **New, to be tried.** PPSSPP core picked by the disc image's contents (`.iso`, `.cso`, `.pbp`, `.chd`), drawn at up to 8x, PlayStation button layout, saves as on a memory stick, save states. Checked with homebrew on Linux; no commercial game played yet. Not yet: Drive backup of PSP saves, online play |
+| PSP | **New, to be tried.** PPSSPP core picked by the disc image's contents (`.iso`, `.cso`, `.pbp`, `.chd`), drawn at up to 8x, PlayStation button layout, saves as on a memory stick, save states, speed-up, less input lag, a stick dead zone, HD texture packs. Checked with homebrew on Linux; no commercial game played yet. Not yet: Drive backup of PSP saves, online play |
+| Game Boy | **New, to be tried.** Gambatte core picked by the cartridge header (`.gb`, `.gbc`, in archives too), Game Boy Color palettes for original Game Boy games, the GBA looks, saves and the cartridge clock in the library with imports and Drive backup, the link cable over the relay and between two games on one computer. Checked with test cartridges made for it (link transfers both ways, locally and over the relay with 350 ms round trips; saves written, kept and loaded); no commercial game played yet |
 | 5: Cartridge | Not started |
 
 ## Building from source

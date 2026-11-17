@@ -22,6 +22,12 @@ enum class Memory {
   // A GBA cartridge's save (SRAM, Flash or EEPROM, whichever the game uses), as gpSP holds it: one
   // 128 KB block, the largest GBA save. Not in kAllMemories, which lists the N64's memories.
   GbaSave,
+  // A Game Boy (or Color) cartridge's battery-backed memory, up to 128 KB (MBC5), held as one 128 KB
+  // block filled out with 0xFF; the game uses the first part (as big as its cartridge's RAM).
+  GbSave,
+  // The real-time clock of a Game Boy cartridge that has one (MBC3: Pokemon Gold, Silver, Crystal),
+  // as Gambatte holds it: 8 bytes, the moment the clock counts from.
+  GbRtc,
 };
 
 // The N64's memories (every N64 save format holds a selection of these).
@@ -38,6 +44,8 @@ inline constexpr std::size_t kSramSize = 0x8000;
 inline constexpr std::size_t kFlashRamSize = 0x20000;
 inline constexpr std::size_t kControllerPakSize = 0x8000;
 inline constexpr std::size_t kGbaSaveSize = 0x20000;
+inline constexpr std::size_t kGbSaveSize = 0x20000;
+inline constexpr std::size_t kGbRtcSize = 8;
 
 std::size_t memory_size(Memory memory);
 

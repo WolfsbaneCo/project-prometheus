@@ -13,6 +13,12 @@ gpSP (cores/gpsp_libretro.dll)
   It includes the open source GBA BIOS replacement by Normmatt and the VBA/VBA-M team (GPL version 2), used instead of Nintendo's BIOS.
   This build was made from the commit named in cores/GBA-CORE-SOURCE.txt. The complete source code for that commit is available at the address above; on request, the Project Prometheus maintainers will provide a copy for three years from the date of distribution.
 
+Gambatte (cores/gambatte_libretro.dll)
+  The Game Boy and Game Boy Color emulator core, by Sindre Aamås and the Gambatte contributors (libretro version).
+  Licence: GNU General Public License version 2 (see GPL-2.0.txt).
+  Source code: https://github.com/libretro/gambatte-libretro
+  This build was made from the commit named in cores/GB-CORE-SOURCE.txt, with the changes named there (the link cable over Project Prometheus's link), which are in Project Prometheus's source. The complete source code for that commit is available at the address above; on request, the Project Prometheus maintainers will provide a copy for three years from the date of distribution.
+
 PPSSPP (cores/ppsspp_libretro.dll, cores/PPSSPP)
   The PSP emulator core, by Henrik Rydgard and the PPSSPP Project contributors (libretro version).
   Licence: GNU General Public License version 2 or later (see GPL-2.0.txt).

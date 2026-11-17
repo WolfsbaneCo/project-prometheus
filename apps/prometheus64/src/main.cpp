@@ -1,4 +1,4 @@
-// Project Prometheus: a player for classic consoles (N64, GBA), built around libretro emulator cores.
+// Project Prometheus: a player for classic consoles (N64, GBA, Game Boy, PSP), built around libretro emulator cores.
 //
 //   Prometheus64 [game file]
 //

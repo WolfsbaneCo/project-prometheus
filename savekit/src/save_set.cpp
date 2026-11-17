@@ -8,12 +8,14 @@ std::size_t memory_size(Memory memory) {
     case Memory::Sram: return kSramSize;
     case Memory::FlashRam: return kFlashRamSize;
     case Memory::GbaSave: return kGbaSaveSize;
+    case Memory::GbSave: return kGbSaveSize;
+    case Memory::GbRtc: return kGbRtcSize;
     default: return kControllerPakSize;
   }
 }
 
 std::uint8_t blank_fill(Memory memory) {
-  return is_controller_pak(memory) ? 0x00 : 0xFF;
+  return is_controller_pak(memory) || memory == Memory::GbRtc ? 0x00 : 0xFF;
 }
 
 std::string_view memory_key(Memory memory) {
@@ -26,6 +28,8 @@ std::string_view memory_key(Memory memory) {
     case Memory::ControllerPak3: return "controller_pak_3";
     case Memory::ControllerPak4: return "controller_pak_4";
     case Memory::GbaSave: return "gba_save";
+    case Memory::GbSave: return "gb_save";
+    case Memory::GbRtc: return "gb_rtc";
   }
   return "unknown";
 }

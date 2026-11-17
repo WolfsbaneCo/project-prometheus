@@ -61,6 +61,9 @@ class Core {
   // RETRO_MEMORY_SAVE_RAM: the cartridge and Controller Pak memory, in the core's layout.
   uint8_t* save_ram();
   std::size_t save_ram_size();
+  // RETRO_MEMORY_RTC: a cartridge clock's memory (Game Boy: the moment it counts from).
+  uint8_t* rtc();
+  std::size_t rtc_size();
   // RETRO_MEMORY_SYSTEM_RAM: the console's RDRAM. Online play compares it to detect desyncs.
   const uint8_t* system_ram();
   std::size_t system_ram_size();

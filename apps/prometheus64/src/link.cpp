@@ -15,14 +15,17 @@ constexpr const char* kApp = "prometheus-link";  // GBA link rooms on the group'
 constexpr int kRelayProtocol = 2;
 
 Link* g_running = nullptr;  // the link whose session is running in the core
+bool g_from_direct = false;  // the message being handled came over the direct path
+// Time since `then`, never negative: `then` can be stamped a moment after `now` was read.
+uint64_t elapsed(uint64_t now, uint64_t then) { return now > then ? now - then : 0; }
 uint64_t g_sent = 0, g_received = 0;  // the core's packets, for the log
 
 // How many sent packets are kept for sending again (over a minute's worth), how long a broken
 // connection is given to come back, and how long the relay may stay silent before the
-// connection counts as dead (it answers a ping every 3 seconds).
+// connection counts as dead (it answers a ping every 2 seconds).
 constexpr std::size_t kKept = 4096;
 constexpr uint64_t kComeBackNs = 45'000'000'000ull;
-constexpr int kSilentMs = 9000;
+constexpr int kSilentMs = 6000;
 
 void put32(std::string& out, uint32_t v) {
   for (int i = 0; i < 4; ++i) out += static_cast<char>((v >> (8 * i)) & 0xFF);
@@ -54,6 +57,7 @@ void Link::host(const std::string& relay_url, const std::string& key, const std:
   key_ = key;
   hosting_ = true;
   session_ = new_session();
+  direct_.start();
   open(url(false));
 }
 
@@ -68,6 +72,7 @@ void Link::join(const std::string& relay_url, const std::string& key, const std:
   hosting_ = false;
   code_ = code;
   session_ = new_session();
+  direct_.start();
   open(url(false));
 }
 
@@ -109,8 +114,19 @@ void Link::leave() {
     SDL_Log("link: leaving while the connection is down: saying goodbye over a new connection");
     farewell_.say_and_close(url(true), std::move(bye));
   }
+  // And over the direct path, a few times (a datagram can be lost): the others hear it even when the
+  // relay can't carry it.
+  if (phase_ != Phase::Off && me_ >= 0) {
+    std::string bye;
+    bye += static_cast<char>(me_);
+    bye += static_cast<char>(kBye);
+    for (int i = 0; i < 3; ++i) {
+      for (const auto& [id, peer] : peers_) direct_.send(id, bye);
+    }
+  }
   stop_core();
   ws_.close();
+  direct_.stop();
   phase_ = Phase::Off;
   me_ = -1;
   code_.clear();
@@ -120,7 +136,7 @@ void Link::leave() {
   status_.clear();
   lost_ns_ = retry_ns_ = 0;
   reconnects_ = 0;
-  resent_ = dropped_ = 0;
+  resent_ = dropped_ = direct_first_ = 0;
 }
 
 void Link::fail(const std::string& message) {
@@ -138,7 +154,8 @@ void Link::begin_reconnect(const std::string& why) {
   lost_ns_ = SDL_GetTicksNS();
   retry_ns_ = lost_ns_;
   for (auto& [id, peer] : peers_) {
-    peer.away = true;
+    // A player the direct path still reaches isn't away: the games carry on over it.
+    peer.away = !direct_.up(id);
     lines_[id].since_ns = lost_ns_;
   }
   ws_.close();
@@ -161,10 +178,14 @@ void Link::peer_back(int id) {
   Peer& peer = peers_[id];
   Line& line = lines_[id];
   peer.away = false;
-  line.synced = false;
+  peer.relay_gone = false;
+  // The games wait for its word on what it received, unless the direct path carried everything
+  // meanwhile (anything it missed is sent again all the same).
+  line.synced = direct_.up(id);
   line.since_ns = SDL_GetTicksNS();
   say_hello(id);
   send_resume(id);
+  if (core_started_) send_tick();  // the counts sent while the connection was down were lost
 }
 
 // A player is gone for good.
@@ -175,6 +196,7 @@ void Link::drop_peer(int id) {
   peers_.erase(it);
   pacers_.erase(id);
   lines_.erase(id);
+  direct_.remove_peer(id);
   if (core_started_ && is_host() && core_ && core_->disconnected) core_->disconnected(static_cast<uint16_t>(id));
 }
 
@@ -234,11 +256,41 @@ void Link::update() {
     if (phase_ == Phase::Off) return;          // the link ended
     if (phase_ == Phase::Reconnecting && !ws_.active()) break;  // the rest came from the connection that broke
   }
-  if (phase_ == Phase::Open && core_started_ && core_ && core_->poll) core_->poll();
+  pump_direct();
+  if (phase_ == Phase::Off) return;
+  if (phase_ == Phase::Open && !peers_.empty() && direct_.offer_changed()) send_offer(kBroadcast);
+  if ((phase_ == Phase::Open || phase_ == Phase::Reconnecting) && core_started_ && core_ && core_->poll) core_->poll();
   if (phase_ == Phase::Off) return;
   const uint64_t now_ns = SDL_GetTicksNS();
+  for (auto& [id, peer] : peers_) {
+    // The relay said it left while the direct path still reached it: once that goes quiet too,
+    // it is away, and has the usual time to come back.
+    if (peer.relay_gone && !peer.away && !direct_.up(id)) {
+      SDL_Log("link: player %d is no longer reached directly either; waiting for it to come back", id);
+      peer.away = true;
+      lines_[id].since_ns = now_ns;
+    }
+    // A packet missing between ones that came: asked for again if it hasn't come within 1.5 s.
+    Line& line = lines_[id];
+    if (!line.early.empty() && line.gap_ns && elapsed(now_ns, line.gap_ns) > 1'500'000'000ull && phase_ == Phase::Open) {
+      SDL_Log("link: packet %u from player %d hasn't come (%zu after it have): asking for it again", line.received + 1, id,
+              line.early.size());
+      line.gap_ns = now_ns;
+      send_resume(id);
+    }
+  }
+  // A game that is waiting runs no frames, so it says how far it is no other way: say it now and
+  // then. Without this, two games that each last heard of the other before a broken connection
+  // (frame counts aren't sent again) could each think itself too far ahead and wait for ever.
+  if (core_started_ && phase_ == Phase::Open && elapsed(now_ns, last_tick_ns_) > 250'000'000ull &&
+      waiting_for() != Wait::None) {
+    send_tick();
+  }
   if (phase_ == Phase::Reconnecting) {
-    if (now_ns - lost_ns_ > kComeBackNs) {
+    // While the direct path reaches everyone, the games go on and there's no hurry.
+    bool direct_all = !peers_.empty();
+    for (const auto& [id, peer] : peers_) direct_all = direct_all && direct_.up(id);
+    if (elapsed(now_ns, lost_ns_) > kComeBackNs && !direct_all) {
       fail("The connection was lost and didn't come back. Check your internet connection and start the link again");
       return;
     }
@@ -249,7 +301,7 @@ void Link::update() {
     return;
   }
   if (phase_ == Phase::Open) {
-    // The relay answers a ping every 3 seconds: silence means the connection is dead, whatever
+    // The relay answers a ping every 2 seconds: silence means the connection is dead, whatever
     // the system says (a line can die without a word). Take it up again.
     if (const int silent = ws_.silent_ms(); silent > kSilentMs) {
       begin_reconnect("the relay has been silent for " + std::to_string(silent / 1000) + " s");
@@ -259,11 +311,11 @@ void Link::update() {
     for (auto& [id, peer] : peers_) {
       Line& line = lines_[id];
       if (peer.away) {
-        if (now_ns - line.since_ns > kComeBackNs) gone.push_back(id);
+        if (elapsed(now_ns, line.since_ns) > kComeBackNs) gone.push_back(id);
       } else if (!line.synced) {
         // Ask again every 2 seconds; a player that never answers is gone.
-        if (now_ns - line.since_ns > kComeBackNs) gone.push_back(id);
-        else if (now_ns - line.asked_ns > 2'000'000'000ull) send_resume(id);
+        if (elapsed(now_ns, line.since_ns) > kComeBackNs) gone.push_back(id);
+        else if (elapsed(now_ns, line.asked_ns) > 2'000'000'000ull) send_resume(id);
       }
     }
     for (int id : gone) {
@@ -316,6 +368,9 @@ Link::Stats Link::take_stats() {
   out.resent = resent_;
   out.dropped = dropped_;
   out.reconnects = reconnects_;
+  out.direct_first = direct_first_;
+  for (const auto& [id, peer] : peers_) out.direct += (out.direct.empty() ? "" : "; ") + direct_.describe(id);
+  if (out.direct.empty()) out.direct = direct_.running() ? "no one yet" : "off";
   for (const auto& [id, pacer] : pacers_) {
     if (!pacer.known()) continue;
     const int64_t lead = pacer.lead(frames_);
@@ -392,7 +447,8 @@ void Link::on_text(const std::string& text) {
       // goodbye). Its kCaps tells which (its session); until then it counts as away.
       SDL_Log("link: player %d is in the room again", id);
       it->second.name = v["name"].str();
-      it->second.away = true;
+      it->second.away = !direct_.up(id);
+      it->second.relay_gone = false;
       it->second.rejoining = true;
       lines_[id].since_ns = SDL_GetTicksNS();
       return;
@@ -409,6 +465,12 @@ void Link::on_text(const std::string& text) {
     const int id = static_cast<int>(v["id"].num());
     auto it = peers_.find(id);
     if (it == peers_.end()) return;
+    if (it->second.can_resume && !it->second.said_bye && core_started_ && direct_.up(id)) {
+      // Its connection to the relay broke, but the direct path still reaches it: carry on.
+      SDL_Log("link: player %d's connection to the relay dropped; the direct path carries the link", id);
+      it->second.relay_gone = true;
+      return;
+    }
     if (it->second.can_resume && !it->second.said_bye && core_started_) {
       // It didn't say goodbye: its connection broke. Wait for it to come back.
       SDL_Log("link: player %d's connection dropped; waiting for it to come back", id);
@@ -454,7 +516,11 @@ void Link::on_closed(const net::WebSocket::Event& e) {
 
 Link::Wait Link::waiting_for() const {
   if (!core_started_) return Wait::None;
-  if (phase_ == Phase::Reconnecting && !peers_.empty()) return Wait::Reconnect;
+  if (phase_ == Phase::Reconnecting) {
+    for (const auto& [id, peer] : peers_) {
+      if (!direct_.up(id)) return Wait::Reconnect;
+    }
+  }
   for (const auto& [id, peer] : peers_) {
     if (peer.away) return Wait::Reconnect;
     if (const auto line = lines_.find(id); line != lines_.end() && !line->second.synced) return Wait::Reconnect;
@@ -488,12 +554,30 @@ void Link::on_binary(const std::string& data) {
     const uint32_t seq = get32(data, 2);
     if (seq == line.received + 1) {
       line.received = seq;
+      if (g_from_direct) ++direct_first_;
       deliver(from, data.data() + 6, data.size() - 6);
+      // Those that came early and now follow on.
+      auto& early = line.early;
+      while (!early.empty() && early.begin()->first <= line.received + 1) {
+        auto next = early.begin();
+        if (next->first == line.received + 1) {
+          line.received = next->first;
+          const std::string packet = std::move(next->second);
+          early.erase(next);
+          deliver(from, packet.data(), packet.size());
+          if (!lines_.count(from)) return;  // the link ended while delivering
+        } else {
+          early.erase(next);
+        }
+      }
+      if (early.empty()) line.gap_ns = 0;
     } else if (seq <= line.received) {
-      ++dropped_;
-    } else if (SDL_GetTicksNS() - line.asked_ns > 1'000'000'000ull) {
-      SDL_Log("link: packet %u from player %d came before %u: asking for them again", seq, from, line.received + 1);
-      send_resume(from);
+      ++dropped_;  // already had (the other path's copy, or sent again)
+    } else {
+      // One before it hasn't come yet (a datagram lost, or a broken connection): hold this one
+      // until it does; update() asks for it again if it doesn't.
+      if (line.early.size() < kKept) line.early.emplace(seq, data.substr(6));
+      if (!line.gap_ns) line.gap_ns = SDL_GetTicksNS();
     }
   } else if (kind == kResume) {
     // The other side's count of what it received: send the rest again, in order.
@@ -520,6 +604,8 @@ void Link::on_binary(const std::string& data) {
     if (auto it = peers_.find(from); it != peers_.end()) it->second.away = false;
   } else if (kind == kBye) {
     if (auto it = peers_.find(from); it != peers_.end()) it->second.said_bye = true;
+  } else if (kind == kDirect) {
+    if (peers_.count(from)) direct_.set_peer(from, data.substr(2));
   } else if (kind == kCaps) {
     auto it = peers_.find(from);
     if (it == peers_.end()) return;
@@ -552,6 +638,9 @@ void Link::on_binary(const std::string& data) {
       uint64_t frames = 0;
       for (int i = 0; i < 8; ++i) frames |= static_cast<uint64_t>(static_cast<uint8_t>(data[2 + i])) << (8 * i);
       LinkPacer& pacer = pacers_[from];
+      // Over two paths a count can come after a newer one: a little behind is old news, a lot
+      // behind is the other link starting again.
+      if (pacer.known() && frames < pacer.theirs() && pacer.theirs() - frames < 600) return;
       const bool restarted = pacer.known() && frames < pacer.theirs();
       const bool first = !pacer.known();
       pacer.heard(frames, frames_);
@@ -601,9 +690,15 @@ void Link::on_binary(const std::string& data) {
     p.name = body.substr(b + 1);
     if (!known) SDL_Log("link: player %d is %s, playing %s, %s", from, p.name.c_str(), p.game.c_str(), p.mode.c_str());
     if (!known && p.mode != mode_) {
-      messages_.push_back(p.name + " uses the " + (p.mode == "wireless" ? "Wireless Adapter" : "link cable") +
-                          ", this game the " + (mode_ == "wireless" ? "Wireless Adapter" : "link cable") +
-                          ": both need the same (Play online > Link)");
+      if (p.mode == "gb" || mode_ == "gb") {
+        // A Game Boy game and a GBA game: their link cables don't fit each other.
+        messages_.push_back(p.name + " is playing a " + (p.mode == "gb" ? "Game Boy" : "GBA") + " game and this is a " +
+                            (mode_ == "gb" ? "Game Boy" : "GBA") + " game: they can't link");
+      } else {
+        messages_.push_back(p.name + " uses the " + (p.mode == "wireless" ? "Wireless Adapter" : "link cable") +
+                            ", this game the " + (mode_ == "wireless" ? "Wireless Adapter" : "link cable") +
+                            ": both need the same (Play online > Link)");
+      }
     }
   }
 }
@@ -612,10 +707,51 @@ void Link::frame_done() {
   if (!core_started_) return;
   ++frames_;
   if (frames_ % LinkPacer::kEvery) return;
+  send_tick();
+}
+
+void Link::send_tick() {
+  last_tick_ns_ = SDL_GetTicksNS();
   std::string msg;
   msg += static_cast<char>(kBroadcast);
   msg += static_cast<char>(kTick);
   for (int i = 0; i < 8; ++i) msg += static_cast<char>((frames_ >> (8 * i)) & 0xFF);
+  post(std::move(msg), true);
+}
+
+void Link::post(std::string msg, bool direct) {
+  if (msg.empty()) return;
+  const int to = static_cast<uint8_t>(msg[0]);
+  if (direct) {
+    std::string d = msg;
+    d[0] = static_cast<char>(me_);  // as the relay puts the sender first
+    for (const auto& [id, peer] : peers_) {
+      if (to == kBroadcast || to == id) direct_.send(id, d);
+    }
+  }
+  if (phase_ == Phase::Open) ws_.send(std::move(msg));
+}
+
+void Link::pump_direct() {
+  std::vector<std::pair<int, std::string>> got;
+  direct_.update(got);
+  for (auto& [id, data] : got) {
+    if (data.size() < 2 || !peers_.count(id)) continue;
+    data[0] = static_cast<char>(id);  // the sender, as the direct path knows it
+    g_from_direct = true;
+    on_binary(data);
+    g_from_direct = false;
+    if (phase_ == Phase::Off) return;
+  }
+}
+
+void Link::send_offer(int to) {
+  const std::string offer = direct_.offer();
+  if (offer.empty()) return;
+  std::string msg;
+  msg += static_cast<char>(to);
+  msg += static_cast<char>(kDirect);
+  msg += offer;
   ws_.send(std::move(msg));
 }
 
@@ -643,6 +779,7 @@ void Link::say_hello(int to) {
   caps += static_cast<char>(1);
   put32(caps, session_);  // which link this is (since 0.2.14), to tell coming back from starting again
   ws_.send(std::move(caps));
+  send_offer(to);
 }
 
 void RETRO_CALLCONV Link::send_cb(int /*flags*/, const void* buf, size_t len, uint16_t client_id) {
@@ -664,6 +801,12 @@ void RETRO_CALLCONV Link::send_cb(int /*flags*/, const void* buf, size_t len, ui
       msg += static_cast<char>(kSeq);
       put32(msg, ++line.sent);
       msg += payload;
+      // Over the direct path too: whichever copy arrives first is used.
+      if (l.direct_.up(id)) {
+        std::string d = msg;
+        d[0] = static_cast<char>(l.me_);
+        l.direct_.send(id, d);
+      }
       if (l.phase_ == Phase::Open && !peer.away) l.ws_.send(std::move(msg));
     } else if (l.phase_ == Phase::Open) {
       msg += static_cast<char>(kCore);  // an app from before 0.2.13
@@ -677,6 +820,8 @@ void RETRO_CALLCONV Link::send_cb(int /*flags*/, const void* buf, size_t len, ui
 
 void RETRO_CALLCONV Link::poll_cb() {
   // The core can read mid-frame (waiting briefly for its partner); deliver what has arrived.
+  if (!g_running) return;
+  g_running->pump_direct();
   if (!g_running) return;
   for (auto& e : g_running->ws_.poll()) {
     if (!g_running) return;  // the link ended while handling what arrived
