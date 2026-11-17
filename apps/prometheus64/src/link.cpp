@@ -185,6 +185,7 @@ void Link::peer_back(int id) {
   line.since_ns = SDL_GetTicksNS();
   say_hello(id);
   send_resume(id);
+  if (core_started_) send_tick();  // the counts sent while the connection was down were lost
 }
 
 // A player is gone for good.
@@ -277,6 +278,13 @@ void Link::update() {
       line.gap_ns = now_ns;
       send_resume(id);
     }
+  }
+  // A game that is waiting runs no frames, so it says how far it is no other way: say it now and
+  // then. Without this, two games that each last heard of the other before a broken connection
+  // (frame counts aren't sent again) could each think itself too far ahead and wait for ever.
+  if (core_started_ && phase_ == Phase::Open && elapsed(now_ns, last_tick_ns_) > 250'000'000ull &&
+      waiting_for() != Wait::None) {
+    send_tick();
   }
   if (phase_ == Phase::Reconnecting) {
     // While the direct path reaches everyone, the games go on and there's no hurry.
@@ -699,6 +707,11 @@ void Link::frame_done() {
   if (!core_started_) return;
   ++frames_;
   if (frames_ % LinkPacer::kEvery) return;
+  send_tick();
+}
+
+void Link::send_tick() {
+  last_tick_ns_ = SDL_GetTicksNS();
   std::string msg;
   msg += static_cast<char>(kBroadcast);
   msg += static_cast<char>(kTick);

@@ -119,7 +119,7 @@ const GbaLookDef kGbaLooks[] = {
      Prescale::None},
     {"Smooth", "Smooth, clean edges, as if redrawn in HD (xBRZ)", Look::Pixels::Sharp, 0.0f, false, false, false,
      Prescale::Xbrz, 0.6f},
-    {"Handheld", "The GBA's screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false,
+    {"Handheld", "The handheld's own screen: its colours, pixel grid and slight ghosting", Look::Pixels::Sharp, 0.8f, true, true, false,
      Prescale::None},
     {"Pixel-perfect", "Every pixel exactly the same size, at a whole-number scale", Look::Pixels::Sharp, 0.0f, false, false,
      true, Prescale::None},
@@ -1814,7 +1814,7 @@ std::vector<App::MenuItem> App::menu_items() const {
     // A PSP game: no N64 picture styles or textures; its own resolution (multiples of 480x272).
     std::vector<MenuItem> psp;
     const int chosen = settings_.game_int(id, "psp_resolution", 0);
-    const int factor = chosen >= 1 && chosen <= 10 ? chosen : std::clamp((out_h_ + 271) / 272, 2, 6);
+    const int factor = chosen >= 1 && chosen <= 10 ? chosen : std::clamp((out_h_ + 271) / 272, 2, 4);
     for (MenuItem& it : items) {
       if (it.id == kPicture || it.id == kTextures || it.id == kOverscan || it.id == kEventsItem || it.id == kStatsItem ||
           it.id == kHintsItem || it.id == kLocalFocusItem || it.id == kLocalLinkItem) {
@@ -1841,7 +1841,7 @@ std::vector<App::MenuItem> App::menu_items() const {
       if (it.id == kLocalFocusItem && !game2_) continue;
       if (it.id == kLocalLinkItem && online_game_) continue;
       if (it.id == kPicture) it.value = g.name;
-      if (it.id == kFill && look.fill == FillMode::Fit) it.value = "Fit (3:2)";
+      if (it.id == kFill && look.fill == FillMode::Fit) it.value = game_->system == System::GB ? "Fit (10:9)" : "Fit (3:2)";
       gba.push_back(std::move(it));
     }
     return gba;

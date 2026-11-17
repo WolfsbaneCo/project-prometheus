@@ -147,6 +147,7 @@ class Link {
   void post(std::string msg, bool direct);
   void pump_direct();  // what arrived over the direct path, handled as if from the relay
   void send_offer(int to);
+  void send_tick();  // this game's frame count, to everyone (link_pacer.hpp)
   void start_core();
   void stop_core();
 
@@ -165,6 +166,7 @@ class Link {
   const retro_netpacket_callback* core_ = nullptr;
   bool core_started_ = false;
   uint64_t frames_ = 0;              // frames run since the core's link started
+  uint64_t last_tick_ns_ = 0;        // when this game's frame count was last sent
   std::map<int, LinkPacer> pacers_;  // one for each other player
   // What makes a broken link resumable, for each other player.
   struct Line {
