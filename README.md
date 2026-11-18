@@ -17,10 +17,10 @@ The **mouse** works everywhere: click a game to pick it and double-click to play
 
 | Key | What it does |
 |---|---|
-| Esc, right-click, or Back/Guide on a controller | Quick menu: save states, picture, fill mode, resolution, volume, players, controls |
+| Esc, right-click, or Back/Guide on a controller | The menu: save states, picture and sound, players, controls, link play (below) |
 | C (in the library) | Controls: change any key or controller button |
 | N (in the library) | Play online with friends in your group |
-| F5 / F7 | Save state / load state (in the slot chosen in the menu). For GBA and Game Boy games a save state also keeps the game's own save, so loading it puts both back exactly as they were |
+| F5 / F7 | Save state / load state (in the slot shown next to them in the menu). For GBA and Game Boy games a save state also keeps the game's own save, so loading it puts both back exactly as they were |
 | F8 / F9 | Volume down / up |
 | F10 | Who's playing: seat controllers and keyboards for up to 4 players |
 | F11 or Alt+Enter | Fullscreen |
@@ -28,7 +28,19 @@ The **mouse** works everywhere: click a game to pick it and double-click to play
 | Ctrl+R | Reset the game |
 | F1 | All controls and shortcuts |
 
-The quick menu shows each item's shortcut next to it, and the shortcuts work while the menu is open too.
+**The menu (Esc) during a game**, in groups:
+
+| | |
+|---|---|
+| **Resume** | Back to the game |
+| **Save state**, **Load state** | In the slot shown; Left/Right (or the arrows) change the slot |
+| **Picture & sound** › | The picture style (N64: Picture and Textures; GBA and Game Boy: the looks; PSP: Resolution), fill mode, resolution, overscan crop, fullscreen and volume |
+| **Who's playing**, **Controls** | Seat players; change any key or button |
+| **Link play** › | GBA and Game Boy: online with a friend, or another of your games on this computer (and **Controlling** while two are linked) |
+| **Pokémon** › | In Pokémon games: Pokémon stats, event gifts and daily hints, whichever the game has |
+| **Reset game**, **Quit to library** | |
+
+Rows with › open a page of their own; Esc (or **Back**) comes back. Each row shows its shortcut, and the shortcuts work while the menu is open too.
 
 **Keyboard (one player), by default:** arrows move, X = A, C = B, Z = Z, Enter = Start, A/S = L/R, I/J/K/L = C buttons, T/F/G/H = D-pad, Shift = walk. Two players can share one keyboard: the left half (WASD) and the right half (arrows) each become a controller from "Who's playing".
 
@@ -228,11 +240,11 @@ Project Prometheus reads your running game the way a guide would and tells you, 
 - *"Mirage Island could be out today: [your Pokémon], in your PC ([box]), brings it out."* The game only looks at your party, but a matching Pokémon sitting in a PC box counts as soon as you move it into your party: the hint names the box, so you can fetch it and sail the same day.
 - *"Lucky day at the Lottery Corner: today's number matches N digits of [your Pokémon]'s ID. Draw a ticket at the Lilycove Department Store to win a [prize]."* (2 digits: PP Up; 3: Exp. Share; 4: Max Revive; 5: Master Ball.) Your party and every PC box count. Once you've drawn today's ticket, it stays quiet.
 
-It never changes the odds or your game, and says nothing on ordinary days. Because the game's clock follows your computer's real clock, the daily numbers change every real day, as on a cartridge. Turn the hints off with **Daily hints** in the in-game menu.
+It never changes the odds or your game, and says nothing on ordinary days. Because the game's clock follows your computer's real clock, the daily numbers change every real day, as on a cartridge. Turn the hints off with **Daily hints** in the menu (Esc), under **Pokémon**.
 
 #### Pokémon stats: your party's EVs (Ruby, Sapphire, Emerald, FireRed, LeafGreen)
 
-The games never show a Pokémon's **effort values** (EVs), the points it earns from battles and vitamins that raise its stats: up to 252 in one stat and 510 in all. To see them, press **P** while playing (the shortcut opens the page and closes it again), or open the in-game menu (Esc) and choose **Pokémon stats**. The shortcut is yours to choose: on the **Controls** screen (press C in the library, or Menu > Controls), click **Pokémon stats** and press the key you want; on the **Controller** tab you can give it a gamepad button too (it has none to start with). Your party is listed on the left; pick a Pokémon (click it, or the arrow keys) to see its EVs stat by stat, with its total out of 510, how many it can still earn, its IVs (0 to 31, fixed when it was met) and its nature, with the stat the nature raises (+) and lowers (-) marked.
+The games never show a Pokémon's **effort values** (EVs), the points it earns from battles and vitamins that raise its stats: up to 252 in one stat and 510 in all. To see them, press **P** while playing (the shortcut opens the page and closes it again), or open the menu (Esc) and choose **Pokémon**, then **Pokémon stats**. The shortcut is yours to choose: on the **Controls** screen (press C in the library, or Menu > Controls), click **Pokémon stats** and press the key you want; on the **Controller** tab you can give it a gamepad button too (it has none to start with). Your party is listed on the left; pick a Pokémon (click it, or the arrow keys) to see its EVs stat by stat, with its total out of 510, how many it can still earn, its IVs (0 to 31, fixed when it was met) and its nature, with the stat the nature raises (+) and lowers (-) marked.
 
 Nothing is shown unless you open the page. It reads your party as the game's own summary screen does, and changes nothing.
 
@@ -285,7 +297,7 @@ PSP games sit in the same library as the others: the app recognises them by what
 
 - **Formats:** `.iso` (a plain UMD image), `.cso` (the same, compressed), `.pbp` (a PSN game or homebrew `EBOOT.PBP`) and `.chd`. Not inside `.zip`, `.7z` or `.rar` archives: an image can be 1.8 GB, and it would have to be unpacked each time.
 - **Buttons, by default:** on a controller, the face buttons are where a PlayStation pad has them: bottom = Cross, right = Circle, left = Square, top = Triangle; the shoulder buttons are L and R, Start is Start, either trigger is Select, the left stick is the analog stick and the D-pad the D-pad. On the keyboard: X = Cross, C = Square, K (or L) = Circle, J (or I) = Triangle, A/S = L/R, Enter = Start, Z = Select, the arrows are the analog stick and T/F/G/H the D-pad. All of it can be changed on the Controls screen, for one game or for all.
-- **Picture:** drawn sharp at a multiple of the PSP's 480x272 that covers your screen (**Resolution** in the menu: Auto, up to 4x, or 1x to 8x by hand), in the PSP's own 16:9 shape. Fill mode offers Fit, Stretch and Ambient. If a game can't keep up, the app says so: a lower Resolution is the lighter choice (the most common reason PSP games slow down on a laptop).
+- **Picture:** drawn sharp at a multiple of the PSP's 480x272 that covers your screen (**Resolution** in the menu's **Picture & sound**: Auto, up to 4x, or 1x to 8x by hand), in the PSP's own 16:9 shape. Fill mode offers Fit, Stretch and Ambient. If a game can't keep up, the app says so: a lower Resolution is the lighter choice (the most common reason PSP games slow down on a laptop).
 - **Speed-up:** hold **Space**, as for GBA and Game Boy games.
 - **Input lag**, the most common complaint about PSP emulation: the emulator keeps one frame of drawing in hand instead of PPSSPP's usual two, so the game answers a frame sooner. The stick has a 15% dead zone, so a worn stick doesn't drift.
 - **HD texture packs** made for PPSSPP work: put the pack's folder (named by the game's ID, like `ULUS10041`) in `Documents\Memories\PSP\PSP\TEXTURES`. **Downloadable content** goes where a PSP keeps it, `Documents\Memories\PSP\PSP\GAME`.
@@ -334,7 +346,7 @@ Press **B** in the library (or click **Back up**), then **Connect Google Drive**
 | Retro | 2x resolution with soft scanlines |
 | Native | Pixel-exact, original resolution and dithering, like the console |
 
-**Resolution** (in the menu, per game): **Auto** draws the game at exactly your screen's resolution. **Super** draws it at twice that and shrinks it by half, for the smoothest edges; it needs a strong graphics card. Fixed 1x to 8x are there too.
+**Resolution** (in the menu's **Picture & sound**, per game): **Auto** draws the game at exactly your screen's resolution. **Super** draws it at twice that and shrinks it by half, for the smoothest edges; it needs a strong graphics card. Fixed 1x to 8x are there too.
 
 **Textures** (in the menu, per game): **HD (crisp)** redraws the game's small textures at 4x with clean edges (xBRZ, the default), **HD (soft)** is gentler (HQ4X), **Original** keeps them as the console drew them.
 

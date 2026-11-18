@@ -82,7 +82,10 @@ class App {
     std::string label, value;
     int id;
     std::string key = {};  // its keyboard shortcut, shown next to it
+    bool group = false;    // starts a group of rows: a thin line above it
   };
+  // The in-game menu's pages: the main one, and a page for each group of settings.
+  enum class MenuPage { Main, Picture, Pokemon };
   // A clickable area, recorded while drawing and tested against the mouse on the next events.
   struct Hit {
     float x, y, w, h;
@@ -242,6 +245,10 @@ class App {
   void update_hints();  // Pokémon daily hints (pokemon_hints.hpp), every few seconds of play
   void take_screenshot(const std::filesystem::path& file);
   std::vector<MenuItem> menu_items() const;
+  std::vector<MenuItem> menu_rows() const;  // every row this game has, before they are put on pages
+  void menu_back();                         // a page back, or out of the menu from the main page
+  void open_menu();
+  MenuPage menu_page_ = MenuPage::Main;
   void menu_change(int id, int direction);
 
   Options opt_;
