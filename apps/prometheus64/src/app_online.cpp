@@ -985,6 +985,8 @@ void App::draw_online() {
     note(y + 36 * s);
     float bx = x;
     if (keyed) {
+      // Looking after the group (whoever set it up: Update relay).
+      ui_.text(x, py + ph - 124 * s, "Your group", 17 * s, kFaint, true);
       bx += online_button(bx, py + ph - 92 * s, "Save key file", s, false, kObSaveKey) + 14 * s;
       bx += online_button(bx, py + ph - 92 * s, confirm_remove_key_ ? "Click again to remove" : "Remove key", s, false,
                           kObRemoveKey) + 14 * s;

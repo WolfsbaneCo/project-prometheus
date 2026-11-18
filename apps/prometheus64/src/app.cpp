@@ -1329,8 +1329,8 @@ void App::check_speed(double fps) {
     SDL_Log("speed: %llu frames in %.1f s, expected %.0f", static_cast<unsigned long long>(frame_count_ - speed_frames_),
             static_cast<double>(span) / 1e9, expected);
     toast(game_ && game_->system == System::PSP
-              ? "This computer can't keep the game at full speed at this resolution. Menu > Resolution: a lower one is lighter"
-              : "This computer can't keep the game at full speed with these settings. Menu > Picture: Retro, or "
+              ? "This computer can't keep the game at full speed at this resolution. Menu > Picture & sound > Resolution: a lower one is lighter"
+              : "This computer can't keep the game at full speed with these settings. Menu > Picture & sound > Picture: Retro, or "
                 "Textures: Original, is lighter",
           9);
   }
@@ -1543,9 +1543,7 @@ void App::handle(const SDL_Event& e) {
   }
   if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST && game_ && overlay_ == Overlay::None && screen_ == Screen::Playing &&
       opt_.screenshot.empty() && !online_game_) {
-    overlay_ = Overlay::Menu;  // pause when the window loses focus
-    menu_index_ = 0;
-    picking_second_ = false;
+    open_menu();  // pause when the window loses focus
   }
 
   // The Controls screen waiting for a key or button gets it before anything else can act on it.
@@ -1726,23 +1724,13 @@ void App::ui_action(int action) {
       case kLeft: menu_change(items[menu_index_].id, -1); break;
       case kRight: menu_change(items[menu_index_].id, 1); break;
       case kAccept: menu_change(items[menu_index_].id, 0); break;
-      case kBack: case kMenu:
-        if (picking_second_) {
-          back_from_picking();
-        } else {
-          overlay_ = Overlay::None;
-        }
-        break;
+      case kBack: case kMenu: menu_back(); break;
       default: break;
     }
     return;
   }
   if (screen_ == Screen::Playing) {
-    if (action == kMenu) {
-      overlay_ = Overlay::Menu;
-      menu_index_ = 0;
-      picking_second_ = false;
-    }
+    if (action == kMenu) open_menu();
     return;
   }
   // Home screen grid.
@@ -1777,6 +1765,81 @@ std::vector<App::MenuItem> App::menu_items() const {
     pick.push_back({"Back", "", kPickBack, "Esc"});
     return pick;
   }
+  // The rest is on pages. The main page holds what is used most and one row for each group, the
+  // groups in lines: playing (Resume), states, settings, the game's extras, leaving.
+  const std::vector<MenuItem> rows = menu_rows();
+  const auto picture_row = [](int id) {
+    return id == kPicture || id == kTextures || id == kFill || id == kResolution || id == kOverscan || id == kVolume ||
+           id == kFullscreenItem;
+  };
+  const auto pokemon_row = [](int id) { return id == kEventsItem || id == kStatsItem || id == kHintsItem; };
+  const auto value_of = [&](int id) {
+    for (const auto& r : rows) {
+      if (r.id == id) return r.value;
+    }
+    return std::string();
+  };
+  std::vector<MenuItem> out;
+  if (menu_page_ != MenuPage::Main) {
+    const bool picture = menu_page_ == MenuPage::Picture;
+    for (const auto& r : rows) {
+      if (picture ? picture_row(r.id) : pokemon_row(r.id)) out.push_back(r);
+    }
+    if (!out.empty()) {
+      out.push_back({"Back", "", kBackItem, "Esc", true});
+      return out;
+    }
+  }
+  bool picture_added = false, pokemon_added = false;
+  for (const auto& r : rows) {
+    if (r.id == kSlot) continue;  // the slot changes with Left/Right on Save state and Load state
+    if (picture_row(r.id)) {
+      if (!picture_added) {
+        picture_added = true;
+        // Its value: the picture style (or the PSP's resolution), and the volume.
+        std::string look = value_of(kPicture);
+        if (look.empty()) look = value_of(kResolution);
+        if (look.empty()) look = value_of(kFill);
+        const auto cut = look.find("  ");
+        if (cut != std::string::npos) look.resize(cut);
+        out.push_back({"Picture & sound", look + (look.empty() ? "" : "  \xC2\xB7  ") + value_of(kVolume), kPictureGroup});
+      }
+      continue;
+    }
+    if (pokemon_row(r.id)) {
+      if (!pokemon_added) {
+        pokemon_added = true;
+        // Its value: what this game has (stats, event gifts, hints), or an open event.
+        std::string what;
+        for (const auto& [rid, name] : {std::pair{kStatsItem, "stats"}, std::pair{kEventsItem, "event gifts"}, std::pair{kHintsItem, "hints"}}) {
+          for (const auto& x : rows) {
+            if (x.id == rid) what += (what.empty() ? "" : ", ") + std::string(name);
+          }
+        }
+        if (!what.empty()) what[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(what[0])));
+        out.push_back({"Pok\xC3\xA9mon", event_key_.empty() ? what : "event open", kPokemonGroup});
+      }
+      continue;
+    }
+    out.push_back(r);
+  }
+  for (auto& r : out) {
+    r.group = r.id == kSaveState || r.id == kPictureGroup || r.id == kReset;
+    // Rows that open a page of their own say so.
+    if (r.id == kPictureGroup || r.id == kPokemonGroup || (r.id == kLocalLinkItem && !game2_ && !link_.active())) {
+      r.value += "  >";
+    }
+  }
+  for (auto& r : out) {
+    if (r.id == kLocalLinkItem || r.id == kLocalFocusItem || r.id == kPokemonGroup) {
+      r.group = true;
+      break;
+    }
+  }
+  return out;
+}
+
+std::vector<App::MenuItem> App::menu_rows() const {
   const std::string id = game_ ? game_->id : "";
   const Look look = current_look();
   const int preset = std::clamp(settings_.game_int(id, "preset", 0), 0, 3);
@@ -1804,8 +1867,8 @@ std::vector<App::MenuItem> App::menu_items() const {
       {"Controls", "", kControlsItem},
       {"Link play", local_link_value(), kLocalLinkItem},
       {"Controlling", game2_ && focus2_ ? game2_->title : game_ ? game_->title : "", kLocalFocusItem, "F3"},
-      {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
       {"Pok\xC3\xA9mon stats", "EVs", kStatsItem, input_.stats_label()},
+      {"Event gifts", event_key_.empty() ? "" : "event open", kEventsItem},
       {"Daily hints", settings_.get_int("daily_hints", 1) ? "On" : "Off", kHintsItem},
       {online_game_ && !net_.is_host() ? "Reset game (host only)" : online_game_ ? "Reset game for everyone" : "Reset game", "", kReset, "Ctrl+R"},
       {!online_game_ ? "Quit to library" : net_.is_host() ? "End online game" : "Leave online game", "", kQuit},
@@ -1869,16 +1932,26 @@ void App::menu_change(int id, int dir) {
       if (dir == 0) overlay_ = Overlay::None;
       break;
     case kSaveState:
+    case kLoadState:
+      if (dir != 0) {
+        // Left/Right on either: the slot both use.
+        slot_ = (slot_ - 1 + step + 10) % 10 + 1;
+        settings_.set_int("state_slot", slot_);
+        break;
+      }
+      if (id == kSaveState) save_state();
+      else load_state();
+      overlay_ = Overlay::None;
+      break;
+    case kPictureGroup:
+    case kPokemonGroup:
       if (dir == 0) {
-        save_state();
-        overlay_ = Overlay::None;
+        menu_page_ = id == kPictureGroup ? MenuPage::Picture : MenuPage::Pokemon;
+        menu_index_ = 0;
       }
       break;
-    case kLoadState:
-      if (dir == 0) {
-        load_state();
-        overlay_ = Overlay::None;
-      }
+    case kBackItem:
+      if (dir == 0) menu_back();
       break;
     case kSlot:
       slot_ = (slot_ - 1 + step + 10) % 10 + 1;
@@ -2058,6 +2131,32 @@ void App::menu_change(int id, int dir) {
   settings_.save();
 }
 
+void App::open_menu() {
+  overlay_ = Overlay::Menu;
+  menu_index_ = 0;
+  menu_page_ = MenuPage::Main;
+  picking_second_ = false;
+}
+
+void App::menu_back() {
+  if (picking_second_) {
+    back_from_picking();
+    return;
+  }
+  if (menu_page_ == MenuPage::Main) {
+    overlay_ = Overlay::None;
+    return;
+  }
+  // Back to the main page, on the group's own row.
+  const int group = menu_page_ == MenuPage::Picture ? kPictureGroup : kPokemonGroup;
+  menu_page_ = MenuPage::Main;
+  menu_index_ = 0;
+  const auto items = menu_items();
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    if (items[i].id == group) menu_index_ = static_cast<int>(i);
+  }
+}
+
 // From the chooser back to the menu, on its "Link play" row.
 void App::back_from_picking() {
   picking_second_ = false;
@@ -2165,6 +2264,13 @@ void App::draw_home() {
   float hx = margin - 14 * s;
   const float hy = H - footer_h + 18 * s, hh = 48 * s, hs = 19 * s;
   for (const HintChip& c : chips) {
+    // Groups: playing, your files, online and backup, settings; a thin line between them.
+    if (c.id == kHintFolder || c.id == kHintOnline || c.id == kHintControls) {
+      if (hx > margin) {
+        ui_.rect(hx + 6 * s, hy + 14 * s, std::max(1.0f, 1.5f * s), hh - 28 * s, rgb(0xFFFFFF, 0.12f));
+        hx += 18 * s;
+      }
+    }
     const float kw = ui_.measure(c.key, hs, true), lw = ui_.measure(c.label, hs);
     const float w = kw + lw + 40 * s;
     if (mouse_over(hx, hy, w, hh)) ui_.rect(hx, hy, w, hh, rgb(0xFFFFFF, 0.07f), 12 * s);
@@ -2236,7 +2342,10 @@ void App::draw_menu() {
   const float s = out_h_ / 1080.0f, W = static_cast<float>(out_w_), H = static_cast<float>(out_h_);
   ui_.rect(0, 0, W, H, rgb(0x000000, 0.55f));
   const auto items = menu_items();
-  const float row = 50 * s, pw = 660 * s, ph = 150 * s + items.size() * row + 70 * s;
+  const float row = 50 * s, pw = 660 * s, gap = 14 * s;
+  int groups = 0;
+  for (const auto& it : items) groups += it.group ? 1 : 0;
+  const float ph = 150 * s + items.size() * row + groups * gap + 70 * s;
   const float px = (W - pw) / 2, py = std::max(20 * s, (H - ph) / 2);
   ui_.rect(px, py, pw, ph, kPanel.with_alpha(0.97f), 24 * s);
   ui_.outline(px, py, pw, ph, rgb(0xFFFFFF, 0.06f), 24 * s, 1.5f * s);
@@ -2244,6 +2353,8 @@ void App::draw_menu() {
   ui_.image(ui_.logo(), px + 30 * s, py + 30 * s, 48 * s, 48 * s);
   ui_.text(px + 94 * s, py + 30 * s, ui_.fit(game_ ? game_->title : "", 28 * s, pw - 130 * s, true), 28 * s, kText, true);
   const std::string state = picking_second_ ? "Link play: online with a friend, or another of your games here"
+                            : menu_page_ == MenuPage::Picture ? "Picture & sound"
+                            : menu_page_ == MenuPage::Pokemon ? "Pok\xC3\xA9mon"
                             : local_.active() || link_.active() ? "Linked: the game keeps running behind this menu"
                             : !online_game_ ? "Paused"
                             : net_.is_host() ? "Online: paused for everyone"
@@ -2252,6 +2363,11 @@ void App::draw_menu() {
   float y = py + 120 * s;
   for (int i = 0; i < static_cast<int>(items.size()); ++i) {
     const bool sel = i == menu_index_;
+    if (items[i].group && i > 0) {
+      // A thin line between groups of rows.
+      ui_.rect(px + 40 * s, y + gap / 2 - 3 * s, pw - 80 * s, std::max(1.0f, 1.5f * s), rgb(0xFFFFFF, 0.07f));
+      y += gap;
+    }
     if (sel) {
       ui_.rect(px + 18 * s, y, pw - 36 * s, row - 6 * s, kRed.with_alpha(0.16f), 12 * s);
       ui_.rect(px + 18 * s, y + 10 * s, 4 * s, row - 26 * s, kRed, 2 * s);
@@ -2266,7 +2382,7 @@ void App::draw_menu() {
       ui_.text(kx + 8 * s, y + 15 * s, items[i].key, 15 * s, off ? kFaint : sel ? kText : kDim, true);
     }
     if (!items[i].value.empty()) {
-      const bool adjustable = items[i].id >= kSlot && items[i].id <= kVolume;
+      const bool adjustable = menu_adjustable(items[i].id) && !off;
       if (adjustable && sel) {
         // Clickable arrows either side of the value.
         const float bs = 32 * s, by = y + (row - 6 * s - bs) / 2, inc_x = px + pw - 36 * s - bs;
@@ -2435,7 +2551,7 @@ void App::handle_mouse(const SDL_Event& e) {
       const Hit* h = hit_at(mouse_x_, mouse_y_);
       const auto items = menu_items();
       if (h && (h->kind == kHitMenuRow || h->kind == kHitMenuDec || h->kind == kHitMenuInc) &&
-          items[h->arg].id >= kSlot && items[h->arg].id <= kVolume) {
+          menu_adjustable(items[h->arg].id)) {
         menu_index_ = h->arg;
         ui_action(dir > 0 ? kRight : kLeft);
       }

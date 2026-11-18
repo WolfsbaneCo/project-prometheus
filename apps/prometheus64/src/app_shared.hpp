@@ -22,8 +22,11 @@ enum DialogKind { kFolderChosen = 1, kSaveChosen = 2, kKeyChosen = 3, kKeySaveAs
 enum MenuId {
   kResume, kSaveState, kLoadState, kSlot, kPicture, kTextures, kFill, kResolution, kOverscan, kVolume, kFullscreenItem,
   kPlayers, kControlsItem, kEventsItem, kHintsItem, kLocalLinkItem, kLocalFocusItem, kStatsItem, kReset, kQuit,
+  kPictureGroup, kPokemonGroup, kBackItem,  // the menu's groups (each opens its own page), and Back from one
   kPickHost, kPickJoin, kPickBack, kPickGame  // the "Link play" chooser: online host / join, Back, then one row per game here (kPickGame + i)
 };
+// Menu rows whose value changes with Left/Right (and the arrows beside it).
+inline bool menu_adjustable(int id) { return id == kSaveState || id == kLoadState || (id >= kSlot && id <= kVolume); }
 // Clickable areas (App::Hit::kind).
 enum HitKind {
   kHitPanel, kHitTile, kHitAddGames, kHitHint, kHitMenuRow, kHitMenuDec, kHitMenuInc, kHitMenuButton, kHitTab,
