@@ -187,6 +187,10 @@ jobs:
           Copy-Item core/GBA-CORE-SOURCE.txt stage/cores/
           Copy-Item core/gambatte_libretro.dll stage/cores/
           Copy-Item core/GB-CORE-SOURCE.txt stage/cores/
+          # The second game of two linked on one computer runs in its own copy of the core (it keeps
+          # its state in globals): shipped here, so the app never writes a program file at run time.
+          Copy-Item core/gpsp_libretro.dll stage/cores/gpsp_libretro-second.dll
+          Copy-Item core/gambatte_libretro.dll stage/cores/gambatte_libretro-second.dll
           Copy-Item psp-core/ppsspp_libretro.dll stage/cores/
           Copy-Item psp-core/PSP-CORE-SOURCE.txt stage/cores/
           Copy-Item -Recurse psp-core/PPSSPP stage/cores/
@@ -265,6 +269,60 @@ jobs:
           $sig = Get-AuthenticodeSignature "dist/$name"
           "$($sig.Status): $($sig.SignerCertificate.Subject)"
           if ($sig.Status -ne 'Valid') { Write-Error "The installer came back from SignPath without a valid signature" }
+      # The installer on a real Windows computer before anyone gets it: Microsoft Defender (with
+      # today's definitions) scans it, it installs silently for this user, Defender scans everything
+      # it put there, it uninstalls, and nothing may be left behind: no files, no shortcuts, no file
+      # types. A threat found, or a step that fails, stops the release.
+      - name: Check the installer (Defender, install, uninstall)
+        shell: pwsh
+        run: |
+          $name = "ProjectPrometheus-Setup-${{ steps.version.outputs.version }}.exe"
+          $setup = (Resolve-Path "dist/$name").Path
+          $mp = Join-Path $env:ProgramFiles "Windows Defender\MpCmdRun.exe"
+          $defender = Test-Path $mp
+          if ($defender) {
+            & $mp -SignatureUpdate | Out-Host
+            Get-MpComputerStatus | Select-Object AMProductVersion, AntivirusSignatureVersion, AntivirusSignatureLastUpdated | Format-List | Out-Host
+          } else {
+            Write-Warning "Microsoft Defender isn't on this runner: install and uninstall are checked without it"
+          }
+          function Scan($path) {
+            if (-not $defender) { return }
+            & $mp -Scan -ScanType 3 -File $path -DisableRemediation | Out-Host
+            if ($LASTEXITCODE -eq 2) { throw "Defender found a threat in $path" }
+            if ($LASTEXITCODE -ne 0) { throw "Defender could not scan $path (exit $LASTEXITCODE)" }
+            "Defender: no threat in $path"
+          }
+          Scan $setup
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TASKS=desktopicon,associate','/LOG=install.log' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content install.log | Out-Host; throw "Install failed (exit $($p.ExitCode))" }
+          $app = Join-Path $env:LOCALAPPDATA "Programs\Project Prometheus"
+          foreach ($f in 'ProjectPrometheus.exe','unins000.exe','cores\mupen64plus_next_libretro.dll','cores\gpsp_libretro.dll',
+                         'cores\gpsp_libretro-second.dll','cores\gambatte_libretro.dll','cores\gambatte_libretro-second.dll',
+                         'cores\ppsspp_libretro.dll','licenses\THIRD-PARTY-NOTICES.txt') {
+            if (-not (Test-Path (Join-Path $app $f))) { throw "Not installed: $f" }
+          }
+          if (-not (Test-Path 'HKCU:\Software\Classes\Prometheus64.Game')) { throw "The game file type wasn't registered" }
+          Scan $app
+          # Something the emulators may write next to themselves, as they run: the uninstaller removes it too.
+          New-Item -ItemType Directory -Force (Join-Path $app 'cores\PPSSPP\cache') | Out-Null
+          Set-Content (Join-Path $app 'cores\PPSSPP\cache\made-while-playing.txt') 'x'
+          $p = Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Uninstall failed (exit $($p.ExitCode))" }
+          # The uninstaller finishes from a copy of itself in the temporary folder: give it a moment.
+          for ($i = 0; $i -lt 60 -and (Test-Path $app); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $app) { Get-ChildItem -Recurse $app | Select-Object FullName | Out-Host; throw "Files were left behind in $app" }
+          foreach ($k in 'HKCU:\Software\Classes\Prometheus64.Game','HKCU:\Software\Classes\ProjectPrometheus.OnlineKey') {
+            if (Test-Path $k) { throw "Left behind in the registry: $k" }
+          }
+          foreach ($ext in '.z64','.gba','.gb','.gbc','.prometheuskey') {
+            $v = (Get-ItemProperty -ErrorAction SilentlyContinue "HKCU:\Software\Classes\$ext").'(default)'
+            if ($v -like 'Prometheus64.*' -or $v -like 'ProjectPrometheus.*') { throw "Left behind: the $ext file type" }
+          }
+          foreach ($lnk in "$([Environment]::GetFolderPath('Programs'))\Project Prometheus.lnk", "$([Environment]::GetFolderPath('Desktop'))\Project Prometheus.lnk") {
+            if (Test-Path $lnk) { throw "Shortcut left behind: $lnk" }
+          }
+          "Installed, scanned and uninstalled cleanly"
       # Uploaded as the bare .exe (not zipped), so the download is the installer itself.
       - uses: actions/upload-artifact@v7
         with:

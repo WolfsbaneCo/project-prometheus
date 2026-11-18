@@ -3,7 +3,7 @@
 ; Installs for the current user only, so it needs no administrator rights.
 
 #ifndef AppVersion
-  #define AppVersion "0.4.1"
+  #define AppVersion "0.4.2"
 #endif
 #ifndef StageDir
   #define StageDir "..\stage"
@@ -61,6 +61,17 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdir
 Type: filesandordirs; Name: "{autopf}\Prometheus 64"
 Type: files; Name: "{autoprograms}\Prometheus 64.lnk"
 Type: files; Name: "{autodesktop}\Prometheus 64.lnk"
+; Copies of the emulator cores that versions before 0.4.2 made in the app's data folder at run time
+; (for two games linked on one computer): the installer now ships them next to the cores.
+Type: filesandordirs; Name: "{userappdata}\Project Prometheus\Prometheus 64\cores"
+
+[UninstallDelete]
+; Anything the emulator cores wrote next to themselves while running (PPSSPP's caches): the program's
+; own folder goes completely. Saves and settings live elsewhere and are kept.
+Type: filesandordirs; Name: "{app}\cores"
+Type: dirifempty; Name: "{app}"
+; The core copies older versions made in the app's data folder (not saves or settings).
+Type: filesandordirs; Name: "{userappdata}\Project Prometheus\Prometheus 64\cores"
 
 [Icons]
 Name: "{autoprograms}\Project Prometheus"; Filename: "{app}\ProjectPrometheus.exe"

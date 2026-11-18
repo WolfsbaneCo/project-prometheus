@@ -2981,15 +2981,22 @@ void App::start_local_link(const Game& second) {
   const std::string serial = local_mode_ == "cable" ? "mul_poke" : local_mode_ == "wireless" ? "rfu" : "auto";
   if (game_->system == System::GBA && core_.option("gpsp_serial") != serial) restart_game_keep_progress();  // the first game's link port too
   // The cores keep their state in globals: the second game runs in its own copy of the library.
+  // The installer ships that copy next to the core (cores\gpsp_libretro-second.dll), so nothing
+  // writes or loads a program file from the user's own folders (which antivirus programs rightly
+  // distrust). A build without it (a developer's) copies the core into the app's data folder.
   std::error_code ec;
   const fs::path& lib = core_path(game_->system);
-  const fs::path copy = pref_dir_ / "cores" / (lib.stem().string() + "-second" + lib.extension().string());
-  fs::create_directories(copy.parent_path(), ec);
-  fs::copy_file(lib, copy, fs::copy_options::overwrite_existing, ec);
-  if (ec) {
-    toast("Could not prepare the second game: " + ec.message(), 6);
-    local_mode_.clear();
-    return;
+  const std::string second_name = lib.stem().string() + "-second" + lib.extension().string();
+  fs::path copy = lib.parent_path() / second_name;
+  if (!fs::is_regular_file(copy, ec)) {
+    copy = pref_dir_ / "cores" / second_name;
+    fs::create_directories(copy.parent_path(), ec);
+    fs::copy_file(lib, copy, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+      toast("Could not prepare the second game: " + ec.message(), 6);
+      local_mode_.clear();
+      return;
+    }
   }
   if (const std::string err = core2_.open(copy); !err.empty()) {
     toast("Could not start the second game: " + err, 6);
