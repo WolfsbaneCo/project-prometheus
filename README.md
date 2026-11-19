@@ -37,7 +37,7 @@ The **mouse** works everywhere: click a game to pick it and double-click to play
 | **Picture & sound** › | The picture style (N64: Picture and Textures; GBA and Game Boy: the looks; PSP: Resolution), fill mode, resolution, overscan crop, fullscreen and volume |
 | **Who's playing**, **Controls** | Seat players; change any key or button |
 | **Link play** › | GBA and Game Boy: online with a friend, or another of your games on this computer (and **Controlling** while two are linked) |
-| **Pokémon** › | In Pokémon games: Pokémon stats, event gifts and daily hints, whichever the game has |
+| **Game extras** › | Only in games that have some (the Pokémon games): the stats page, event gifts and daily hints, whichever the game has |
 | **Reset game**, **Quit to library** | |
 
 Rows with › open a page of their own; Esc (or **Back**) comes back. Each row shows its shortcut, and the shortcuts work while the menu is open too.
@@ -242,11 +242,11 @@ Project Prometheus reads your running game the way a guide would and tells you, 
 - *"Mirage Island could be out today: [your Pokémon], in your PC ([box]), brings it out."* The game only looks at your party, but a matching Pokémon sitting in a PC box counts as soon as you move it into your party: the hint names the box, so you can fetch it and sail the same day.
 - *"Lucky day at the Lottery Corner: today's number matches N digits of [your Pokémon]'s ID. Draw a ticket at the Lilycove Department Store to win a [prize]."* (2 digits: PP Up; 3: Exp. Share; 4: Max Revive; 5: Master Ball.) Your party and every PC box count. Once you've drawn today's ticket, it stays quiet.
 
-It never changes the odds or your game, and says nothing on ordinary days. Because the game's clock follows your computer's real clock, the daily numbers change every real day, as on a cartridge. Turn the hints off with **Daily hints** in the menu (Esc), under **Pokémon**.
+It never changes the odds or your game, and says nothing on ordinary days. Because the game's clock follows your computer's real clock, the daily numbers change every real day, as on a cartridge. Turn the hints off with **Daily hints** in the menu (Esc), under **Game extras**.
 
 #### Pokémon stats: your party's EVs (Ruby, Sapphire, Emerald, FireRed, LeafGreen)
 
-The games never show a Pokémon's **effort values** (EVs), the points it earns from battles and vitamins that raise its stats: up to 252 in one stat and 510 in all. To see them, press **P** while playing (the shortcut opens the page and closes it again), or open the menu (Esc) and choose **Pokémon**, then **Pokémon stats**. The shortcut is yours to choose: on the **Controls** screen (press C in the library, or Menu > Controls), click **Pokémon stats** and press the key you want; on the **Controller** tab you can give it a gamepad button too (it has none to start with). Your party is listed on the left; pick a Pokémon (click it, or the arrow keys) to see its EVs stat by stat, with its total out of 510, how many it can still earn, its IVs (0 to 31, fixed when it was met) and its nature, with the stat the nature raises (+) and lowers (-) marked.
+The games never show a Pokémon's **effort values** (EVs), the points it earns from battles and vitamins that raise its stats: up to 252 in one stat and 510 in all. To see them, press **P** while playing (the shortcut opens the page and closes it again), or open the menu (Esc) and choose **Game extras**, then **Pokémon stats**. The shortcut is yours to choose: on the **Controls** screen (press C in the library, or Menu > Controls), click **Stats page** and press the key you want; on the **Controller** tab you can give it a gamepad button too (it has none to start with). Your party is listed on the left; pick a Pokémon (click it, or the arrow keys) to see its EVs stat by stat, with its total out of 510, how many it can still earn, its IVs (0 to 31, fixed when it was met) and its nature, with the stat the nature raises (+) and lowers (-) marked.
 
 Nothing is shown unless you open the page. It reads your party as the game's own summary screen does, and changes nothing.
 

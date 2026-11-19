@@ -1817,7 +1817,8 @@ std::vector<App::MenuItem> App::menu_items() const {
           }
         }
         if (!what.empty()) what[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(what[0])));
-        out.push_back({"Pok\xC3\xA9mon", event_key_.empty() ? what : "event open", kPokemonGroup});
+        // A neutral name on the main page: what is particular to the game is only on its own page.
+        out.push_back({"Game extras", event_key_.empty() ? what : "event open", kPokemonGroup});
       }
       continue;
     }
@@ -2354,7 +2355,7 @@ void App::draw_menu() {
   ui_.text(px + 94 * s, py + 30 * s, ui_.fit(game_ ? game_->title : "", 28 * s, pw - 130 * s, true), 28 * s, kText, true);
   const std::string state = picking_second_ ? "Link play: online with a friend, or another of your games here"
                             : menu_page_ == MenuPage::Picture ? "Picture & sound"
-                            : menu_page_ == MenuPage::Pokemon ? "Pok\xC3\xA9mon"
+                            : menu_page_ == MenuPage::Pokemon ? "Game extras"
                             : local_.active() || link_.active() ? "Linked: the game keeps running behind this menu"
                             : !online_game_ ? "Paused"
                             : net_.is_host() ? "Online: paused for everyone"
@@ -2494,7 +2495,7 @@ void App::draw_help() {
   ui_.text(px + 40 * s, py + ph - 154 * s,
            "GBA games: A, B, L, R and Start as above, Select on Z, the +Control Pad on the D-pad or the stick. Hold " +
                k(kSpeed) + " to speed the game up." +
-               (input_.stats_label().empty() ? std::string() : " Pok\xC3\xA9mon stats: " + input_.stats_label() + "."),
+               (input_.stats_label().empty() || !has_stats_page() ? std::string() : " Stats page: " + input_.stats_label() + "."),
            18 * s, kText);
   ui_.text(px + 40 * s, py + ph - 122 * s,
            "Change any key or button on the Controls screen: press C in the library, or Menu > Controls.", 18 * s, kText);

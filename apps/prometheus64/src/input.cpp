@@ -493,8 +493,8 @@ const char* Input::control_name(int control) {
   static const char* const names[kControlCount] = {
       "A",        "B",          "Z",          "Start",       "L",          "R",           "C-Up",
       "C-Down",   "C-Left",     "C-Right",    "D-pad up",    "D-pad down", "D-pad left",  "D-pad right",
-      "Stick up", "Stick down", "Stick left", "Stick right", "Walk (hold)", "Speed up GBA (hold)",
-      "Pok\xC3\xA9mon stats"};
+      "Stick up", "Stick down", "Stick left", "Stick right", "Walk (hold)", "Speed up (hold)",
+      "Stats page"};
   return control >= 0 && control < kControlCount ? names[control] : "";
 }
 
